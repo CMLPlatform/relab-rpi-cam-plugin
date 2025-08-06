@@ -80,8 +80,8 @@ class CameraManager:
                 await asyncio.to_thread(self.camera.stop)
 
             config = mode.get_config(self.camera)
-            self.camera.configure(config)
-            await asyncio.to_thread(self.camera.start)
+            self.camera.configure(config)  # pyright: ignore reportOptionalMemberAccess  # Camera is guaranteed to be initialized by the above lines
+            await asyncio.to_thread(self.camera.start)  # pyright: ignore reportOptionalMemberAccess
             self.current_mode = mode
             return self.camera
 

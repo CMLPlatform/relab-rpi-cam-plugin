@@ -64,6 +64,7 @@ This guide covers **installing and configuring the plugin on Raspberry Pi device
    - Creates Python virtual environment
 
 ### Step 3: Get Platform Credentials
+
 <!-- TODO: Replace by description of UI flow on main platform once available -->
 
 Before configuring your device, register it on the platform at the `plugins/rpi-cam/cameras` endpoint by providing:
@@ -104,13 +105,14 @@ Before configuring your device, register it on the platform at the `plugins/rpi-
    uv run fastapi run app/main.py --port 8018
    ```
 
-2. **Test installation**:
+1. **Test installation**:
 
    - API documentation: `http://your-pi-ip:8018/docs`
    - Live stream: `http://your-pi-ip:8018/stream/watch`
    - Capture test: Use `/capture` endpoint
 
-3. **Verify platform connection**:
+1. **Verify platform connection**:
+
    <!-- TODO: Replace by description of UI flow on main platform once available -->
 
    - Access camera from main platform at the `/plugins/rpi-cam/camera/{camera_id}` endpoint
