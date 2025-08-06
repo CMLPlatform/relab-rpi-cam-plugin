@@ -29,16 +29,23 @@
     Repository = "https://github.com/CMLPlatform/relab-rpi-cam-plugin.git"
 
 [dependency-groups]
-  dev = ["pre-commit>=4.2.0", "ruff>=0.9.6"]
+  dev = ["pre-commit>=4.2.0", "pyright>=1.1.403", "ruff>=0.9.6"]
 
-## Ruff configuration
+### Tools configuration
+[tool.pyright]
+  exclude          = ["**/__pycache__", "./alembic"]
+  include          = ["app", "scripts", "tests"]
+  typeCheckingMode = "standard"
+  venv             = ".venv"
+  venvPath         = "."
+
 [tool.ruff]
   fix            = true
   line-length    = 120
   target-version = "py311"
 
   # Exclude automatically generated files from linting
-  extend-exclude = ["*/.venv/*", "*/.vscode/*"]
+  extend-exclude = ["*/.venv/*"]
 
   [tool.ruff.lint]
     extend-select = [
