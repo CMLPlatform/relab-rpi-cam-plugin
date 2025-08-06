@@ -40,7 +40,7 @@ Temporary Items
 .nfs*
 
 ## VS Code
-.vscode/
+.vscode/*
 *.code-workspace
 .history/
 
@@ -116,3 +116,7 @@ data/hls/
 
 # Captured images
 data/images/
+
+# VS Code settings
+!.vscode/settings.json
+!.vscode/extensions.json
