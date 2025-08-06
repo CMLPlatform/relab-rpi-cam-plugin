@@ -1,0 +1,143 @@
+[project]
+  # Project metadata
+  authors = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
+  classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Graphics :: Capture",
+    "Topic :: Multimedia :: Video :: Capture",
+    "Topic :: System :: Hardware",
+  ]
+  description = "Raspberry Pi Camera plugin for CML Reverse Engineering Lab app"
+  license = "AGPL-3.0-or-later"
+  maintainers = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
+  name = "relab-rpi-cam-plugin"
+  readme = "README.md"
+
+  # Dependencies and version constraints
+  dependencies = ["fastapi[standard]>=0.115.8", "pillow>=10.0.0", "pydantic-settings>=2.8.0"]
+
+  requires-python = "~=3.11.2"
+  version         = "0.1.0"
+
+  [project.urls] # TODO: Update these URLs when moving to new repo
+    Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
+    Issues     = "https://github.com/CMLPlatform/relab-rpi-cam-plugin/issues"
+    Repository = "https://github.com/CMLPlatform/relab-rpi-cam-plugin.git"
+
+[dependency-groups]
+  dev = ["pre-commit>=4.2.0", "ruff>=0.9.6"]
+
+## Ruff configuration
+[tool.ruff]
+  fix            = true
+  line-length    = 120
+  target-version = "py311"
+
+  # Exclude automatically generated files from linting
+  extend-exclude = ["*/.venv/*", "*/.vscode/*"]
+
+  [tool.ruff.lint]
+    extend-select = [
+      "A",      # flake8-builtins (checks for conflicts with Python builtins)
+      "ANN",    # flake8-annotations (checks for missing type annotations)
+      "ARG",    # flake8-unused-arguments
+      "ASYNC",  # flake8-async
+      "B",      # flake8-bugbear (fixes typical bugs)
+      "BLE",    # flake8-blind-except
+      "C4",     # flake8-comprehensions (fixes iterable comprehensions)
+      "C90",    # mccabe
+      "D",      # pydocstyle
+      "DTZ",    # flake8-datetimez (checks for naive datetime uses without timezone)
+      "E",      # pycodestyle errors
+      "EM",     # flake8-errmsgs (checks for error messages)
+      "FAST",   # fastapi
+      "FBT",    # flake8-boolean-trap
+      "FIX",    # flake8-fixme
+      "FLY",    # flynt (replaces `str.join` calls with f-strings)
+      "FURB",   # refurb (refurbishes code)
+      "G",      # flake8-logging-format
+      "I",      # isort
+      "ICN",    # flake8-import-conventions
+      "INP",    # flake8-no-pep420 (checks for implicit namespace packages)
+      "ISC",    # flake8-implicit-str-concat (fixes implicit string concatenation)
+      "LOG",    # flake8-logging
+      "N",      # pep8-naming (checks for naming conventions)
+      "PERF",   # Perflint (checks for performance issues)
+      "PGH",    # pygrep-hooks (checks for common Python issues)
+      "PIE",    # flake8-pie (checks for miscellaneous issues)
+      "PL",     # Pylint (checks for pylint errors)
+      "PT",     # flake8-pytest-style (checks for pytest fixtures)
+      "PTH",    # lake8-use-pathlib (ensures pathlib is used instead of os.path)
+      "Q004",   # flake8-quotes: unnecessary-escaped-quote (other 'Q' rules can conflict with formatter)
+      "RET",    # flake8-return (checks return values)
+      "RUF",    # Ruff-specific rules
+      "S",      # flake8-bandit (security)
+      "SIM",    # flake8-simplify
+      "T10",    # flake8-debugger (checks for debugger calls)
+      "T20",    # flake8-print (checks for print calls)
+      "TCH",    # flake8-type-checking
+      "TID252", # flake8-tidy-imports: relative-imports (replaces relative imports with absolute imports)
+      "TRY",    # tryceratops (checks for common issues with try-except blocks)
+      "UP",     # pyupgrade (upgrades Python syntax)
+      "W",      # pycodestyle warnings
+    ]
+
+    fixable = [
+      "ASYNC",  # flake8-async
+      "B",      # flake8-bugbear (fixes typical bugs)
+      "C4",     # flake8-comprehensions (fixes iterable comprehensions)
+      "D",      # pydocstyle
+      "E",      # pycodestyle errors
+      "EM",     # flake8-errmsgs (checks for error messages)
+      "FAST",   # fastapi
+      "FLY",    # flynt (replaces `str.join` calls with f-strings)
+      "FURB",   # refurb (refurbishes code)
+      "G",      # flake8-logging-format
+      "I",      # isort
+      "ICN",    # flake8-import-conventions
+      "ISC",    # flake8-implicit-str-concat (fixes implicit string concatenation)
+      "LOG",    # flake8-logging
+      "N",      # pep8-naming (checks for naming conventions)
+      "PERF",   # Perflint (checks for performance issues)
+      "PGH",    # pygrep-hooks (checks for common Python issues)
+      "PIE",    # flake8-pie (checks for miscellaneous issues)
+      "PL",     # Pylint (checks for pylint errors)
+      "PT",     # flake8-pytest-style (checks for pytest fixtures)
+      "PTH",    # lake8-use-pathlib (ensures pathlib is used instead of os.path)
+      "Q004",   # flake8-quotes: unnecessary-escaped-quote (other 'Q' rules can conflict with formatter)
+      "RET",    # flake8-return (checks return values)
+      "RUF",    # Ruff-specific rules
+      "S",      # flake8-bandit (security)
+      "SIM",    # flake8-simplify
+      "TCH",    # flake8-type-checking
+      "TID252", # flake8-tidy-imports: relative-imports (replaces relative imports with absolute imports)
+      "TRY",    # tryceratops (checks for common issues with try-except blocks)
+      "UP",     # pyupgrade (upgrades Python syntax)
+      "W",      # pycodestyle warnings
+    ]
+
+    # These rules are ignored to prevent conflicts with formatter or because they are overly strict
+    ignore = [
+      "ANN204", # missing-return-type-special-method
+      "D102",   # undocumented-public-method
+      "D104",   # undocumented-public-package
+      "D105",   # undocumented-magic-method
+      "D107",   # undocumented-public-init
+      "D206",   # indent-with-spaces
+      "D300",   # triple-single-quotes
+      "E111",   # indentation-with-invalid-multiple
+      "E114",   # indentation-with-invalid-multiple-comment
+      "E117",   # over-indented
+      "RET504", # unnecessary-assign
+      "W191",   # tab-indentation
+    ]
+
+    [tool.ruff.lint.pydocstyle]
+      convention = "google"
+
+    [tool.ruff.lint.pylint]
+      allow-magic-value-types = ["int"]

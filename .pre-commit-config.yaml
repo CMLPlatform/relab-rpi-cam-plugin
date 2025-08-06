@@ -1,0 +1,8 @@
+# Configuration of Pre-commit Hooks. For more information, see https://pre-commit.com.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.7
+    hooks:
+      - id: ruff-check
+        args: ["--fix", "--ignore", "FIX002"]  # Allow TODO comments in commits.
+      - id: ruff-format
