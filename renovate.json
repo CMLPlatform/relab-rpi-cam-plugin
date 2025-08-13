@@ -8,5 +8,6 @@
     "schedule:weekly"
   ],
 
-  "labels": ["dependencies", "renovate"]
+  "labels": ["dependencies", "renovate"],
+  "ignorePaths": [".python-version"]
 }
