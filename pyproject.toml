@@ -20,7 +20,7 @@
   # Dependencies and version constraints
   dependencies = ["fastapi[standard]>=0.115.8", "pillow>=10.0.0", "pydantic-settings>=2.8.0"]
 
-  requires-python = "~=3.11.2"
+  requires-python = "~=3.11"
   version         = "0.1.0"
 
   [project.urls] # TODO: Update these URLs when moving to new repo
