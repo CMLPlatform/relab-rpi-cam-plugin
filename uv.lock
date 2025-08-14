@@ -1,6 +1,6 @@
 version = 1
 revision = 3
-requires-python = ">=3.11.2, <3.12"
+requires-python = "==3.11.*"
 
 [[package]]
 name = "annotated-types"
@@ -580,7 +580,7 @@ wheels = [
 [[package]]
 name = "relab-rpi-cam-plugin"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "pillow" },

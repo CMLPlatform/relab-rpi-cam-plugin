@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.core.config import settings
+from relab_rpi_cam_plugin.core.config import settings
 
 
 async def setup_directory(path: Path) -> Path:

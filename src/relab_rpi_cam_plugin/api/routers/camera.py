@@ -4,9 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.models.camera import CameraMode, CameraStatusView
-from app.api.services.camera_manager import ActiveStreamError
+from relab_rpi_cam_plugin.api.dependencies.camera_management import CameraManagerDependency
+from relab_rpi_cam_plugin.api.models.camera import CameraMode, CameraStatusView
+from relab_rpi_cam_plugin.api.services.camera_manager import ActiveStreamError
 
 router = APIRouter(prefix="/camera", tags=["camera"])
 

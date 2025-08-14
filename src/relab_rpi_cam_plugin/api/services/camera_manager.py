@@ -11,17 +11,18 @@ from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from pydantic import AnyUrl
 
-from app.api.models.camera import CameraMode, CameraStatusView
-from app.api.models.images import ImageCaptureResponse, ImageMetadata
-from app.api.models.stream import (
+from relab_rpi_cam_plugin.api.models.camera import CameraMode, CameraStatusView
+from relab_rpi_cam_plugin.api.models.images import ImageCaptureResponse, ImageMetadata
+from relab_rpi_cam_plugin.api.models.stream import (
     Stream,
     StreamMode,
     StreamView,
     YoutubeConfigRequiredError,
     YoutubeStreamConfig,
 )
-from app.core.config import settings
-from app.utils.files import clear_directory
+from relab_rpi_cam_plugin.api.services.stream import get_ffmpeg_output
+from relab_rpi_cam_plugin.core.config import settings
+from relab_rpi_cam_plugin.utils.files import clear_directory
 
 
 class YouTubeValidationError(Exception):
@@ -63,6 +64,15 @@ class CameraManager:
             if self.lock.locked():
                 self.lock.release()
 
+    @staticmethod
+    def _get_camera_config(mode: CameraMode, camera: Picamera2) -> dict:
+        """Camera configuration generator."""
+        match mode:
+            case CameraMode.PHOTO:
+                return camera.create_still_configuration(main={"size": (1920, 1080)}, raw=None)
+            case CameraMode.VIDEO:
+                return camera.create_video_configuration(raw=None)
+
     async def _setup_camera(self, mode: CameraMode) -> Picamera2:
         """Setup camera for specific mode."""
         if self.stream.is_active and mode == CameraMode.PHOTO:
@@ -79,9 +89,10 @@ class CameraManager:
                 # Stop camera if it's running before switching modes
                 await asyncio.to_thread(self.camera.stop)
 
-            config = mode.get_config(self.camera)
-            self.camera.configure(config)  # pyright: ignore reportOptionalMemberAccess  # Camera is guaranteed to be initialized by the above lines
+            config = self._get_camera_config(mode, self.camera)  # pyright: ignore reportOptionalMemberAccess  # Camera is guaranteed to be initialized by the above lines
+            self.camera.configure(config)  # pyright: ignore reportOptionalMemberAccess
             await asyncio.to_thread(self.camera.start)  # pyright: ignore reportOptionalMemberAccess
+
             self.current_mode = mode
             return self.camera
 
@@ -129,9 +140,8 @@ class CameraManager:
 
         async with self._camera_lock():
             try:
-                self.stream._encoder = H264Encoder()
-                self.stream._output = await mode.get_ffmpeg_output(youtube_config)
-                await asyncio.to_thread(camera.start_recording, self.stream._encoder, self.stream._output)
+                stream_output = await get_ffmpeg_output(mode, youtube_config)
+                await asyncio.to_thread(camera.start_recording, H264Encoder(), stream_output)
                 self.stream.mode = mode
                 self.stream.url = mode.get_url(youtube_config)
                 self.stream.started_at = datetime.now(UTC) - timedelta(seconds=5)
@@ -139,8 +149,6 @@ class CameraManager:
 
             # TODO: Improve error handling here
             except Exception as e:
-                self.stream._encoder = None
-                self.stream._output = None
                 err_msg = f"Failed to start streaming: {e}"
                 raise RuntimeError(err_msg) from e
 

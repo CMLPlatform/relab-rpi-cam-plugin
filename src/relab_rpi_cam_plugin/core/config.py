@@ -6,7 +6,7 @@ from pydantic import HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Set the project base directory and .env file
-BASE_DIR: Path = (Path(__file__).resolve().parent.parent.parent).resolve()
+BASE_DIR: Path = (Path(__file__).resolve().parents[3]).resolve()
 
 
 class Settings(BaseSettings):
