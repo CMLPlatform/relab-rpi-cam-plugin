@@ -1,15 +1,15 @@
 """Main router for the Raspberry Pi camera API."""
 
-from fastapi import APIRouter, Security
+from fastapi import APIRouter, Depends
 
 from relab_rpi_cam_plugin.api.dependencies.auth import verify_request
-from relab_rpi_cam_plugin.api.routers.camera import router as camera_router
-from relab_rpi_cam_plugin.api.routers.images import router as images_router
-from relab_rpi_cam_plugin.api.routers.stream import router as stream_router
+from relab_rpi_cam_plugin.api.routers import camera, images, stream
+from relab_rpi_cam_plugin.api.routers.frontend import auth, homepage, stream_viewer
 
-# Set up API key verification for the main router
-router = APIRouter(dependencies=[Security(verify_request)])
+router = APIRouter()
 
-router.include_router(camera_router)
-router.include_router(images_router)
-router.include_router(stream_router)
+for r in [auth.router, stream_viewer.router, homepage.router]:
+    router.include_router(r, include_in_schema=False)
+
+for r in [camera.router, images.router, stream.router]:
+    router.include_router(r, dependencies=[Depends(verify_request)])

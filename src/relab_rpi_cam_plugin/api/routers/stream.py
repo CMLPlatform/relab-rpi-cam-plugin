@@ -3,11 +3,10 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Body, HTTPException, Query, Security
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from relab_rpi_cam_plugin.api.dependencies.auth import verify_request
 from relab_rpi_cam_plugin.api.dependencies.camera_management import CameraManagerDependency
 from relab_rpi_cam_plugin.api.models.stream import (
     StreamMode,
@@ -18,7 +17,6 @@ from relab_rpi_cam_plugin.api.models.stream import (
 from relab_rpi_cam_plugin.api.services.camera_manager import ActiveStreamError, YouTubeValidationError
 from relab_rpi_cam_plugin.core.config import settings
 
-# Constants
 HLS_DIR = settings.hls_path
 
 # Initialize templates
@@ -70,10 +68,7 @@ async def status_redirect() -> RedirectResponse:
 
 
 @router.get("/hls/{file_path:path}", summary="HLS files for local streaming")
-async def hls_file(
-    file_path: str,
-    camera_manager: CameraManagerDependency,
-) -> FileResponse:
+async def hls_file(file_path: str, camera_manager: CameraManagerDependency) -> FileResponse:
     """Serve HLS files for local streaming."""
     # TODO: Use StreamResponse here and in the proxy HLS endpoint of the Main API instead of FileResponse
     if camera_manager.stream.mode != StreamMode.LOCAL:
@@ -93,31 +88,11 @@ async def hls_file(
 
 
 @router.get("/hls", summary="HLS manifest file")
-async def hls_manifest(
-    camera_manager: CameraManagerDependency,
-) -> RedirectResponse:
+async def hls_manifest(camera_manager: CameraManagerDependency) -> RedirectResponse:
     """Redirect to HLS manifest file."""
     if camera_manager.stream.mode != StreamMode.LOCAL:
         raise HTTPException(404, "No local stream active")
     return RedirectResponse(router.url_path_for("hls_file", file_path=settings.hls_manifest_filename))
-
-
-@router.get("/watch", summary="Watch video stream in browser")
-async def watch_stream(
-    api_key: Annotated[str, Security(verify_request)],
-    camera_manager: CameraManagerDependency,
-) -> HTMLResponse:
-    """Redirect to appropriate stream viewer based on active stream."""
-    if camera_manager.stream.mode == StreamMode.YOUTUBE:
-        if not camera_manager.stream.youtube_config:
-            raise HTTPException(400, "No broadcast key provided for YouTube stream")
-        return templates.TemplateResponse(
-            "youtube_stream_viewer.html", {"broadcast_key": camera_manager.stream.youtube_config.broadcast_key}
-        )
-    # Default to local stream viewer if no stream active
-    response = templates.TemplateResponse("local_stream_viewer.html")
-    response.set_cookie(key="X-API-Key", value=api_key, httponly=True, secure=True, samesite="lax")
-    return response
 
 
 @router.delete("/stop", status_code=204, summary="Stop streaming video")
