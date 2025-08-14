@@ -1,5 +1,10 @@
 # Configuration of Pre-commit Hooks. For more information, see https://pre-commit.com.
 repos:
+  - repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update
+    rev: v0.8.0
+    hooks:
+      - id: pre-commit-update # Autoupdate pre-commit hooks
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
