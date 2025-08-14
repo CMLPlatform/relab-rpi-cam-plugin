@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Directory paths
     hls_path: Path = BASE_DIR / "data" / "hls"  # Used for storing temporary HLS video files
     image_path: Path = BASE_DIR / "data" / "images"  # Used for temporary storing of captured images
-    templates_path: Path = BASE_DIR / "app" / "templates"  # Used for storing HTML templates
+    templates_path: Path = BASE_DIR / "templates"  # Used for storing HTML templates
 
     # HLS settings
     hls_manifest_filename: str = "master.m3u8"
@@ -39,6 +39,9 @@ class Settings(BaseSettings):
 
     # Camera settings
     camera_standby_s: int = 60 * 10  # Camera standby time in seconds (10 minutes)
+
+    # Auth
+    auth_key_name: str = "X-API-Key"
 
 
 # Create a settings instance that can be imported throughout the app

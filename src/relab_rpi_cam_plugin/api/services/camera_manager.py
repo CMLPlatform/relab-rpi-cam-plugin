@@ -140,7 +140,7 @@ class CameraManager:
 
         async with self._camera_lock():
             try:
-                stream_output = await get_ffmpeg_output(mode, youtube_config)
+                stream_output = get_ffmpeg_output(mode, youtube_config)
                 await asyncio.to_thread(camera.start_recording, H264Encoder(), stream_output)
                 self.stream.mode = mode
                 self.stream.url = mode.get_url(youtube_config)
