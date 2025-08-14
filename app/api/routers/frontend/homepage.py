@@ -1,8 +1,10 @@
+"""Homepage router."""
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from relab_rpi_cam_plugin.core.config import settings
+from app.core.config import settings
 
 HLS_DIR = settings.hls_path
 

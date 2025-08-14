@@ -2,10 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Form, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from relab_rpi_cam_plugin.core.config import settings
+from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

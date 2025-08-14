@@ -4,7 +4,7 @@ from enum import Enum
 
 from pydantic import BaseModel
 
-from relab_rpi_cam_plugin.api.models.stream import StreamView
+from .stream import StreamView
 
 
 class CameraMode(Enum):

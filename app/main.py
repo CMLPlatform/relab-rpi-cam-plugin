@@ -8,16 +8,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from relab_rpi_cam_plugin.__version__ import version
-from relab_rpi_cam_plugin.api.dependencies.camera_management import (
+from app.__version__ import version
+from app.api.dependencies.camera_management import (
     camera_manager,
     camera_to_standby,
     check_stream_duration,
 )
-from relab_rpi_cam_plugin.api.routers.main import router as main_router
-from relab_rpi_cam_plugin.core.config import settings
-from relab_rpi_cam_plugin.utils.files import cleanup_images, setup_directory
-from relab_rpi_cam_plugin.utils.tasks import repeat_task
+from app.api.routers.main import router as main_router
+from app.core.config import settings
+from app.utils.files import cleanup_images, setup_directory
+from app.utils.tasks import repeat_task
 
 logger = logging.getLogger(__name__)
 

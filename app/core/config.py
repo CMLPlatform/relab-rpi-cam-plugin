@@ -6,7 +6,7 @@ from pydantic import HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Set the project base directory and .env file
-BASE_DIR: Path = (Path(__file__).resolve().parents[3]).resolve()
+BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
 
 
 class Settings(BaseSettings):
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Directory paths
     hls_path: Path = BASE_DIR / "data" / "hls"  # Used for storing temporary HLS video files
     image_path: Path = BASE_DIR / "data" / "images"  # Used for temporary storing of captured images
-    templates_path: Path = BASE_DIR / "templates"  # Used for storing HTML templates
+    templates_path: Path = BASE_DIR / "app" / "templates"  # Used for storing HTML templates
 
     # HLS settings
     hls_manifest_filename: str = "master.m3u8"

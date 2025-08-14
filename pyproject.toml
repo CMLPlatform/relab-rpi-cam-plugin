@@ -1,24 +1,23 @@
 [project]
-  # Project metadata
   authors = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
   classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: FastAPI",
-    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Natural Language :: English",
     "Programming Language :: Python :: 3.11",
     "Topic :: Multimedia :: Graphics :: Capture",
     "Topic :: Multimedia :: Video :: Capture",
     "Topic :: System :: Hardware",
   ]
+  # Project metadata
   description = "Raspberry Pi Camera plugin for CML Reverse Engineering Lab app"
-  license = "AGPL-3.0-or-later"
+  license     = "AGPL-3.0-or-later"
   maintainers = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
-  name = "relab-rpi-cam-plugin"
-  readme = "README.md"
+  name        = "relab-rpi-cam-plugin"
+  readme      = "README.md"
 
   # Dependencies and version constraints
-  dependencies = ["fastapi[standard]>=0.115.8", "pillow>=10.0.0", "pydantic-settings>=2.8.0"]
+  dependencies = ["fastapi[standard]>=0.115.8", "pillow>=10.0.0", "pydantic-settings>=2.8.0", "relab-rpi-cam-models"]
 
   requires-python = ">=3.11,<3.12" # Python 3.11.x is required for the integration of the system-site picamera2 library
   version         = "0.1.0"        # NOTE: Versioning is handled by commitizen
@@ -31,18 +30,13 @@
 [dependency-groups]
   dev = ["commitizen>=4.8.3", "pre-commit>=4.2.0", "pyright>=1.1.403", "ruff>=0.9.6"]
 
-## Build setup
-[build-system]
-  build-backend = "uv_build"
-  requires      = ["uv_build>=0.8.10"]
-
 ### Tools configuration
 [tool.commitizen]
   major_version_zero       = true
   name                     = "cz_conventional_commits"
   tag_format               = "v$version"
   update_changelog_on_bump = true
-  version_files            = ["src/relab_rpi_cam_plugin/__version__.py"]
+  version_files            = ["app/__version__.py"]
   version_provider         = "pep621"
   version_scheme           = "semver2"
 
@@ -162,3 +156,10 @@
 
     [tool.ruff.lint.pylint]
       allow-magic-value-types = ["int"]
+
+# UV configuration
+[tool.uv.sources]
+  relab_rpi_cam_models = { workspace = true }
+
+[tool.uv.workspace]
+  members = ["relab_rpi_cam_models"]

@@ -1,13 +1,10 @@
 """Models for Stream information."""
 
 from enum import Enum
-from urllib.parse import urljoin
 
-import httpx
 from pydantic import AnyUrl, BaseModel, Field, PastDatetime, PositiveFloat
 
-from relab_rpi_cam_plugin.api.models.images import BaseMetadata, CameraProperties, CaptureMetadata
-from relab_rpi_cam_plugin.core.config import settings
+from .images import BaseMetadata, CameraProperties, CaptureMetadata
 
 
 ### Custom Exceptions ###
@@ -32,40 +29,12 @@ class YoutubeStreamConfig(BaseModel):
     stream_key: str = Field(description="Stream key for YouTube streaming")
     broadcast_key: str = Field(description="Broadcast key for YouTube streaming")
 
-    async def validate_stream_key(self) -> bool:
-        """Validate stream key by checking if the upload URL is valid."""
-        url_str = str(self.get_upload_url())
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url_str)
-            return response.status_code == 202
-
-    def get_upload_url(self) -> AnyUrl:
-        """Get YouTube HLS upload URL pointing to the stream key."""
-        return AnyUrl(
-            f"https://a.upload.youtube.com/http_upload_hls?cid={self.stream_key}&copy=0&file={settings.hls_manifest_filename}"
-        )
-
-    def get_broadcast_url(self) -> AnyUrl:
-        """Get YouTube broadcast URL."""
-        return AnyUrl(f"https://youtube.com/watch?v={self.broadcast_key}")
-
 
 class StreamMode(str, Enum):
     """Stream mode. Contains ffmpeg stream and URL construction logic for each mode."""
 
     YOUTUBE = "youtube"
     LOCAL = "local"
-
-    def get_url(self, youtube_config: YoutubeStreamConfig | None = None) -> AnyUrl:
-        """Get stream URL for this mode."""
-        match self:
-            case StreamMode.YOUTUBE:
-                if not youtube_config:
-                    raise YoutubeConfigRequiredError
-                return youtube_config.get_broadcast_url()
-
-            case StreamMode.LOCAL:
-                return AnyUrl(urljoin(str(settings.base_url), "/stream/watch"))
 
 
 class StreamMetadata(BaseMetadata):
