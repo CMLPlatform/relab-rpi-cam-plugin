@@ -7,16 +7,16 @@ from fastapi import APIRouter, Body, HTTPException, Query, Security
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.api.dependencies.auth import verify_request
-from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.models.stream import (
+from relab_rpi_cam_plugin.api.dependencies.auth import verify_request
+from relab_rpi_cam_plugin.api.dependencies.camera_management import CameraManagerDependency
+from relab_rpi_cam_plugin.api.models.stream import (
     StreamMode,
     StreamView,
     YoutubeConfigRequiredError,
     YoutubeStreamConfig,
 )
-from app.api.services.camera_manager import ActiveStreamError, YouTubeValidationError
-from app.core.config import settings
+from relab_rpi_cam_plugin.api.services.camera_manager import ActiveStreamError, YouTubeValidationError
+from relab_rpi_cam_plugin.core.config import settings
 
 # Constants
 HLS_DIR = settings.hls_path

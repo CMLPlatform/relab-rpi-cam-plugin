@@ -3,9 +3,9 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.models.images import ImageCaptureResponse
-from app.core.config import settings
+from relab_rpi_cam_plugin.api.dependencies.camera_management import CameraManagerDependency
+from relab_rpi_cam_plugin.api.models.images import ImageCaptureResponse
+from relab_rpi_cam_plugin.core.config import settings
 
 router = APIRouter(prefix="/images", tags=["images"])
 
