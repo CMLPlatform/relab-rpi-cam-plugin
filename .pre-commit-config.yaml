@@ -1,7 +1,7 @@
 # Configuration of Pre-commit Hooks. For more information, see https://pre-commit.com.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-added-large-files
       - id: check-case-conflict # Check for files with names that differ only in case.
@@ -16,10 +16,12 @@ repos:
       - id: no-commit-to-branch # Prevent commits to main and master branches.
       - id: trailing-whitespace
         args: ["--markdown-linebreak-ext", "md"] # Preserve Markdown hard line breaks.
+
   - repo: https://github.com/gitleaks/gitleaks # Detect secrets in commits.
     rev: v8.28.0
     hooks:
       - id: gitleaks
+
   - repo: https://github.com/executablebooks/mdformat
     rev: 0.7.22
     hooks:
@@ -28,16 +30,25 @@ repos:
           - mdformat-gfm # Support GitHub Flavored Markdown.
           - mdformat-ruff # Support Python code blocks linted with Ruff.
           - mdformat-tables # Support GitHub style tables.
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.8.3
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
   - repo: https://github.com/astral-sh/ruff-pre-commit # Lint and format Python code with Ruff.
-    rev: v0.12.7
+    rev: v0.12.8
     hooks:
       - id: ruff-check
         args: ["--fix", "--ignore", "FIX002"] # Allow TODO comments in commits.
       - id: ruff-format
+
   - repo: https://github.com/astral-sh/uv-pre-commit # Update the uv lockfile.
-    rev: 0.8.5
+    rev: 0.8.10
     hooks:
       - id: uv-lock
+
   - repo: https://github.com/RobertCraigie/pyright-python # Check typing with Pyright.
     rev: v1.1.403
     hooks:

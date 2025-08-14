@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.__version__ import version
 from app.api.dependencies.camera_management import camera_manager, camera_to_standby, check_stream_duration
 from app.api.routers.main import router as main_router
 from app.core.config import settings
@@ -52,7 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
 
 app = FastAPI(
     lifespan=lifespan,
-    version="0.1.0",
+    version=version,
     title="Raspberry Pi Camera API",
     description="API for Raspberry Pi camera streaming and image capture",
 )

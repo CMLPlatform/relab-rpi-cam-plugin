@@ -20,18 +20,27 @@
   # Dependencies and version constraints
   dependencies = ["fastapi[standard]>=0.115.8", "pillow>=10.0.0", "pydantic-settings>=2.8.0"]
 
-  requires-python = "~=3.11"
-  version         = "0.1.0"
+  requires-python = "~=3.11" # Python 3.11 is required for the integration of the system-site picamera2 library
+  version         = "0.1.0"  # NOTE: Versioning is handled by commitizen
 
-  [project.urls] # TODO: Update these URLs when moving to new repo
+  [project.urls]
     Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
     Issues     = "https://github.com/CMLPlatform/relab-rpi-cam-plugin/issues"
     Repository = "https://github.com/CMLPlatform/relab-rpi-cam-plugin.git"
 
 [dependency-groups]
-  dev = ["pre-commit>=4.2.0", "pyright>=1.1.403", "ruff>=0.9.6"]
+  dev = ["commitizen>=4.8.3", "pre-commit>=4.2.0", "pyright>=1.1.403", "ruff>=0.9.6"]
 
 ### Tools configuration
+[tool.commitizen]
+  major_version_zero       = true
+  name                     = "cz_conventional_commits"
+  tag_format               = "v$version"
+  update_changelog_on_bump = true
+  version_files            = ["backend/app/__version__.py"]
+  version_provider         = "pep621"
+  version_scheme           = "semver2"
+
 [tool.pyright]
   exclude          = ["**/__pycache__", "./alembic"]
   include          = ["app", "scripts", "tests"]
