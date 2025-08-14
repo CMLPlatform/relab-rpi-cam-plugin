@@ -11,18 +11,18 @@ from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from pydantic import AnyUrl
 
-from relab_rpi_cam_plugin.api.models.camera import CameraMode, CameraStatusView
-from relab_rpi_cam_plugin.api.models.images import ImageCaptureResponse, ImageMetadata
-from relab_rpi_cam_plugin.api.models.stream import (
+from app.api.services.stream import get_ffmpeg_output, get_stream_url, validate_stream_key
+from app.core.config import settings
+from app.utils.files import clear_directory
+from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
+from relab_rpi_cam_models.images import ImageCaptureResponse, ImageMetadata
+from relab_rpi_cam_models.stream import (
     Stream,
     StreamMode,
     StreamView,
     YoutubeConfigRequiredError,
     YoutubeStreamConfig,
 )
-from relab_rpi_cam_plugin.api.services.stream import get_ffmpeg_output
-from relab_rpi_cam_plugin.core.config import settings
-from relab_rpi_cam_plugin.utils.files import clear_directory
 
 
 class YouTubeValidationError(Exception):
@@ -130,7 +130,7 @@ class CameraManager:
         if mode == StreamMode.YOUTUBE:
             if not youtube_config:
                 raise YoutubeConfigRequiredError
-            if not await youtube_config.validate_stream_key():
+            if not await validate_stream_key(youtube_config):
                 raise YouTubeValidationError(youtube_config.stream_key)
 
         if self.stream.is_active:
@@ -143,7 +143,7 @@ class CameraManager:
                 stream_output = get_ffmpeg_output(mode, youtube_config)
                 await asyncio.to_thread(camera.start_recording, H264Encoder(), stream_output)
                 self.stream.mode = mode
-                self.stream.url = mode.get_url(youtube_config)
+                self.stream.url = get_stream_url(mode, youtube_config)
                 self.stream.started_at = datetime.now(UTC) - timedelta(seconds=5)
                 self.stream.youtube_config = youtube_config
 

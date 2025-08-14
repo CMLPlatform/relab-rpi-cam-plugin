@@ -4,10 +4,10 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from relab_rpi_cam_plugin.api.dependencies.camera_management import CameraManagerDependency
-from relab_rpi_cam_plugin.api.models.stream import StreamMode
-from relab_rpi_cam_plugin.api.routers.frontend.auth import router as auth_router
-from relab_rpi_cam_plugin.core.config import settings
+from app.api.dependencies.camera_management import CameraManagerDependency
+from app.api.routers.frontend.auth import router as auth_router
+from app.core.config import settings
+from relab_rpi_cam_models.stream import StreamMode
 
 HLS_DIR = settings.hls_path
 
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/stream/watch", tags=["stream"])
 
 
 @router.get("", summary="Watch video stream in browser")
-async def watch_stream(request: Request, camera_manager: CameraManagerDependency) -> HTMLResponse:
+async def watch_stream(request: Request, camera_manager: CameraManagerDependency) -> HTMLResponse | RedirectResponse:
     """Redirect to appropriate stream viewer based on active stream."""
     # Check if user is logged in
     logged_in = bool(request.cookies.get(settings.auth_key_name))

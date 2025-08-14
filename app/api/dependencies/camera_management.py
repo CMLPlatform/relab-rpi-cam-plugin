@@ -6,8 +6,8 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from relab_rpi_cam_plugin.api.services.camera_manager import CameraManager
-from relab_rpi_cam_plugin.core.config import settings
+from app.api.services.camera_manager import CameraManager
+from app.core.config import settings
 
 camera_manager = CameraManager()
 

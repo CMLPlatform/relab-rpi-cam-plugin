@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Security
 from fastapi.security import APIKeyCookie, APIKeyHeader
 
-from relab_rpi_cam_plugin.core.config import settings
+from app.core.config import settings
 
 # TODO: Improve API key handling
 #  - Use hashed keys instead of encryption

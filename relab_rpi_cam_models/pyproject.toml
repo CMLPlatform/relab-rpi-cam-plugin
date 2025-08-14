@@ -1,0 +1,26 @@
+[project]
+  authors = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
+  classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Graphics :: Capture",
+    "Topic :: Multimedia :: Video :: Capture",
+    "Topic :: System :: Hardware",
+  ]
+  description = "Shared Pydantic models for RElab Raspberry Pi Camera plugin models"
+  license = "AGPL-3.0-or-later"
+  maintainers = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
+  name = "relab-rpi-cam-models"
+  readme = "README.md"
+  version = "0.1.0" # NOTE: Versioning is handled by commitizen
+
+  [project.urls]
+    Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
+    Issues     = "https://github.com/CMLPlatform/relab-rpi-cam-plugin/issues"
+    Repository = "https://github.com/CMLPlatform/relab-rpi-cam-plugin.git"
+
+[build-system]
+  build-backend = "uv_build"
+  requires      = ["uv_build>=0.8.0"]

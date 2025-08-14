@@ -102,7 +102,7 @@ Before configuring your device, register it on the platform at the `plugins/rpi-
 1. **Launch camera API**:
 
    ```bash
-   uv run fastapi run src/relab_rpi_cam_plugin/main.py --port 8018
+   uv run fastapi run app/main.py --port 8018
    ```
 
 1. **Test installation**:
@@ -148,7 +148,7 @@ libcamera-hello --list-cameras
 - Check that port 8018 is available: `sudo netstat -tlnp | grep :8018`
 - Verify all dependencies installed correctly
 - Review error logs for specific issues
-- Test with dev mode: `uv run fastapi dev src/relab_rpi_cam_plugin/main.py`
+- Test with dev mode: `uv run fastapi dev app/main.py`
 
 **Platform can't connect**:
 
@@ -177,5 +177,5 @@ uv sync
 uv run pre-commit install
 
 # Start development server with hot reload
-uv run fastapi dev src/relab_rpi_cam_plugin/main.py
+uv run fastapi dev app/main.py
 ```
