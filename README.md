@@ -178,4 +178,7 @@ uv run pre-commit install
 
 # Start development server with hot reload
 uv run fastapi dev app/main.py
+
+# Build model package
+uv build --package relab_rpi_cam_models
 ```
