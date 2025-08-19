@@ -1,11 +1,11 @@
 """Router for video streaming endpoints."""
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from app.api.dependencies.auth import require_cookie_auth
 from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.routers.frontend.auth import router as auth_router
 from app.core.config import settings
 from relab_rpi_cam_models.stream import StreamMode
 
@@ -15,32 +15,30 @@ HLS_DIR = settings.hls_path
 templates = Jinja2Templates(directory=settings.templates_path)
 
 # Initialize router
-router = APIRouter(prefix="/stream/watch", tags=["stream"])
+router = APIRouter(prefix="/stream/watch", tags=["stream"], dependencies=[Depends(require_cookie_auth)])
 
 
-@router.get("", summary="Watch video stream in browser")
-async def watch_stream(request: Request, camera_manager: CameraManagerDependency) -> HTMLResponse | RedirectResponse:
-    """Redirect to appropriate stream viewer based on active stream."""
-    # Check if user is logged in
-    logged_in = bool(request.cookies.get(settings.auth_key_name))
-    if not logged_in:
-        return RedirectResponse(
-            url=f"{auth_router.url_path_for('login_form')}?redirect_url=/stream/watch", status_code=303
-        )
+# YouTube stream viewer endpoint
+@router.get("/youtube", summary="Watch YouTube video stream in browser")
+async def watch_youtube_stream(request: Request) -> HTMLResponse:
+    """Render the YouTube stream viewer template."""
+    return templates.TemplateResponse(
+        "youtube_stream_viewer.html",
+        {"request": request},
+    )
 
+
+# Local stream viewer endpoint
+@router.get("/local", summary="Watch local video stream in browser")
+async def watch_local_stream(request: Request) -> HTMLResponse:
+    """Render the local stream viewer template."""
+    return templates.TemplateResponse("local_stream_viewer.html", {"request": request})
+
+
+# Main redirect endpoint
+@router.get("", summary="Redirect to appropriate stream viewer")
+async def redirect_stream_viewer(camera_manager: CameraManagerDependency) -> RedirectResponse:
+    """Redirect to the correct stream viewer endpoint based on stream mode."""
     if camera_manager.stream.mode == StreamMode.YOUTUBE:
-        if not camera_manager.stream.youtube_config:
-            raise HTTPException(400, "No broadcast key provided for YouTube stream")
-        return templates.TemplateResponse(
-            "youtube_stream_viewer.html",
-            {
-                "request": request,
-                "logged_in": logged_in,
-                "broadcast_key": camera_manager.stream.youtube_config.broadcast_key,
-            },
-        )
-
-    # Default to local stream viewer if no stream active
-    response = templates.TemplateResponse("local_stream_viewer.html", {"request": request, "logged_in": logged_in})
-
-    return response
+        return RedirectResponse(url=router.url_path_for("watch_youtube_stream"), status_code=303)
+    return RedirectResponse(url=router.url_path_for("watch_local_stream"), status_code=303)

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Security
+from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import APIKeyCookie, APIKeyHeader
 
 from app.core.config import settings
@@ -28,7 +28,7 @@ async def verify_request(
     # NOTE: We use Depends and not Security for the cookie because openapi does not work with cookie-based auth: https://github.com/swagger-api/swagger-js/issues/1163
     x_api_key_cookie: Annotated[str | None, Depends(api_key_cookie)] = None,
 ) -> str:
-    """Verify api key from header or cookie against authorized key."""
+    """General request verification checking API key in header or cookie."""
     api_key = x_api_key_header or x_api_key_cookie
 
     if not api_key:
@@ -36,3 +36,18 @@ async def verify_request(
     if api_key not in settings.authorized_api_keys:
         raise HTTPException(status_code=403, detail="Invalid API Key")
     return api_key
+
+
+async def require_cookie_auth(request: Request) -> bool:
+    """Check if user is authenticated via cookie, redirect to login if not."""
+    logged_in = bool(request.cookies.get(settings.auth_key_name))
+    if not logged_in:
+        current_path = str(request.url.path)
+        login_url = f"/login?redirect_url={current_path}"
+        raise HTTPException(status_code=status.HTTP_307_TEMPORARY_REDIRECT, headers={"Location": login_url})
+    return logged_in
+
+
+async def get_auth_status(request: Request) -> bool:
+    """Get authentication status without redirecting (for templates)."""
+    return bool(request.cookies.get(settings.auth_key_name))

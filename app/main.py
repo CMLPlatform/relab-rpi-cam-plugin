@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.__version__ import version
 from app.api.dependencies.camera_management import camera_manager, camera_to_standby, check_stream_duration
@@ -70,3 +71,4 @@ app.add_middleware(
 
 # Include routers
 app.include_router(main_router)
+app.mount("/static", StaticFiles(directory=settings.static_path), name="static")

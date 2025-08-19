@@ -2,52 +2,14 @@
 <html>
   <head>
     <title>YouTube Stream Viewer</title>
-    <style>
-      body {
-        margin: 20px;
-        display: grid;
-        place-items: center;
-        font-family: system-ui;
-      }
-      .container {
-        width: 1280px;
-        background: #f5f5f5;
-        border-radius: 8px;
-      }
-      .video-container {
-        width: 100%;
-        aspect-ratio: 16/9;
-      }
-      iframe {
-        width: 100%;
-        height: 100%;
-        border: none;
-      }
-      .controls {
-        display: flex;
-        gap: 20px;
-        padding: 20px;
-      }
-      button {
-        padding: 10px 20px;
-        border: none;
-        border-radius: 4px;
-        background: #007bff;
-        color: white;
-        cursor: pointer;
-      }
-      #status {
-        flex: 1;
-        color: #666;
-      }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}" />
   </head>
   <body>
-    <div class="container">
-      <div id="player" class="video-container"></div>
-      <div class="controls">
-        <button onclick="startStream()">Start Stream</button>
-        <button onclick="stopStream()">Stop Stream</button>
+    <div class="video-container">
+      <div id="player" class="video-element"></div>
+      <div class="video-controls">
+        <button onclick="startStream()" class="btn">Start Stream</button>
+        <button onclick="stopStream()" class="btn">Stop Stream</button>
         <div id="status"></div>
       </div>
     </div>
@@ -59,7 +21,7 @@
         try {
           const response = await fetch('/camera/status', { credentials: 'include' })
           const status = await response.json()
-          return status.stream.mode === 'youtube' && status.stream.is_active
+          return status.stream.mode === 'youtube' && status.stream.is_active && status.stream.youtube_config.broadcast_key
         } catch {
           return false
         }
@@ -74,10 +36,10 @@
       function createPlayer(url) {
         const videoId = new URL(url).searchParams.get('v')
         playerDiv.innerHTML = `
-                        <iframe src="https://www.youtube.com/embed/{{ broadcast_key }}?autoplay=1"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowfullscreen>
-                        </iframe>`
+          <iframe src="https://www.youtube.com/embed/{{ broadcast_key }}?autoplay=1"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowfullscreen>
+          </iframe>`
       }
 
       async function startStream() {
@@ -85,7 +47,7 @@
           statusDiv.innerHTML = 'Stream is already active'
           return
         }
-        statusDiv.innerHTML = 'Please start YouTube stream from camera controls'
+        statusDiv.innerHTML = 'Please start YouTube stream from camera controls using the API.'
       }
 
       async function stopStream() {
