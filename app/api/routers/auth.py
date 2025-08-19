@@ -2,24 +2,12 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Form, HTTPException, Query, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Form, HTTPException, Response
+from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-@router.get("/login", response_class=HTMLResponse)
-async def login_form(redirect_url: Annotated[str, Query(alias="redirect_url")] = "/") -> str:
-    """Render the login form."""
-    return f"""
-    <form action="/auth/login" method="post">
-        <input name="api_key" type="password" placeholder="API Key" required>
-        <input type="hidden" name="redirect_url" value="{redirect_url}">
-        <button type="submit">Login</button>
-    </form>
-    """
 
 
 @router.post("/login")

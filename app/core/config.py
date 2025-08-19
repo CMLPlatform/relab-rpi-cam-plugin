@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     hls_path: Path = BASE_DIR / "data" / "hls"  # Used for storing temporary HLS video files
     image_path: Path = BASE_DIR / "data" / "images"  # Used for temporary storing of captured images
     templates_path: Path = BASE_DIR / "app" / "templates"  # Used for storing HTML templates
+    static_path: Path = BASE_DIR / "app" / "static"  # Used for serving static files
     log_path: Path = BASE_DIR / "logs"  # Used for storing log files
 
     # HLS settings
