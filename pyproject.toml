@@ -20,7 +20,7 @@
   dependencies = ["fastapi[standard]>=0.115.8", "pillow>=10.0.0", "pydantic-settings>=2.8.0", "relab-rpi-cam-models"]
 
   requires-python = ">=3.11,<3.12" # Python 3.11.x is required for the integration of the system-site picamera2 library
-  version         = "0.1.0"        # NOTE: Versioning is handled by commitizen
+  version         = "0.1.1"        # NOTE: Versioning is handled by commitizen
 
   [project.urls]
     Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"

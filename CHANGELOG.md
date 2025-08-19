@@ -1,3 +1,11 @@
+# Changelog
+
+## v0.1.1 (2025-08-20)
+
+### Fix
+
+- **build**: bumped version to resolve a dependency issue on PyPI, as dependencies were only included after the initial publication.
+
 ## v0.1.0 (2025-08-20)
 
 ### Feat
