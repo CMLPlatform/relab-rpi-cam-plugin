@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     hls_ttl_s: int = 60  # Time-to-live for HLS video files in seconds (1 minute)
     image_ttl_s: int = 60 * 60  # Time-to-live for captured images in seconds (1 hour)
     max_stream_duration_s: int = 60 * 60 * 5  # Maximum duration for a stream in seconds (5 hours)
+    check_stream_interval_s: int = 60  # Interval for checking stream duration in seconds (1 minute)
 
     # Camera settings
     camera_standby_s: int = 60 * 10  # Camera standby time in seconds (10 minutes)
