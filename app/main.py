@@ -12,8 +12,10 @@ from app.api.dependencies.camera_management import camera_manager, camera_to_sta
 from app.api.routers.main import router as main_router
 from app.core.config import settings
 from app.utils.files import cleanup_images, setup_directory
+from app.utils.logging import setup_logging
 from app.utils.tasks import repeat_task
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
