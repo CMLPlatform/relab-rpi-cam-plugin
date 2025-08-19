@@ -16,6 +16,8 @@
   readme = "README.md"
   version = "0.1.0" # NOTE: Versioning is handled by commitizen
 
+  dependencies = ["Pillow>=10.4", "pydantic>=2.9"]
+
   [project.urls]
     Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
     Issues     = "https://github.com/CMLPlatform/relab-rpi-cam-plugin/issues"
