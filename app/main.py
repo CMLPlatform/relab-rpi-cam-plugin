@@ -1,6 +1,5 @@
 """Main module for the Raspberry Pi camera streaming application."""
 
-import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -9,11 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.__version__ import version
-from app.api.dependencies.camera_management import (
-    camera_manager,
-    camera_to_standby,
-    check_stream_duration,
-)
+from app.api.dependencies.camera_management import camera_manager, camera_to_standby, check_stream_duration
 from app.api.routers.main import router as main_router
 from app.core.config import settings
 from app.utils.files import cleanup_images, setup_directory
@@ -34,21 +29,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
     logger.info("Temporary file directories set up")
 
     # Start recurring cleanup tasks
-    tasks = [
-        asyncio.create_task(repeat_task(cleanup_images, settings.cleanup_interval_s, "cleanup_images")),
-        asyncio.create_task(repeat_task(camera_to_standby, settings.camera_standby_s, "camera_to_standby")),
-        asyncio.create_task(repeat_task(check_stream_duration, 60, "check_stream_duration")),
-    ]
+    recurring_tasks = {
+        repeat_task(cleanup_images, settings.cleanup_interval_s, "cleanup_images"),
+        repeat_task(camera_to_standby, settings.camera_standby_s, "camera_to_standby"),
+        repeat_task(check_stream_duration, settings.check_stream_interval_s, "check_stream_duration"),
+    }
     logger.info("Recurring cleanup tasks started")
-
     yield
 
-    # Cancel all background tasks
-    for task in tasks:
+    # Shutdown recurring tasks
+    for task in recurring_tasks:
         task.cancel()
-
-    # Wait for tasks to finish cancellation
-    await asyncio.gather(*tasks, return_exceptions=True)
 
     # Cleanup camera resources
     await camera_manager.cleanup(force=True)
@@ -59,13 +50,16 @@ app = FastAPI(
     lifespan=lifespan,
     version=version,
     title="Raspberry Pi Camera API",
-    description="API for Raspberry Pi camera streaming and image capture",
+    description=(
+        "This API allows you to remotely capture images and stream video from a Raspberry Pi camera. "
+        "It is used as a plugin for the RELab platform."
+        '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank"> RELab GitHub</a>.'
+    ),
 )
-
 # Add CORS middleware to allow requests from the main API host
 app.add_middleware(
     CORSMiddleware,
-    # Note that CORS origins must not have trailing slashes
+    # CORS origins cannot have trailing slashes
     allow_origins=[str(origin).rstrip("/") for origin in settings.allowed_cors_origins],
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
