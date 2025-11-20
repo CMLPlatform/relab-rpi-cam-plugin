@@ -29,22 +29,13 @@ This guide covers **installing and configuring the plugin on Raspberry Pi device
 
 1. **Connect camera module**: Attach the camera to the Pi's camera port, ensuring proper alignment and secure connection. Refer to the [camera module guide](https://www.raspberrypi.com/documentation/accessories/camera.html#connect-the-camera) for details.
 
-1. **Enable camera interface**:
-Turn on your Pi and run:
-
-   ```bash
-   sudo raspi-config
-   # Navigate to: Interface Options → Camera → Enable
-   sudo reboot
-   ```
-
 1. **Test camera**:
 
    ```bash
-   libcamera-hello --preview
+   rpicam-hello
    ```
 
-### Step 2: Install Camera Software
+### Step 2: Install Plugin
 
 1. **Clone repository**:
 
