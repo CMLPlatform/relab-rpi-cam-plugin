@@ -1,0 +1,14 @@
+services:
+  rpi-cam-plugin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    group_add:
+      - video
+    env_file:
+      - .env
+    volumes:
+     - /run/udev:/run/udev:ro
+    ports:
+      - "8018:8018"
+    restart: on-failure
