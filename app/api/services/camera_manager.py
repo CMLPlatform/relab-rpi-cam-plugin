@@ -81,7 +81,7 @@ class CameraManager:
         async with self._camera_lock():
             if self.camera is None:
                 # Create camera instance if it doesn't exist
-                self.camera = await asyncio.to_thread(Picamera2)
+                self.camera = await asyncio.to_thread(Picamera2, camera_num=settings.camera_device_num)
             elif self.current_mode == mode:
                 # Camera already set up for this mode
                 return self.camera
