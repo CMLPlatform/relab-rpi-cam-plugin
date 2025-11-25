@@ -47,7 +47,7 @@ This guide covers **installing and configuring the plugin on Raspberry Pi device
 1. **Run setup script**:
 
    ```bash
-   ./setup.sh
+   ./scripts/local_setup.sh
    ```
 
    This automatically:
