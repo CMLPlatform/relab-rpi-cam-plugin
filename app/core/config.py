@@ -19,9 +19,10 @@ class Settings(BaseSettings):
         HttpUrl("https://cml-relab.org"),
     ]
     authorized_api_keys: list[str] = []  # API keys from users of the main API
+    camera_device_num: int = 0  # Camera device number (usually 0 or 1)
 
     # Initialize the settings configuration from the .env file
-    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env")
+    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
 
     # Directory paths
     hls_path: Path = BASE_DIR / "data" / "hls"  # Used for storing temporary HLS video files
