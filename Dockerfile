@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get dist-clean
 
 # Copy entrypoint script early to avoid invalidating later layers when it doesn't change
-COPY scripts/entrypoint.sh scripts/entrypoint.sh
+COPY scripts/docker_entrypoint.sh scripts/docker_entrypoint.sh
 
 # uv optimizations (see https://docs.astral.sh/uv/guides/integration/docker/#optimizations)
 ENV UV_COMPILE_BYTECODE=1 \
@@ -59,7 +59,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Set Python variables (explicitly add the system pacakges to PYTHONPATH, set unbuffered output, add venv to PATH)
 ENV PYTHONPATH="$WORKDIR:/usr/lib/python3/dist-packages"  \
     PYTHONUNBUFFERED=1 \
-    PATH="$WORKDIR/.venv/bin:$PATH" 
+    PATH="$WORKDIR/.venv/bin:$PATH"
 
 # Add a non-root user and give access to video group, then chown workdir (single layer)
 RUN useradd --create-home --groups video rpicam \
@@ -67,4 +67,4 @@ RUN useradd --create-home --groups video rpicam \
 USER rpicam
 
 # Run the FastAPI application
-ENTRYPOINT [ "scripts/entrypoint.sh" ]
+ENTRYPOINT [ "scripts/docker_entrypoint.sh" ]

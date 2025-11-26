@@ -8,7 +8,17 @@ services:
     env_file:
       - .env
     volumes:
-     - /run/udev:/run/udev:ro
+      - /run/udev:/run/udev:ro
     ports:
       - "8018:8018"
     restart: on-failure
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    env_file:
+      - .env
+    pull_policy: always
+    profiles: # Only run when explicitly specified
+      - cloudflared
