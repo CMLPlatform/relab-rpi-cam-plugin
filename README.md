@@ -1,6 +1,6 @@
 # RPI Camera Plugin
 
-Device-side software for automated image capture on Raspberry Pi, integrated with the Reverse Engineering Lab platform.
+Device-side software for automated image capture on Raspberry Pi, integrated with the [Reverse Engineering Lab platform](https://cml-relab.org).
 
 ## Overview
 
@@ -31,31 +31,16 @@ This guide covers **installing and configuring the plugin on Raspberry Pi device
 
 1. **Test camera**:
 
-   ```bash
+   ```sh
    rpicam-hello
    ```
 
-### Step 2: Install Plugin
-
 1. **Clone repository**:
 
-   ```bash
+   ```sh
    git clone https://github.com/CMLPlatform/relab-rpi-cam-plugin.git
    cd relab-rpi-cam-plugin
    ```
-
-1. **Run setup script**:
-
-   ```bash
-   ./scripts/local_setup.sh
-   ```
-
-   This automatically:
-
-   - Verifies environment configuration
-   - Sets up audio streaming capabilities
-   - Installs dependencies using `uv` (a [Python package manager](https://docs.astral.sh/uv/))
-   - Creates Python virtual environment
 
 ### Step 3: Get Platform Credentials
 
@@ -64,7 +49,7 @@ This guide covers **installing and configuring the plugin on Raspberry Pi device
 Before configuring your device, register it on the platform at the `plugins/rpi-cam/cameras` endpoint by providing:
 
 - Name
-- Camera API URL (e.g., `http://your-pi-ip:8018`)
+- Camera API URL (e.g., `http://your-pi-ip:8018`) (If using Cloudflare Tunnel, use the tunnel URL here. See the cloudflare setup instructions in [step 6](#step-6-publishing-the-api-to-the-internet-optional))
 - Description (optional)
 - Additional auth headers required to access the Camera API URL (optional)
 
@@ -74,42 +59,75 @@ Before configuring your device, register it on the platform at the `plugins/rpi-
 
 1. **Create configuration**:
 
-   ```bash
+   ```sh
    cp .env.example .env
    ```
 
 1. **Edit settings** in `.env`:
 
-   ```bash
-   # Your Pi's network details
-   BASE_URL="http://your-pi-ip:8018"
+   - `BASE_URL`: Set to your the URL at which your API can be accessed (e.g., `http://your-pi-ip:8018`)
+   - `AUTHORIZED_API_KEYS`: Add the API key obtained from the platform registration
 
-   # Platform integration
-   ALLOWED_CORS_ORIGINS=["http://127.0.0.1:8000", "https://your-platform.com"]
-   AUTHORIZED_API_KEYS=["your-api-key-from-platform"]
+1. Optionally, you can also adjust:
+
+   - `ALLOWED_CORS_ORIGINS`: Ensure it includes the platform URL (e.g., `https://cml-relab.org` and `https://api.cml-relab.org`)
+   - `CAMERA_DEVICE_NUM`: Set to the camera device number (usually `0`)
+   - `TUNNEL_TOKEN`: Add your Cloudflare Tunnel token if using Cloudflare Tunnel (see [step 6](#step-6-publishing-the-api-to-the-internet-optional))
+
+### Step 5: Running the application
+
+You can either run the application inside Docker (recommended) or directly on the Pi.
+
+#### Docker (recommended)
+
+- Generate a compose override that maps camera devices into the `rpi-cam-plugin` service. On the Pi host run:
+
+```sh
+./scripts/generate_docker_compose_override.py > docker-compose.override.yml
+```
+
+- Build and start the stack with the generated override (from the repo root):
+
+```sh
+docker compose build
+docker compose up -d
+```
+
+#### Run directly on the Pi
+
+- Prepare the Pi for running the app:
+
+```sh
+./scripts/local_setup.sh
+```
+
+- Start the FastAPI server directly:
+
+```sh
+uv run fastapi run app/main.py --port 8018
+```
+
+### Step 6: Publishing the API to the internet (optional)
+
+You can use your preferred reverse proxy or expose via Cloudflare Tunnel. The latter is supported directly in the Docker Compose setup.
+
+1. Follow the [Cloudflare Tunnel documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/) to create a remotely managed tunnel and obtain a tunnel token.
+
+1. Set the tunnel token in your `.env`:
+
+   ```sh
+   TUNNEL_TOKEN=your_tunnel_token_here
    ```
 
-**Security Note**: Keep API keys secure and never commit them to version control.
+1. Start the compose stack with the `cloudflared` profile:
 
-### Step 5: Start Camera Service
-
-1. **Launch camera API**:
-
-   ```bash
-   uv run fastapi run app/main.py --port 8018
+   ```sh
+   docker compose --profile cloudflared up -d
    ```
 
-1. **Test installation**:
+1. **Publish your app** Follow the [documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/#2a-publish-an-application) on publishing an app via the tunnel. Set the hostname (e.g., `yourcamera.yourdomain.com`) and point to the service (`http://rpi-cam-plugin:8018`).
 
-   - API documentation: `http://your-pi-ip:8018/docs`
-   - Live stream: `http://your-pi-ip:8018/stream/watch`
-   - Capture test: Use `/capture` endpoint
-
-1. **Verify platform connection**:
-
-   <!-- TODO: Replace by description of UI flow on main platform once available -->
-
-   - Access camera from main platform at the `/plugins/rpi-cam/camera/{camera_id}` endpoint
+> 💡 **Note**: If using Docker, the service name is `rpi-cam-plugin` as defined in the `docker-compose.yml`. If running directly on the Pi, use `http://localhost:8018`.
 
 ## Usage
 
@@ -125,23 +143,18 @@ Before configuring your device, register it on the platform at the `plugins/rpi-
 Once configured, the camera can be operated from the main platform. See
 [Platform Documentation](https://docs.cml-relab.org/user-guides/rpi-cam/) for more details.
 
-## Troubleshooting
+### Troubleshooting
 
 **Camera not detected**:
 
-```bash
+```sh
 # Check camera connection
-vcgencmd get_camera
-
-# Test camera module
-libcamera-hello --list-cameras
+rpicam-hello --list-cameras
 ```
 
 **API won't start**:
 
 - Check that port 8018 is available: `sudo netstat -tlnp | grep :8018`
-- Verify all dependencies installed correctly
-- Review error logs for specific issues
 - Test with dev mode: `uv run fastapi dev app/main.py`
 
 **Platform can't connect**:
@@ -157,22 +170,21 @@ libcamera-hello --list-cameras
 - Clean camera lens carefully
 - Improve lighting conditions at capture location
 - Check camera module connection to Pi
-- Adjust camera settings through API parameters
 
 ## Development
 
-### Development Environment
+### Local development setup
 
-```bash
-# Install with development dependencies
-uv sync
+For local development on the Raspberry Pi, run the local setup script which creates a dev environment:
 
-# Install pre-commit hooks
-uv run pre-commit install
+```sh
+./scripts/local_setup.sh --dev
+```
 
-# Start development server with hot reload
-uv run fastapi dev app/main.py
+This script runs `uv sync` for a development environment and configures tooling (pre-commit, venv, etc.). Use `uv run fastapi dev app/main.py` to start the app with hot reload.
 
-# Build model package
-uv build --package relab_rpi_cam_models
+You can run the development server with:
+
+```sh
+uv run fastapi dev app/main.py --port 8018
 ```
