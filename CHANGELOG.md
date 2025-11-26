@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.0 (2025-11-26)
+
+### Feat
+
+- Add Dockerized setup for easier deployment
+- Add Cloudflare Tunnel support for easy publishing
+
+### Fix
+
+- Add main platform API to default allowed CORS domains
+- Improve local setup script
+- Ensure the virtual environment is compatible with system Python packages
+
 ## v0.1.1 (2025-08-20)
 
 ### Fix
