@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Map camera device nodes to docker-compose override file.
+"""Generate docker-compose override with camera device mappings for rpi-cam-plugin.
 
-This script discovers camera-related devices nodes and generates a docker compose
-with a `devices:` mapping for the `rpi-cam-plugin` service.
+Discovers camera-related device nodes (/dev/media*, /dev/video*, /dev/v4l-subdev*,
+/dev/dma_heap) and generates docker-compose.override.yml mapping them into the container.
+This enables Picamera2 hardware access without requiring privileged mode.
 """
 
 from pathlib import Path
