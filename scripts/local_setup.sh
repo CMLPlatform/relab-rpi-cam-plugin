@@ -60,21 +60,24 @@ if ! command -v uv >/dev/null 2>&1; then
 	fi
 fi
 
-# Create venv (includes system site packages for access to PiCamera2)
-uv venv --system-site-packages --clear
+# Create a virtual environment using the system Python and site packages
+uv venv --system-site-packages --clear --no-managed-python --no-config
 
 # Sync dependencies. In dev mode we keep dev dependencies, otherwise exclude them.
 if [ "$DEV_MODE" = true ]; then
 	echo "Syncing dependencies (including dev deps)"
-	uv sync --frozen --no-cache
+	uv sync --frozen
 else
 	echo "Syncing dependencies (excluding dev deps)"
-	uv sync --frozen --no-cache --no-dev
+	uv sync --frozen --no-dev
 fi
 
 # Install pre-commit hooks only in dev mode
 if [ "$DEV_MODE" == true ]; then
+	echo "Installing pre-commit hooks ..."
 	uv run pre-commit install
+	echo "Local setup complete. To run the application, use 'uv run fastapi dev app/main.py'"
 else
 	echo "Skipping pre-commit install in non-dev mode"
+	echo "Local setup complete. To run the application, use 'uv run fastapi run app/main.py --port 8018'"
 fi
