@@ -11,7 +11,7 @@ services:
       - /run/udev:/run/udev:ro
     ports:
       - "8018:8018"
-    restart: on-failure
+    restart: unless-stopped
 
   cloudflared:
     image: cloudflare/cloudflared:latest
