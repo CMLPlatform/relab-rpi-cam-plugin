@@ -7,6 +7,11 @@ from pathlib import Path
 from app.core.config import settings
 
 
+def _glob_files(path: Path) -> list[Path]:
+    """List files matching glob pattern (non-async helper for use with asyncio.to_thread)."""
+    return list(path.glob("*"))
+
+
 async def setup_directory(path: Path) -> Path:
     """Set up directory."""
     try:
@@ -19,15 +24,17 @@ async def setup_directory(path: Path) -> Path:
 
 async def clear_directory(path: Path, *, time_to_live_s: int | None = None) -> None:
     """Clear expired files in directory."""
-    if not path.exists():
+    if not await asyncio.to_thread(path.exists):
         return
 
     now = datetime.now(UTC).timestamp()
-    for file in path.glob("*"):
-        if not file.is_file():
+    files = await asyncio.to_thread(_glob_files, path)
+    for file in files:
+        if not await asyncio.to_thread(file.is_file):
             continue
 
-        if time_to_live_s and (now - file.stat().st_mtime) < time_to_live_s:
+        stat = await asyncio.to_thread(file.stat)
+        if time_to_live_s and (now - stat.st_mtime) < time_to_live_s:
             continue
 
         await asyncio.to_thread(file.unlink)

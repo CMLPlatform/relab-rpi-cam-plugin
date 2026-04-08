@@ -9,8 +9,6 @@ from starlette.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
-repeated_tasks = set()
-
 
 def repeat_task(
     task_func: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]],
@@ -33,7 +31,5 @@ def repeat_task(
 
             await asyncio.sleep(seconds)
 
-    # Store tasks in a global set to avoid accidental garbage collection
-    task = asyncio.create_task(_loop())
-    repeated_tasks.add(task)
-    return task
+    # Create and return task; caller is responsible for retention
+    return asyncio.create_task(_loop())

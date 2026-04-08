@@ -34,6 +34,7 @@ class _AsyncWebSocket(Protocol):
     async def recv(self) -> str | bytes: ...
     async def close(self) -> None: ...
 
+
 logger = logging.getLogger(__name__)
 
 # Reconnection delay bounds (seconds)
@@ -94,11 +95,14 @@ class _WebSocketContextManager:
             msg = "The 'websockets' package is required for relay mode. Install it with: uv add websockets"
             raise ImportError(msg) from exc
 
-        raw_ws = cast("_AsyncWebSocket", await websockets.connect(
-            self._url,
-            max_size=1_048_576,  # 1 MiB limit
-            additional_headers={"Authorization": f"Bearer {settings.relay_api_key}"},
-        ))
+        raw_ws = cast(
+            "_AsyncWebSocket",
+            await websockets.connect(
+                self._url,
+                max_size=1_048_576,  # 1 MiB limit
+                additional_headers={"Authorization": f"Bearer {settings.relay_api_key}"},
+            ),
+        )
         self._raw_ws = raw_ws
         return _WebSocketConnection(raw_ws)
 
