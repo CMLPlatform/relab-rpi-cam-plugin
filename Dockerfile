@@ -16,8 +16,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ffmpeg \
     git \
     gnupg \
-    pulseaudio \
-    && apt-get dist-clean
+    pulseaudio
 
 # Add Raspberry Pi OS repository for picamera2
 RUN curl -fsSL https://archive.raspberrypi.org/debian/raspberrypi.gpg.key | gpg --dearmor -o /usr/share/keyrings/raspberrypi-archive-keyring.gpg \
@@ -27,8 +26,7 @@ RUN curl -fsSL https://archive.raspberrypi.org/debian/raspberrypi.gpg.key | gpg 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt update && apt full-upgrade -y && apt install -y --no-install-recommends \
-    python3-picamera2 \
-    && apt-get dist-clean
+    python3-picamera2
 
 # Copy entrypoint script early to avoid invalidating later layers when it doesn't change
 COPY scripts/docker_entrypoint.sh scripts/docker_entrypoint.sh
@@ -65,6 +63,9 @@ ENV PYTHONPATH="$WORKDIR:/usr/lib/python3/dist-packages"  \
 RUN useradd --create-home --groups video rpicam \
     && chown -R rpicam:video $WORKDIR
 USER rpicam
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8018/ || exit 1
 
 # Run the FastAPI application
 ENTRYPOINT [ "scripts/docker_entrypoint.sh" ]

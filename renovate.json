@@ -4,10 +4,47 @@
     "config:best-practices",
     ":approveMajorUpdates",
     ":maintainLockFilesWeekly",
-    "group:all",
+    ":preserveSemverRanges",
     "schedule:weekly"
   ],
-
-  "labels": ["dependencies", "renovate"],
-  "ignorePaths": [".python-version"]
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "platformAutomerge": true,
+  "pep621": {
+    "enabled": true
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
+  "ignorePaths": [".python-version"],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchPackagePatterns": ["*"],
+      "automerge": true,
+      "labels": ["automerge"]
+    },
+    {
+      "groupName": "github-actions",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest", "minor", "patch"],
+      "pinDigests": true,
+      "automerge": true,
+      "labels": ["automerge", "github-actions"]
+    },
+    {
+      "groupName": "docker",
+      "matchManagers": ["dockerfile"],
+      "pinDigests": true
+    },
+    {
+      "groupName": "pre-commit",
+      "matchManagers": ["pre-commit"],
+      "automerge": true,
+      "labels": ["automerge"]
+    }
+  ],
+  "labels": ["dependencies", "renovate"]
 }

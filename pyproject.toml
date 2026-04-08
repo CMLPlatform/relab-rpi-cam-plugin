@@ -1,3 +1,11 @@
+[build-system]
+  build-backend = "uv_build"
+  requires      = ["uv_build>=0.11.4,<0.12"]
+
+[tool.uv.build-backend]
+  module-name = "app"
+  module-root = "."
+
 [project]
   authors = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
   classifiers = [
@@ -23,6 +31,7 @@
     "pydantic-settings>=2.8.0",
     "qrcode[pil]>=7.4",
     "relab-rpi-cam-models",
+    "rich>=13.0",
     "websockets>=14.0",
   ]
 
@@ -35,16 +44,13 @@
     Repository = "https://github.com/CMLPlatform/relab-rpi-cam-plugin.git"
 
 [dependency-groups]
-  dev = ["commitizen>=4.8.3", "pre-commit>=4.2.0", "pyright>=1.1.403", "ruff>=0.9.6"]
-  test = ["httpx>=0.28", "pytest>=8.0", "pytest-asyncio>=0.25"]
+  dev  = ["commitizen>=4.8.3", "pre-commit>=4.2.0", "ruff>=0.9.6", "ty>=0.0.29"]
+  test = ["httpx>=0.28", "pytest>=8.0", "pytest-asyncio>=0.25", "pytest-cov>=6.0"]
 
 ### Tools configuration
 [tool.pytest.ini_options]
   asyncio_mode = "auto"
   testpaths    = ["tests"]
-
-[tool.ty.environment]
-  extra-paths = ["typings"]
 
 [tool.commitizen]
   major_version_zero       = true
@@ -55,12 +61,11 @@
   version_provider         = "pep621"
   version_scheme           = "semver2"
 
-[tool.pyright]
-  exclude          = ["**/__pycache__", "./alembic"]
-  include          = ["app", "scripts", "tests"]
-  typeCheckingMode = "standard"
-  venv             = ".venv"
-  venvPath         = "."
+[tool.ty.environment]
+  extra-paths = ["typings"]
+
+[tool.ty.src]
+  exclude = ["tests"]
 
 [tool.ruff]
   fix            = true
@@ -102,6 +107,9 @@
       # Allow runtime imports for FastAPI dependency injection and Pydantic validation
       exempt-modules                 = ["app", "fastapi", "pydantic", "typing.Annotated"]
       runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+
+    [tool.ruff.lint.per-file-ignores]
+      "tests/**" = ["D102", "PLR2004", "S101"]
 
     [tool.ruff.lint.pydocstyle]
       convention = "google"

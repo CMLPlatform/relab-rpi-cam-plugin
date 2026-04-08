@@ -92,7 +92,6 @@ Use this if automatic pairing is not available.
 
    ```json
    {
-     "relay_enabled": true,
      "relay_backend_url": "wss://api.cml-relab.org/plugins/rpi-cam/ws/connect",
      "relay_camera_id": "<your-camera-id>",
      "relay_api_key": "<your-api-key>"
