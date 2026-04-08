@@ -3,11 +3,22 @@
 from urllib.parse import urljoin
 
 import httpx
-from picamera2.outputs import FfmpegOutput
+
+try:
+    from picamera2.outputs import FfmpegOutput
+except ImportError:
+
+    class FfmpegOutput:  # type: ignore[no-redef]
+        """Stub for non-Raspberry Pi environments."""
+
+        def __init__(self, output_str: str, /, **kwargs: object) -> None:
+            pass
+
+
 from pydantic import AnyUrl
+from relab_rpi_cam_models.stream import StreamMode, YoutubeConfigRequiredError, YoutubeStreamConfig
 
 from app.core.config import settings
-from relab_rpi_cam_models.stream import StreamMode, YoutubeConfigRequiredError, YoutubeStreamConfig
 
 
 def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> FfmpegOutput:
@@ -49,7 +60,7 @@ def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | No
 def get_upload_url(youtube_config: YoutubeStreamConfig) -> AnyUrl:
     """Get YouTube HLS upload URL pointing to the stream key."""
     return AnyUrl(
-        f"https://a.upload.youtube.com/http_upload_hls?cid={youtube_config.stream_key}&copy=0&file={settings.hls_manifest_filename}"
+        f"https://a.upload.youtube.com/http_upload_hls?cid={youtube_config.stream_key}&copy=0&file={settings.hls_manifest_filename}",
     )
 
 

@@ -5,15 +5,63 @@ import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
+from typing import Any, ClassVar
 from urllib.parse import urljoin
 
-from picamera2 import Picamera2
-from picamera2.encoders import H264Encoder
 from pydantic import AnyUrl
 
-from app.api.services.stream import get_ffmpeg_output, get_stream_url, validate_stream_key
-from app.core.config import settings
-from app.utils.files import clear_directory
+try:
+    from picamera2 import Picamera2
+    from picamera2.encoders import H264Encoder
+except ImportError:
+    _ERR = "picamera2 is not available; camera operations require a Raspberry Pi."
+
+    class Picamera2:  # type: ignore[no-redef]
+        """Stub used on non-Raspberry Pi hosts so the app can start."""
+
+        camera_properties: ClassVar[dict[str, Any]] = {}
+
+        def __init__(self, camera_num: int = 0) -> None:  # noqa: ARG002
+            raise RuntimeError(_ERR)
+
+        def configure(self, config: object) -> None:  # noqa: D102
+            ...
+
+        def start(self) -> None:  # noqa: D102
+            ...
+
+        def stop(self) -> None:  # noqa: D102
+            ...
+
+        def close(self) -> None:  # noqa: D102
+            ...
+
+        def capture_image(self) -> Any:  # noqa: ANN401, D102
+            ...
+
+        def capture_metadata(self) -> dict | None:  # noqa: D102
+            ...
+
+        def start_recording(self, encoder: object, output: object) -> None:  # noqa: D102
+            ...
+
+        def stop_recording(self) -> None:  # noqa: D102
+            ...
+
+        def create_still_configuration(self, **kwargs: object) -> dict:  # noqa: ARG002, D102
+            return {}
+
+        def create_video_configuration(self, **kwargs: object) -> dict:  # noqa: ARG002, D102
+            return {}
+
+    class H264Encoder:  # type: ignore[no-redef]
+        """Stub used on non-Raspberry Pi hosts so the app can start."""
+
+        def __init__(self) -> None:
+            raise RuntimeError(_ERR)
+
+
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 from relab_rpi_cam_models.images import ImageCaptureResponse, ImageMetadata
 from relab_rpi_cam_models.stream import (
@@ -23,6 +71,10 @@ from relab_rpi_cam_models.stream import (
     YoutubeConfigRequiredError,
     YoutubeStreamConfig,
 )
+
+from app.api.services.stream import get_ffmpeg_output, get_stream_url, validate_stream_key
+from app.core.config import settings
+from app.utils.files import clear_directory
 
 
 class YouTubeValidationError(Exception):
@@ -73,7 +125,7 @@ class CameraManager:
             case CameraMode.VIDEO:
                 return camera.create_video_configuration(raw=None)
 
-    async def _setup_camera(self, mode: CameraMode) -> Picamera2:
+    async def setup_camera(self, mode: CameraMode) -> Picamera2:
         """Setup camera for specific mode."""
         if self.stream.is_active and mode == CameraMode.PHOTO:
             raise ActiveStreamError(self.stream)
@@ -81,7 +133,7 @@ class CameraManager:
         async with self._camera_lock():
             if self.camera is None:
                 # Create camera instance if it doesn't exist
-                self.camera = await asyncio.to_thread(Picamera2, camera_num=settings.camera_device_num)
+                self.camera = await asyncio.to_thread(lambda: Picamera2(camera_num=settings.camera_device_num))
             elif self.current_mode == mode:
                 # Camera already set up for this mode
                 return self.camera
@@ -98,7 +150,7 @@ class CameraManager:
 
     async def capture_jpeg(self) -> ImageCaptureResponse:
         """Capture image and return JPEG bytes."""
-        camera = await self._setup_camera(CameraMode.PHOTO)
+        camera = await self.setup_camera(CameraMode.PHOTO)
         async with self._camera_lock():
             # Capture image
             pil_image = await asyncio.to_thread(camera.capture_image)
@@ -123,8 +175,21 @@ class CameraManager:
             expires_at=expires_at,
         )
 
+    async def capture_preview_jpeg(self) -> bytes:
+        """Capture a low-res JPEG for viewfinder preview. Does not save to disk."""
+        camera = await self.setup_camera(CameraMode.PHOTO)
+        async with self._camera_lock():
+            pil_image = await asyncio.to_thread(camera.capture_image)
+        pil_image = pil_image.resize((640, 480))
+        buf = BytesIO()
+        pil_image.save(buf, format="JPEG", quality=70)
+        return buf.getvalue()
+
     async def start_streaming(
-        self, mode: StreamMode, *, youtube_config: YoutubeStreamConfig | None = None
+        self,
+        mode: StreamMode,
+        *,
+        youtube_config: YoutubeStreamConfig | None = None,
     ) -> StreamView:
         """Start streaming to YouTube or local file."""
         if mode == StreamMode.YOUTUBE:
@@ -136,7 +201,7 @@ class CameraManager:
         if self.stream.is_active:
             raise ActiveStreamError(self.stream)
 
-        camera = await self._setup_camera(CameraMode.VIDEO)
+        camera = await self.setup_camera(CameraMode.VIDEO)
 
         async with self._camera_lock():
             try:
@@ -193,12 +258,14 @@ class CameraManager:
             if (capture_metadata := await asyncio.to_thread(self.camera.capture_metadata)) is None:
                 err_msg = "Failed to capture image metadata"
                 raise RuntimeError(err_msg)
-            return self.stream._get_info(
-                camera_properties=self.camera.camera_properties, capture_metadata=capture_metadata
+            return self.stream.get_info(
+                camera_properties=self.camera.camera_properties,
+                capture_metadata=capture_metadata,
             )
         # Return empty stream view if no stream is active
         return None
 
     async def get_status(self) -> CameraStatusView:
+        """Return the current camera status including active stream info."""
         stream_info = await self.get_stream_info()
         return CameraStatusView(current_mode=self.current_mode, stream=stream_info if self.stream.is_active else None)
