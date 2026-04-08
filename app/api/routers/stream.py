@@ -6,16 +6,16 @@ from typing import Annotated
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-
-from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.services.camera_manager import ActiveStreamError, YouTubeValidationError
-from app.core.config import settings
 from relab_rpi_cam_models.stream import (
     StreamMode,
     StreamView,
     YoutubeConfigRequiredError,
     YoutubeStreamConfig,
 )
+
+from app.api.dependencies.camera_management import CameraManagerDependency
+from app.api.services.camera_manager import ActiveStreamError, YouTubeValidationError
+from app.core.config import settings
 
 HLS_DIR = settings.hls_path
 

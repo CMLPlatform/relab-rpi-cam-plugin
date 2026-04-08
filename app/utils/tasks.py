@@ -35,5 +35,5 @@ def repeat_task(
 
     # Store tasks in a global set to avoid accidental garbage collection
     task = asyncio.ensure_future(_loop())
-    # repeated_tasks.add(task)
+    repeated_tasks.add(task)
     return task

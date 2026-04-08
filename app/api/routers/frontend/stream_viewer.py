@@ -3,11 +3,11 @@
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.dependencies.auth import require_cookie_auth
 from app.api.dependencies.camera_management import CameraManagerDependency
 from app.core.config import settings
-from relab_rpi_cam_models.stream import StreamMode
 
 HLS_DIR = settings.hls_path
 

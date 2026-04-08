@@ -126,3 +126,6 @@ logs/
 
 # The compose override stores machine-specific device mappings
 docker-compose.override.yml
+
+# Websocket connection credentials
+relay_credentials.json

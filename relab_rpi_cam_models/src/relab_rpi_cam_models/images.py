@@ -89,6 +89,7 @@ class ImageMetadata(BaseMetadata):
 
     @classmethod
     def from_metadata(cls, img: Image, camera_properties: dict, capture_metadata: dict) -> "ImageMetadata":
+        """Create an ImageMetadata instance from raw camera capture data."""
         return cls(
             image_properties=ImageProperties(width=img.size[0], height=img.size[1]),
             camera_properties=CameraProperties.model_validate(camera_properties),

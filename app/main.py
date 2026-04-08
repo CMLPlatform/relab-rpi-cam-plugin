@@ -11,9 +11,12 @@ from fastapi.staticfiles import StaticFiles
 from app.__version__ import version
 from app.api.dependencies.camera_management import camera_manager, camera_to_standby, check_stream_duration
 from app.api.routers.main import router as main_router
+from app.api.routers.setup import router as setup_router
 from app.core.config import settings
 from app.utils.files import cleanup_images, setup_directory
 from app.utils.logging import setup_logging
+from app.utils.pairing import run_pairing
+from app.utils.relay import run_relay
 from app.utils.tasks import repeat_task
 
 setup_logging()
@@ -30,6 +33,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
     await setup_directory(settings.hls_path)
     await setup_directory(settings.image_path)
     logger.info("Temporary file directories set up")
+
+    # Start WebSocket relay or pairing mode
+    import asyncio  # noqa: PLC0415
+
+    background_tasks: set[asyncio.Task[None]] = set()
+
+    if settings.relay_enabled and settings.relay_camera_id and settings.relay_api_key:
+        background_tasks.add(asyncio.create_task(run_relay(), name="ws_relay"))
+        logger.info("WebSocket relay started")
+    elif settings.pairing_backend_url:
+        async def _on_paired() -> None:
+            background_tasks.add(asyncio.create_task(run_relay(), name="ws_relay"))
+            logger.info("Pairing complete — WebSocket relay started")
+
+        background_tasks.add(asyncio.create_task(run_pairing(_on_paired), name="pairing"))
+        logger.info("No relay credentials — entering pairing mode")
 
     # Start recurring cleanup tasks
     recurring_tasks = {
@@ -71,4 +90,5 @@ app.add_middleware(
 
 # Include routers
 app.include_router(main_router)
+app.include_router(setup_router)  # No auth: setup page must be publicly accessible
 app.mount("/static", StaticFiles(directory=settings.static_path), name="static")

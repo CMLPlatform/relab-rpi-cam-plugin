@@ -49,6 +49,7 @@ class StreamMetadata(BaseMetadata):
 
     @classmethod
     def from_metadata(cls, camera_properties: dict, capture_metadata: dict) -> "StreamMetadata":
+        """Create a StreamMetadata instance from raw camera capture data."""
         return cls(
             camera_properties=CameraProperties.model_validate(camera_properties),
             capture_metadata=CaptureMetadata.model_validate(capture_metadata),
@@ -75,9 +76,10 @@ class Stream:
 
     @property
     def is_active(self) -> bool:
+        """Return True if a stream is currently active."""
         return self.mode is not None
 
-    def _get_info(self, camera_properties: dict, capture_metadata: dict) -> StreamView | None:
+    def get_info(self, camera_properties: dict, capture_metadata: dict) -> StreamView | None:
         """Get stream information including metadata if active.
 
         Depends on camera properties and capture metadata.

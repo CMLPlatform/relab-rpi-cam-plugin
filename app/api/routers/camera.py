@@ -3,10 +3,10 @@
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
+from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 
 from app.api.dependencies.camera_management import CameraManagerDependency
 from app.api.services.camera_manager import ActiveStreamError
-from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 
 router = APIRouter(prefix="/camera", tags=["camera"])
 
@@ -17,7 +17,7 @@ async def open_camera(
     mode: Annotated[CameraMode, Query(description="Camera mode to open (photo or video)")] = CameraMode.PHOTO,
 ) -> CameraStatusView:
     """Manually open camera in photo or video mode."""
-    await camera_manager._setup_camera(mode)
+    await camera_manager.setup_camera(mode)
     return await camera_manager.get_status()
 
 

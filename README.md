@@ -21,6 +21,18 @@ This guide covers **installing and configuring the plugin on Raspberry Pi device
 - Python 3.11+
 - Network connectivity to RELab platform
 
+## Connection Modes
+
+The plugin supports two ways to connect to the RELab backend:
+
+### WebSocket Relay (recommended)
+
+The Pi opens an outbound WebSocket connection to the backend. The backend sends commands through this tunnel. No public IP, port forwarding, or reverse proxy is needed — just outbound internet access.
+
+### Direct HTTP
+
+The backend makes HTTP requests directly to the Pi's API URL. This requires the Pi to be reachable from the backend (public IP, VPN, Cloudflare Tunnel, etc.).
+
 ## Quick Setup
 
 ### Step 1: Prepare Your Raspberry Pi
@@ -42,20 +54,56 @@ This guide covers **installing and configuring the plugin on Raspberry Pi device
    cd relab-rpi-cam-plugin
    ```
 
-### Step 3: Get Platform Credentials
+### Step 2: Configure Connection
 
-<!-- TODO: Replace by description of UI flow on main platform once available -->
+Choose one of the following connection methods.
 
-Before configuring your device, register it on the platform at the `plugins/rpi-cam/cameras` endpoint by providing:
+#### Option A: Automatic Pairing (WebSocket, recommended)
 
-- Name
-- Camera API URL (e.g., `http://your-pi-ip:8018`) (If using Cloudflare Tunnel, use the tunnel URL here. See the cloudflare setup instructions in [step 6](#step-6-publishing-the-api-to-the-internet-optional))
-- Description (optional)
-- Additional auth headers required to access the Camera API URL (optional)
+The simplest setup. No manual credential exchange required.
 
-💡 Save the returned API key - it will only be shown once.
+1. **Create configuration**:
 
-### Step 4: Configure Your Camera
+   ```sh
+   cp .env.example .env
+   ```
+
+1. **Set the pairing backend URL** in `.env`:
+
+   ```sh
+   PAIRING_BACKEND_URL=https://api.cml-relab.org
+   ```
+
+1. **Start the plugin** (see [Step 3](#step-3-running-the-application)).
+
+1. **Open the setup page** at `http://your-pi-ip:8018/setup`. A 6-character pairing code is displayed.
+
+1. **Enter the code in the RELab app**: go to Cameras > Add Camera, select WebSocket mode, and enter the code (or scan the QR code).
+
+1. The Pi receives credentials automatically, saves them to `relay_credentials.json`, and connects to the backend. The setup page updates to show the connection status.
+
+#### Option B: Manual WebSocket Setup
+
+Use this if automatic pairing is not available.
+
+1. **Register the camera** in the RELab app (Cameras > Add Camera, WebSocket mode, manual setup).
+
+1. **Copy the displayed credentials** and save them to `relay_credentials.json` in the plugin directory:
+
+   ```json
+   {
+     "relay_enabled": true,
+     "relay_backend_url": "wss://api.cml-relab.org/plugins/rpi-cam/ws/connect",
+     "relay_camera_id": "<your-camera-id>",
+     "relay_api_key": "<your-api-key>"
+   }
+   ```
+
+1. **Start or restart the plugin.**
+
+#### Option C: Direct HTTP
+
+1. **Register the camera** in the RELab app (Cameras > Add Camera, HTTP mode). Provide the camera's API URL (e.g., `http://your-pi-ip:8018`).
 
 1. **Create configuration**:
 
@@ -65,16 +113,15 @@ Before configuring your device, register it on the platform at the `plugins/rpi-
 
 1. **Edit settings** in `.env`:
 
-   - `BASE_URL`: Set to your the URL at which your API can be accessed (e.g., `http://your-pi-ip:8018`)
-   - `AUTHORIZED_API_KEYS`: Add the API key obtained from the platform registration
+   - `BASE_URL`: Set to the URL at which your API can be accessed (e.g., `http://your-pi-ip:8018`)
+   - `AUTHORIZED_API_KEYS`: Add the API key obtained from the platform
 
-1. Optionally, you can also adjust:
+1. Optionally adjust:
 
    - `ALLOWED_CORS_ORIGINS`: Ensure it includes the platform URL (e.g., `https://cml-relab.org` and `https://api.cml-relab.org`)
-   - `CAMERA_DEVICE_NUM`: Set to the camera device number (usually `0`)
-   - `TUNNEL_TOKEN`: Add your Cloudflare Tunnel token if using Cloudflare Tunnel (see [step 6](#step-6-publishing-the-api-to-the-internet-optional))
+   - `CAMERA_DEVICE_NUM`: Camera device number (usually `0`)
 
-### Step 5: Running the application
+### Step 3: Running the Application
 
 You can either run the application inside Docker (recommended) or directly on the Pi.
 
@@ -107,9 +154,11 @@ docker compose up -d
 uv run fastapi run app/main.py --port 8018
 ```
 
-### Step 6: Publishing the API to the internet (optional)
+### Step 4: Publishing the API to the Internet (HTTP mode only)
 
-You can use your preferred reverse proxy or expose via Cloudflare Tunnel. The latter is supported directly in the Docker Compose setup.
+This step is only needed for Direct HTTP mode. WebSocket relay does not require inbound connectivity.
+
+You can use your preferred reverse proxy or expose via Cloudflare Tunnel:
 
 1. Follow the [Cloudflare Tunnel documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/) to create a remotely managed tunnel and obtain a tunnel token.
 
@@ -127,7 +176,7 @@ You can use your preferred reverse proxy or expose via Cloudflare Tunnel. The la
 
 1. **Publish your app** Follow the [documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/#2a-publish-an-application) on publishing an app via the tunnel. Set the hostname (e.g., `yourcamera.yourdomain.com`) and point to the service (`http://rpi-cam-plugin:8018`).
 
-> 💡 **Note**: If using Docker, the service name is `rpi-cam-plugin` as defined in the `docker-compose.yml`. If running directly on the Pi, use `http://localhost:8018`.
+> **Note**: If using Docker, the service name is `rpi-cam-plugin` as defined in the `docker-compose.yml`. If running directly on the Pi, use `http://localhost:8018`.
 
 ## Usage
 
@@ -137,6 +186,7 @@ You can use your preferred reverse proxy or expose via Cloudflare Tunnel. The la
 - **Live preview**: Real-time camera feed at `/stream/watch`
 - **Manual capture**: Test image capture using `/capture` endpoint
 - **Health monitoring**: Check device status at `/status`
+- **Setup page**: Camera config and pairing status at `/setup`
 
 ### Production Operation
 
@@ -157,7 +207,20 @@ rpicam-hello --list-cameras
 - Check that port 8018 is available: `sudo netstat -tlnp | grep :8018`
 - Test with dev mode: `uv run fastapi dev app/main.py`
 
-**Platform can't connect**:
+**WebSocket relay won't connect**:
+
+- Check that `relay_credentials.json` exists and contains valid credentials, or that `RELAY_*` environment variables are set
+- Verify the Pi has outbound internet access
+- Check the plugin logs for connection errors
+- Confirm the API key matches what is stored in the platform (regenerate in the app if unsure)
+
+**Pairing code not showing**:
+
+- Ensure `PAIRING_BACKEND_URL` is set in `.env`
+- Ensure `relay_credentials.json` does not already exist (pairing mode is skipped when credentials are present)
+- Check the plugin logs for pairing registration errors
+
+**Platform can't connect (HTTP mode)**:
 
 - Confirm API key matches platform registration
 - Check CORS origins include platform URL
