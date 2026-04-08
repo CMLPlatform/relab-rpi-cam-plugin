@@ -3,8 +3,9 @@
 import asyncio
 import time
 from collections.abc import AsyncGenerator
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from relab_rpi_cam_models.images import ImageCaptureResponse
 
@@ -14,7 +15,7 @@ from app.core.config import settings
 router = APIRouter(prefix="/images", tags=["images"])
 
 
-async def _mjpeg_generator(camera_manager: CameraManagerDependency) -> AsyncGenerator[bytes, None]:
+async def _mjpeg_generator(camera_manager: CameraManagerDependency) -> AsyncGenerator[bytes]:
     """Yield MJPEG multipart frames, capped at ~20fps."""
     min_interval = 0.05
     while True:
@@ -40,16 +41,15 @@ async def _mjpeg_generator(camera_manager: CameraManagerDependency) -> AsyncGene
 @router.get("/preview")
 async def preview_image(camera_manager: CameraManagerDependency) -> Response:
     """Return a low-res JPEG snapshot for viewfinder preview. Does not save to disk."""
-    try:
-        jpeg_bytes = await camera_manager.capture_preview_jpeg()
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    jpeg_bytes = await camera_manager.capture_preview_jpeg()
     return Response(content=jpeg_bytes, media_type="image/jpeg")
 
 
 @router.get("/mjpeg")
 async def mjpeg_stream(camera_manager: CameraManagerDependency) -> StreamingResponse:
     """Stream continuous MJPEG frames for live viewfinder preview."""
+    # Validate camera is accessible before starting stream
+    await camera_manager.capture_preview_jpeg()
     return StreamingResponse(
         _mjpeg_generator(camera_manager),
         media_type="multipart/x-mixed-replace; boundary=frame",
@@ -62,14 +62,11 @@ async def capture_image(
     camera_manager: CameraManagerDependency,
 ) -> ImageCaptureResponse:
     """Capture image and return metadata with URL."""
-    try:
-        return await camera_manager.capture_jpeg()
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    return await camera_manager.capture_jpeg()
 
 
 @router.get("/{image_id}")
-async def get_image(image_id: str) -> FileResponse:
+async def get_image(image_id: Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]) -> FileResponse:
     """Retrieve captured image by ID."""
     image_path = settings.image_path / f"{image_id}.jpg"
     if not image_path.exists():
