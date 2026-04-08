@@ -36,9 +36,6 @@ class _AsyncWebSocket(Protocol):
 
 logger = logging.getLogger(__name__)
 
-# Local FastAPI app base URL for internal loopback calls
-_LOCAL_BASE_URL = str(settings.base_url).rstrip("/")
-
 # Reconnection delay bounds (seconds)
 _RECONNECT_MIN = 2.0
 _RECONNECT_MAX = 60.0
@@ -133,7 +130,7 @@ async def _receive_loop(ws: _WebSocketConnection) -> None:
     # Include the relay API key so the local API accepts relayed commands.
     auth_headers = {settings.auth_key_name: settings.relay_api_key} if settings.relay_api_key else {}
     pending_tasks: set[asyncio.Task[None]] = set()
-    async with httpx.AsyncClient(base_url=_LOCAL_BASE_URL, headers=auth_headers) as http:
+    async with httpx.AsyncClient(base_url=str(settings.base_url).rstrip("/"), headers=auth_headers) as http:
         while True:
             try:
                 raw = await ws.recv()
