@@ -1,0 +1,25 @@
+services:
+  rpi-cam-plugin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8018:8018"
+    volumes:
+      - /run/udev:/run/udev:ro
+    env_file:
+      - .env
+    group_add:
+      - video
+
+  cloudflared:
+    image: cloudflare/cloudflared:2024.11.1
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: tunnel --no-autoupdate run
+    profiles:
+      # Only run when explicitly specified
+      - cloudflared
+    pull_policy: always

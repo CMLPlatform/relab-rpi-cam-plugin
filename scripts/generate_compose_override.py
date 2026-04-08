@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Generate docker-compose override with camera device mappings for rpi-cam-plugin.
+"""Generate compose override with camera device mappings for rpi-cam-plugin.
 
 Discovers camera-related device nodes (/dev/media*, /dev/video*, /dev/v4l-subdev*,
-/dev/dma_heap) and generates docker-compose.override.yml mapping them into the container.
+/dev/dma_heap) and generates compose.override.yml mapping them into the container.
 This enables Picamera2 hardware access without requiring privileged mode.
 """
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "docker-compose.override.yml"
 DEVICE_PATTERNS = ("/dev/media*", "/dev/video*", "/dev/v4l-subdev*", "/dev/dma_heap")
 
 
@@ -24,7 +23,7 @@ def discover_devices(patterns: tuple[str, ...] = DEVICE_PATTERNS) -> list[str]:
 
 
 def write_compose_override(device_paths: list[str], service_name: str = "rpi-cam-plugin") -> str:
-    """Generate a minimal docker-compose override with devices for the service.
+    """Generate a minimal compose override with devices for the service.
 
     Output format (example):
 

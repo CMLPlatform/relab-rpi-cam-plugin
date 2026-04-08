@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Exit immediately if a command exits with a non-zero status
-set -e
+# Exit immediately if a command exits with a non-zero status, fail on undefined variables, fail on pipe errors
+set -euo pipefail
 
-# Create a null audio sink to stream null audio to YouTube, if it doesn't already exist
-pulseaudio --start --daemonize
-pactl list sinks short  | grep -q "nullaudio"|| pactl load-module module-null-sink sink_name=nullaudio > /dev/null 2>&1
+# Start PulseAudio daemon (handles case where already running)
+pulseaudio --start --daemonize 2>/dev/null || true
+
+# Create a null audio sink if it doesn't exist (idempotent)
+pactl list sinks short 2>/dev/null | grep -q "nullaudio" || \
+    pactl load-module module-null-sink sink_name=nullaudio > /dev/null 2>&1 || true
 
 # Run the FastAPI application
-.venv/bin/fastapi run app/main.py --host 0.0.0.0 --port 8018
+exec .venv/bin/fastapi run app/main.py --host 0.0.0.0 --port 8018
