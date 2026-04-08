@@ -1,11 +1,9 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>YouTube Stream Viewer</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}" />
-  </head>
-  <body>
-    <div class="video-container">
+{% extends "base.html" %}
+
+{% block title %}YouTube Stream Viewer{% endblock %}
+
+{% block body %}
+<div class="video-container">
       <div id="player" class="video-element"></div>
       <div class="video-controls">
         <button onclick="startStream()" class="btn">Start Stream</button>
@@ -13,30 +11,25 @@
         <div id="status"></div>
       </div>
     </div>
+    <div id="config" data-broadcast-key="{{ broadcast_key | e }}"></div>
     <script>
       const playerDiv = document.getElementById('player')
       const statusDiv = document.getElementById('status')
+      const broadcastKey = document.getElementById('config').dataset.broadcastKey
 
       async function checkStreamStatus() {
         try {
           const response = await fetch('/camera/status', { credentials: 'include' })
           const status = await response.json()
-          return status.stream.mode === 'youtube' && status.stream.is_active && status.stream.youtube_config.broadcast_key
+          return status.stream?.mode === 'youtube' && status.stream?.is_active && status.stream?.youtube_config?.broadcast_key
         } catch {
           return false
         }
       }
 
-      async function getStreamUrl() {
-        const response = await fetch('/stream/youtube', { credentials: 'include' })
-        const data = await response.json()
-        return data.url
-      }
-
-      function createPlayer(url) {
-        const videoId = new URL(url).searchParams.get('v')
+      function createPlayer() {
         playerDiv.innerHTML = `
-          <iframe src="https://www.youtube.com/embed/{{ broadcast_key }}?autoplay=1"
+          <iframe src="https://www.youtube.com/embed/${broadcastKey}?autoplay=1"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowfullscreen>
           </iframe>`
@@ -56,7 +49,7 @@
           return
         }
         try {
-          await fetch('/stream/youtube/stop', { method: 'POST', credentials: 'include' })
+          await fetch('/stream/stop?mode=youtube', { method: 'DELETE', credentials: 'include' })
           playerDiv.innerHTML = ''
           statusDiv.innerHTML = 'Stream stopped'
         } catch {
@@ -66,13 +59,11 @@
 
       document.addEventListener('DOMContentLoaded', async () => {
         if (await checkStreamStatus()) {
-          const url = await getStreamUrl()
-          createPlayer(url)
+          createPlayer()
           statusDiv.innerHTML = 'Stream active'
         } else {
           statusDiv.innerHTML = 'No active stream'
         }
       })
     </script>
-  </body>
-</html>
+{% endblock %}
