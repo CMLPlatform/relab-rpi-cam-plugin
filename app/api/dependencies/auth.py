@@ -52,14 +52,15 @@ async def verify_request(
 
 async def require_cookie_auth(request: Request) -> bool:
     """Check if user is authenticated via cookie, redirect to login if not."""
-    logged_in = bool(request.cookies.get(settings.auth_key_name))
-    if not logged_in:
+    cookie_value = request.cookies.get(settings.auth_key_name)
+    if not cookie_value or not _is_authorized(cookie_value):
         current_path = str(request.url.path)
         login_url = f"/login?redirect_url={current_path}"
         raise HTTPException(status_code=status.HTTP_307_TEMPORARY_REDIRECT, headers={"Location": login_url})
-    return logged_in
+    return True
 
 
 async def get_auth_status(request: Request) -> bool:
     """Get authentication status without redirecting (for templates)."""
-    return bool(request.cookies.get(settings.auth_key_name))
+    cookie_value = request.cookies.get(settings.auth_key_name)
+    return bool(cookie_value and _is_authorized(cookie_value))
