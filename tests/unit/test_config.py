@@ -8,7 +8,6 @@ WSS_URL = "wss://example.com/ws"
 WS_URL = "ws://example.com/ws"
 HTTP_URL = "http://example.com"
 HTTPS_URL = "https://example.com"
-MANIFEST_FILENAME = "master.m3u8"
 
 
 class TestRelayUrlValidation:
@@ -56,11 +55,3 @@ class TestSettingsDefaults:
         """By default, the relay should be disabled since it requires explicit configuration to work securely."""
         s = Settings()
         assert s.relay_enabled is False
-
-    def test_default_hls_manifest(self) -> None:
-        """The default HLS manifest filename should be "master.m3u8".
-
-        This is a common convention for HLS streaming and compatible with most players without additional configuration.
-        """
-        s = Settings()
-        assert s.hls_manifest_filename == MANIFEST_FILENAME

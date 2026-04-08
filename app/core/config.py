@@ -26,18 +26,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
 
     # Directory paths
-    hls_path: Path = BASE_DIR / "data" / "hls"  # Used for storing temporary HLS video files
     image_path: Path = BASE_DIR / "data" / "images"  # Used for temporary storing of captured images
     templates_path: Path = BASE_DIR / "app" / "templates"  # Used for storing HTML templates
     static_path: Path = BASE_DIR / "app" / "static"  # Used for serving static files
     log_path: Path = BASE_DIR / "logs"  # Used for storing log files
 
-    # HLS settings
-    hls_manifest_filename: str = "master.m3u8"
-
     # Directory cleanup settings
     cleanup_interval_s: int = 60 * 10  # Interval for cleaning up expired files in seconds (10 minutes)
-    hls_ttl_s: int = 60  # Time-to-live for HLS video files in seconds (1 minute)
     image_ttl_s: int = 60 * 60  # Time-to-live for captured images in seconds (1 hour)
     max_stream_duration_s: int = 60 * 60 * 5  # Maximum duration for a stream in seconds (5 hours)
     check_stream_interval_s: int = 60  # Interval for checking stream duration in seconds (1 minute)

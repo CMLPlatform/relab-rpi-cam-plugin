@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import SecretStr
-from relab_rpi_cam_models.stream import StreamMode, YoutubeStreamConfig
+from relab_rpi_cam_models.stream import StreamMode, YoutubeConfigRequiredError, YoutubeStreamConfig
 
 from app.api.dependencies import camera_management as camera_deps
 from app.api.exceptions import ActiveStreamError, YouTubeValidationError
@@ -101,23 +101,19 @@ class TestCameraManagerCleanup:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Should call clear_directory with image_ttl_s, not hls_ttl_s."""
+        """Should call clear_directory with image_ttl_s."""
         mock_clear_directory = AsyncMock()
         monkeypatch.setattr("app.api.services.camera_manager.clear_directory", mock_clear_directory)
 
-        # Create a real CameraManager with mocked stream and clear_directory
         manager = CameraManager()
-        # Mock the camera and stream to avoid initialization issues
         manager.camera = None
         manager.stream = SimpleNamespace(is_active=False)
 
         await manager.cleanup()
 
-        # Verify clear_directory was called with the correct TTL
         mock_clear_directory.assert_awaited_once()
         call_args = mock_clear_directory.call_args
         assert call_args[1]["time_to_live_s"] == settings.image_ttl_s
-        assert call_args[1]["time_to_live_s"] != settings.hls_ttl_s
 
 
 class TestCameraManagerStartStreaming:
@@ -154,7 +150,6 @@ class TestCameraManagerStartStreaming:
 
         with pytest.raises(YouTubeValidationError):
             await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
-
 
     async def test_happy_path_youtube_streaming(
         self,
@@ -251,8 +246,6 @@ class TestCameraManagerStartStreaming:
 
     async def test_requires_youtube_config(self) -> None:
         """Should raise YoutubeConfigRequiredError when no config provided for YouTube mode."""
-        from relab_rpi_cam_models.stream import YoutubeConfigRequiredError
-
         manager = CameraManager()
 
         with pytest.raises(YoutubeConfigRequiredError):

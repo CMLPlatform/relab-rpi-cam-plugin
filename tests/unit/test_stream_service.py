@@ -8,7 +8,6 @@ from pydantic import AnyUrl, SecretStr
 from relab_rpi_cam_models.stream import StreamMode, YoutubeConfigRequiredError, YoutubeStreamConfig
 
 from app.api.services import stream as stream_service
-from app.core.config import settings
 
 MANIFEST_NAME_KEY = "master_pl_name"
 POST_METHOD_MARKER = "method POST"
@@ -45,9 +44,8 @@ class DummyAsyncClient:
 class TestStreamUrls:
     """Tests for stream URL helpers."""
 
-    def test_upload_url_uses_manifest_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that the upload URL includes the manifest filename from settings."""
-        monkeypatch.setattr(settings, "hls_manifest_filename", "master.m3u8")
+    def test_upload_url_uses_manifest_name(self) -> None:
+        """Test that the upload URL includes the manifest filename."""
         config = YoutubeStreamConfig(
             stream_key=SecretStr("stream-key"),
             broadcast_key=SecretStr("broadcast-key"),

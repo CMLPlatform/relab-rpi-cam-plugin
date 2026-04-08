@@ -10,7 +10,6 @@ from relab_rpi_cam_models.stream import StreamMode, YoutubeConfigRequiredError, 
 
 from app.api.services.hardware_protocols import FfmpegOutputLike
 from app.api.services.hardware_stubs import FfmpegOutputStub
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +22,12 @@ else:
         FfmpegOutput = FfmpegOutputStub
 
 
+# YouTube HLS ingestion uses a fixed manifest filename
+_YOUTUBE_MANIFEST = "master.m3u8"
+
+
 def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> FfmpegOutputLike:
-    """Create FfmpegOutput object for the given streaming mode."""
+    """Create FfmpegOutput object for YouTube HLS ingestion."""
     if mode != StreamMode.YOUTUBE:
         msg = f"Unsupported stream mode: {mode}"
         raise ValueError(msg)
@@ -32,7 +35,7 @@ def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | No
     if not youtube_config:
         raise YoutubeConfigRequiredError
 
-    base_output = (
+    output_str = (
         "-g 30 -sc_threshold 0 "  # Closed GOP and disabled scene detection
         "-b:v 2500k -maxrate 2500k "  # Limit bitrate to 2500 kb/s
         "-f hls "
@@ -42,10 +45,7 @@ def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | No
         "-http_persistent 1 "
         "-connect_timeout 10000000 "  # 10 second connection timeout (microseconds)
         "-rw_timeout 30000000 "  # 30 second read/write timeout (microseconds)
-    )
-
-    output_str = base_output + (
-        f"-master_pl_name {settings.hls_manifest_filename} "  # Create a master playlist
+        f"-master_pl_name {_YOUTUBE_MANIFEST} "  # Master playlist for YouTube ingestion
         "-method POST "  # Required by YouTube
         f"{get_upload_url(youtube_config)}"  # Upload URL
     )
@@ -60,9 +60,9 @@ def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | No
 
 
 def get_upload_url(youtube_config: YoutubeStreamConfig) -> AnyUrl:
-    """Get YouTube HLS upload URL pointing to the stream key."""
+    """Get YouTube HLS upload URL."""
     return AnyUrl(
-        f"https://a.upload.youtube.com/http_upload_hls?cid={youtube_config.stream_key.get_secret_value()}&copy=0&file={settings.hls_manifest_filename}",
+        f"https://a.upload.youtube.com/http_upload_hls?cid={youtube_config.stream_key.get_secret_value()}&copy=0&file={_YOUTUBE_MANIFEST}",
     )
 
 
@@ -93,7 +93,7 @@ async def validate_stream_key(youtube_config: YoutubeStreamConfig) -> bool:
         except (httpx.TimeoutException, httpx.NetworkError) as e:
             logger.warning("Stream key validation attempt %d failed: %s", attempt + 1, e)
             if attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt)  # exponential backoff
+                delay = base_delay * (2**attempt)  # exponential backoff
                 await asyncio.sleep(delay)
                 continue
             return False

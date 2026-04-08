@@ -112,21 +112,20 @@ Shared data models live in the `relab_rpi_cam_models` package. After changes:
 
 ## Architecture Notes
 
-### Connection Modes
+### Connection
 
-- **WebSocket Relay** (`app/utils/relay.py`) — Pi initiates outbound connection, backend sends commands through tunnel
-- **Direct HTTP** (`app/api/`) — Backend makes HTTP requests directly to Pi API
+The plugin connects to the RELab backend via **WebSocket relay** (`app/utils/relay.py`). The Pi initiates an outbound WebSocket connection; the backend sends commands through this tunnel. No public IP or port forwarding is needed.
 
-Both modes are supported simultaneously via environment configuration.
+See the relay credential format in [INSTALL.md](INSTALL.md#option-b-manual-websocket-setup).
 
 ### Camera Capture
 
-- Real camera: Uses `libcamera` via `rpicam` tools
+- Real camera: Uses `libcamera` via `picamera2`
 - Mock mode (testing): Uses synthetic image generation
 
-### Relay Protocol
+### Streaming
 
-The WebSocket relay uses a simple request-response protocol. See `relay_credentials.json` format in [INSTALL.md](INSTALL.md#option-b-manual-websocket-setup).
+YouTube RTMP is the only supported streaming mode. The Pi sends HLS segments to YouTube's ingestion API via ffmpeg. Local HLS preview and MJPEG streaming have been removed (see ADR-001).
 
 ## Debugging
 
@@ -148,7 +147,6 @@ uv run fastapi dev app/main.py
 
 - **Swagger UI**: `http://localhost:8018/docs`
 - **Setup page**: `http://localhost:8018/setup`
-- **Raw stream**: `http://localhost:8018/stream/watch`
 
 ### Environment Variables
 
