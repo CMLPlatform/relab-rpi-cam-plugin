@@ -27,7 +27,7 @@ def setup_logging(log_level: str = "INFO", log_file: Path | str = settings.log_p
                 "level": log_level.upper(),
                 "formatter": "console_format",
                 "rich_tracebacks": True,
-                "tracebacks_show_locals": True,
+                "tracebacks_show_locals": settings.debug,
             },
             "file": {
                 "class": "logging.handlers.TimedRotatingFileHandler",

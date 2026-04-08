@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Auth
     auth_key_name: str = "X-API-Key"
 
+    # Debug mode
+    debug: bool = False
+
     # WebSocket relay (auto-enabled when all three fields are set)
     relay_backend_url: str = ""  # wss://your-backend/plugins/rpi-cam/ws/connect
     relay_camera_id: str = ""
