@@ -5,5 +5,12 @@
       "source.organizeImports": "explicit"
     },
     "editor.defaultFormatter": "charliermarsh.ruff"
-  }
+  },
+  "ty.configuration": {
+		"environment": {
+			"root": ["./backend"],
+			"python": "./backend/.venv/"
+		}
+	},
+	"ty.interpreter": ["${workspaceFolder}/backend/.venv/bin/python"],
 }
