@@ -13,7 +13,9 @@ from __future__ import annotations
 import asyncio
 import json as json_mod
 import logging
+import os
 import secrets
+import tempfile
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -161,13 +163,28 @@ def _save_relay_credentials(
 
     This avoids corrupting the user's .env which may contain comments,
     quotes, or other settings. The config loads these on next boot.
+    Writes atomically to prevent corruption on power loss.
     """
     data = {
         "relay_backend_url": relay_backend_url,
         "relay_camera_id": camera_id,
         "relay_api_key": api_key,
     }
-    _CREDENTIALS_FILE.write_text(json_mod.dumps(data, indent=2))
+    # Write to a temp file first, then atomically replace
+    with tempfile.NamedTemporaryFile(
+        mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
+    ) as tmp:
+        tmp_path = tmp.name
+        tmp.write(json_mod.dumps(data, indent=2))
+    try:
+        os.replace(tmp_path, _CREDENTIALS_FILE)
+    except OSError:
+        # Clean up temp file if replace fails
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
     logger.info("Relay credentials saved to %s", _CREDENTIALS_FILE)
 
 
