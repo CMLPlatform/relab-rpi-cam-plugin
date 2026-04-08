@@ -8,10 +8,10 @@ from PIL.Image import Exif, Image
 from pydantic import (
     AliasGenerator,
     AnyUrl,
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
-    FutureDatetime,
     PlainSerializer,
     PositiveFloat,
     PositiveInt,
@@ -128,6 +128,6 @@ class ImageCaptureResponse(BaseModel):
     image_id: str = Field(pattern=r"^[0-9a-f]{32}$", description="Unique image identifier")
     metadata: ImageMetadata = Field(description="Image metadata")
     image_url: AnyUrl = Field(description="URL to access image")
-    expires_at: Annotated[FutureDatetime, PlainSerializer(serialize_datetime_with_z)] = Field(
+    expires_at: Annotated[AwareDatetime, PlainSerializer(serialize_datetime_with_z)] = Field(
         description="Expiration time for image URL"
     )

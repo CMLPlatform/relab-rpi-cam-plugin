@@ -55,17 +55,21 @@ def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | No
             output_str = base_output + str(settings.hls_path / settings.hls_manifest_filename)
             return FfmpegOutput(output_str)
 
+        case _:
+            msg = f"Unhandled stream mode: {mode}"
+            raise ValueError(msg)
+
 
 def get_upload_url(youtube_config: YoutubeStreamConfig) -> AnyUrl:
     """Get YouTube HLS upload URL pointing to the stream key."""
     return AnyUrl(
-        f"https://a.upload.youtube.com/http_upload_hls?cid={youtube_config.stream_key}&copy=0&file={settings.hls_manifest_filename}",
+        f"https://a.upload.youtube.com/http_upload_hls?cid={youtube_config.stream_key.get_secret_value()}&copy=0&file={settings.hls_manifest_filename}",
     )
 
 
 def get_broadcast_url(youtube_config: YoutubeStreamConfig) -> AnyUrl:
     """Get YouTube broadcast URL."""
-    return AnyUrl(f"https://youtube.com/watch?v={youtube_config.broadcast_key}")
+    return AnyUrl(f"https://youtube.com/watch?v={youtube_config.broadcast_key.get_secret_value()}")
 
 
 async def validate_stream_key(youtube_config: YoutubeStreamConfig) -> bool:

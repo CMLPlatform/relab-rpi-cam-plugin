@@ -20,6 +20,7 @@ from relab_rpi_cam_models.stream import (
     YoutubeStreamConfig,
 )
 
+from app.api.exceptions import ActiveStreamError, CameraInitializationError, YouTubeValidationError
 from app.api.services.hardware_protocols import Picamera2Like
 from app.api.services.hardware_stubs import H264EncoderStub, Picamera2Stub
 from app.api.services.stream import get_ffmpeg_output, get_stream_url, validate_stream_key
@@ -36,22 +37,6 @@ else:
     except ImportError:
         Picamera2 = Picamera2Stub
         H264Encoder = H264EncoderStub
-
-
-class YouTubeValidationError(Exception):
-    """Raised when YouTube stream key validation fails."""
-
-    def __init__(self, stream_key: str | None = None) -> None:
-        super().__init__(f"Invalid YouTube stream key{f': {stream_key}' if stream_key else ''}.")
-
-
-class ActiveStreamError(Exception):
-    """Raised when trying to access the camera while a stream is active."""
-
-    def __init__(self, stream: Stream) -> None:
-        self.mode = stream.mode
-        self.url = stream.url
-        super().__init__(f"Stream active in {self.mode} mode at {self.url}. Stop streaming first.")
 
 
 class CameraManager:
@@ -85,6 +70,9 @@ class CameraManager:
                 return camera.create_still_configuration(main={"size": (1920, 1080)}, raw=None)
             case CameraMode.VIDEO:
                 return camera.create_video_configuration(raw=None)
+            case _:
+                msg = f"Unhandled camera mode: {mode}"
+                raise ValueError(msg)
 
     async def setup_camera(self, mode: CameraMode) -> Picamera2Like:
         """Setup camera for specific mode."""
@@ -94,7 +82,18 @@ class CameraManager:
         async with self._camera_lock():
             if self.camera is None:
                 # Create camera instance if it doesn't exist
-                self.camera = await asyncio.to_thread(lambda: Picamera2(camera_num=settings.camera_device_num))
+                try:
+                    self.camera = await asyncio.to_thread(lambda: Picamera2(camera_num=settings.camera_device_num))
+                except IndexError as e:
+                    raise CameraInitializationError(
+                        settings.camera_device_num,
+                        "Camera device not found. Check that the device number is correct and the camera is connected.",
+                    ) from e
+                except (RuntimeError, OSError) as e:
+                    raise CameraInitializationError(
+                        settings.camera_device_num,
+                        str(e),
+                    ) from e
             elif self.current_mode == mode:
                 # Camera already set up for this mode
                 return self.camera
@@ -153,14 +152,15 @@ class CameraManager:
         youtube_config: YoutubeStreamConfig | None = None,
     ) -> StreamView:
         """Start streaming to YouTube or local file."""
+        # Check if stream is already active before any async operations
+        if self.stream.is_active:
+            raise ActiveStreamError(self.stream)
+
         if mode == StreamMode.YOUTUBE:
             if not youtube_config:
                 raise YoutubeConfigRequiredError
             if not await validate_stream_key(youtube_config):
-                raise YouTubeValidationError(youtube_config.stream_key)
-
-        if self.stream.is_active:
-            raise ActiveStreamError(self.stream)
+                raise YouTubeValidationError(youtube_config.stream_key.get_secret_value())
 
         camera = await self.setup_camera(CameraMode.VIDEO)
 
@@ -175,7 +175,7 @@ class CameraManager:
             try:
                 self.stream.mode = mode
                 self.stream.url = get_stream_url(mode, youtube_config)
-                self.stream.started_at = datetime.now(UTC) - timedelta(seconds=5)
+                self.stream.started_at = datetime.now(UTC)
                 self.stream.youtube_config = youtube_config
             except Exception:
                 # Roll back: stop the recording we just started so it doesn't leak
@@ -209,7 +209,7 @@ class CameraManager:
         if self.stream.is_active:
             await self.stop_streaming()
 
-        await clear_directory(settings.image_path, time_to_live_s=settings.hls_ttl_s)
+        await clear_directory(settings.image_path, time_to_live_s=settings.image_ttl_s)
 
         async with self._camera_lock():
             if self.camera:
