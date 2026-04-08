@@ -18,6 +18,9 @@ async def login(
     """Cookie-based login."""
     if not _is_authorized(api_key):
         raise HTTPException(status_code=403, detail="Invalid API Key")
+    # Validate redirect_url is relative (local) to prevent open redirect attacks
+    if not redirect_url.startswith("/"):
+        redirect_url = "/"
     response = RedirectResponse(url=redirect_url, status_code=303)
     response.set_cookie(key="X-API-Key", value=api_key, httponly=True, secure=True, samesite="lax")
     return response
