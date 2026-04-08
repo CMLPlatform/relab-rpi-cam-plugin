@@ -79,14 +79,15 @@ pre-commit run --all-files
 ### Add a New Endpoint
 
 1. Create a new route file in `app/api/routers/`
-2. Import and include it in `app/main.py`:
+
+1. Import and include it in `app/main.py`:
 
    ```python
    from app.api.routers import your_router
    app.include_router(your_router.router)
    ```
 
-3. Add tests in `tests/unit/`
+1. Add tests in `tests/unit/`
 
 ### Update Camera Logic
 
@@ -99,15 +100,15 @@ pre-commit run --all-files
 Shared data models live in the `relab_rpi_cam_models` package. After changes:
 
 1. Update version in `relab_rpi_cam_models/pyproject.toml`
-2. Rebuild the main project's lock file: `uv lock --upgrade relab-rpi-cam-models`
+1. Rebuild the main project's lock file: `uv lock --upgrade relab-rpi-cam-models`
 
 ## Before Submitting a PR
 
 1. **Run tests**: `uv run pytest tests/`
-2. **Check coverage**: Aim for >80%
-3. **Run pre-commit**: `pre-commit run --all-files`
-4. **Update docs**: If adding features, update relevant docs
-5. **Test on hardware**: If you modified camera logic, test on an actual Pi
+1. **Check coverage**: Aim for >80%
+1. **Run pre-commit**: `pre-commit run --all-files`
+1. **Update docs**: If adding features, update relevant docs
+1. **Test on hardware**: If you modified camera logic, test on an actual Pi
 
 ## Architecture Notes
 
@@ -162,13 +163,12 @@ All configuration is in `.env`. Key debugging settings:
 Versioning is handled automatically by `commitizen`. The process is:
 
 1. Make commits following [Conventional Commits](https://www.conventionalcommits.org/) format
-2. Run `cz bump` to update version and generate changelog
-3. Push the version tag: `git push origin --tags`
-4. CI will build and package the release
+1. Run `cz bump` to update version and generate changelog
+1. Push the version tag: `git push origin --tags`
+1. CI will build and package the release
 
 ## Questions?
 
 - Check [INSTALL.md](INSTALL.md) for setup issues
 - See [README.md](README.md) for project overview
 - Review existing code and tests for patterns
-
