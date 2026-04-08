@@ -9,10 +9,10 @@
 [project]
   authors = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
   classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Framework :: FastAPI",
     "Natural Language :: English",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Graphics :: Capture",
     "Topic :: Multimedia :: Video :: Capture",
     "Topic :: System :: Hardware",
@@ -22,20 +22,20 @@
   license     = "AGPL-3.0-or-later"
   maintainers = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
   name        = "relab-rpi-cam-plugin"
-  readme      = "README.md"
 
   # Dependencies and version constraints
   dependencies = [
     "fastapi[standard]>=0.115.8",
+    "httpx>=0.28",
     "pillow>=10.0.0",
     "pydantic-settings>=2.8.0",
     "qrcode[pil]>=7.4",
-    "relab-rpi-cam-models",
+    "relab-rpi-cam-models>=0.2.0", # NOTE: This is a local package, versioning is handled by commitizen
     "rich>=13.0",
     "websockets>=14.0",
   ]
 
-  requires-python = ">=3.11" # Python 3.11.x is required for the integration of the system-site picamera2 library
+  requires-python = ">=3.13" # Python 3.13+ available in Debian Trixie for picamera2
   version         = "0.2.0"  # NOTE: Versioning is handled by commitizen
 
   [project.urls]
@@ -44,8 +44,8 @@
     Repository = "https://github.com/CMLPlatform/relab-rpi-cam-plugin.git"
 
 [dependency-groups]
-  dev  = ["commitizen>=4.8.3", "pre-commit>=4.2.0", "ruff>=0.9.6", "ty>=0.0.29"]
-  test = ["httpx>=0.28", "pytest>=8.0", "pytest-asyncio>=0.25", "pytest-cov>=6.0"]
+  dev  = [{ include-group = "test" }, "commitizen>=4.8.3", "pre-commit>=4.2.0", "ruff>=0.9.6", "ty>=0.0.29"]
+  test = ["pytest>=8.0", "pytest-asyncio>=0.25", "pytest-cov>=6.0"]
 
 ### Tools configuration
 [tool.pytest.ini_options]
@@ -68,7 +68,7 @@
 [tool.ruff]
   fix            = true
   line-length    = 120
-  target-version = "py311"
+  target-version = "py313"
 
   [tool.ruff.format]
     docstring-code-format = true
@@ -93,7 +93,7 @@
       "D107", # undocumented-public-init (__init__ methods are often self-explanatory)
 
       # TODO: Re-enable these linting rules when we have more than one developer.
-      "FIX002", # Allow TODO comments that are tracked separately.
+      "FIX002", # Allow todos
       "TD002",  # Allow todos without authors
       "TD003",  # Allow todos without issue links
     ]
