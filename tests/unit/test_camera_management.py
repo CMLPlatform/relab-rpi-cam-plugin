@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.api.dependencies import camera_management as camera_deps
+from app.api.services.camera_manager import CameraManager
 from app.core.config import settings
 
 
@@ -88,3 +89,29 @@ class TestCheckStreamDuration:
         await camera_deps.check_stream_duration()
 
         mock_camera_manager.stop_streaming.assert_awaited_once()
+
+
+class TestCameraManagerCleanup:
+    """Tests for CameraManager.cleanup method."""
+
+    async def test_cleanup_uses_correct_ttl(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Should call clear_directory with image_ttl_s, not hls_ttl_s."""
+        mock_clear_directory = AsyncMock()
+        monkeypatch.setattr("app.api.services.camera_manager.clear_directory", mock_clear_directory)
+
+        # Create a real CameraManager with mocked stream and clear_directory
+        manager = CameraManager()
+        # Mock the camera and stream to avoid initialization issues
+        manager.camera = None
+        manager.stream = SimpleNamespace(is_active=False)
+
+        await manager.cleanup()
+
+        # Verify clear_directory was called with the correct TTL
+        mock_clear_directory.assert_awaited_once()
+        call_args = mock_clear_directory.call_args
+        assert call_args[1]["time_to_live_s"] == settings.image_ttl_s
+        assert call_args[1]["time_to_live_s"] != settings.hls_ttl_s

@@ -1,5 +1,6 @@
 """Tests for utility modules."""
 
+import asyncio
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,6 +11,11 @@ import pytest
 from app.core.config import settings
 from app.utils.files import cleanup_images, clear_directory, setup_directory
 from app.utils.pairing import PairingState, _generate_code_and_fingerprint, get_pairing_state
+
+
+def _list_dir(path: Path) -> list[Path]:
+    """List directory contents (non-async helper for use with asyncio.to_thread)."""
+    return list(path.iterdir())
 
 
 class TestSetupDirectory:
@@ -46,7 +52,7 @@ class TestClearDirectory:
         (tmp_path / "a.txt").write_text("hello")
         (tmp_path / "b.txt").write_text("world")
         await clear_directory(tmp_path)
-        remaining = list(tmp_path.iterdir())
+        remaining = await asyncio.to_thread(_list_dir, tmp_path)
         assert remaining == []
 
     async def test_clear_respects_ttl(self, tmp_path: Path) -> None:

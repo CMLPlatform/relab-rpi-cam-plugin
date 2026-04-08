@@ -9,9 +9,14 @@ from httpx import ASGITransport, AsyncClient
 from app.api.dependencies.auth import verify_request
 from app.api.dependencies.camera_management import get_camera_manager
 from app.api.services.camera_manager import CameraManager
+from app.core.config import settings
 from app.main import app
 
 TEST_API_KEY = "test-api-key-12345"
+
+# Add test API key to authorized keys for cookie auth tests
+if TEST_API_KEY not in settings.authorized_api_keys:
+    settings.authorized_api_keys.append(TEST_API_KEY)
 
 
 @pytest.fixture

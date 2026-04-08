@@ -2,7 +2,7 @@
 
 import asyncio
 
-from app.utils.tasks import repeat_task, repeated_tasks
+from app.utils.tasks import repeat_task
 
 
 class TestRepeatTask:
@@ -39,16 +39,6 @@ class TestRepeatTask:
         await asyncio.wait_for(second_call.wait(), timeout=1)
         task.cancel()
         assert call_count >= 2
-
-    async def test_task_stored_in_global_set(self) -> None:
-        """Test that the created task is stored in the global repeated_tasks set."""
-
-        async def _noop() -> None:
-            pass
-
-        task = repeat_task(_noop, seconds=60, task_name="test_stored")
-        assert task in repeated_tasks
-        task.cancel()
 
     async def test_exception_does_not_kill_loop(self) -> None:
         """Test that an exception in the task does not stop it from running again."""

@@ -53,18 +53,21 @@ class TestGetImage:
 
     async def test_missing_image_returns_404(self, client: AsyncClient) -> None:
         """Test that requesting a nonexistent image ID returns a 404."""
-        resp = await client.get("/images/nonexistent-id")
+        # Use a valid hex ID format (32 hex chars)
+        resp = await client.get("/images/abcdef0123456789abcdef0123456789")
         assert resp.status_code == 404
 
     async def test_existing_image_returns_jpeg(self, client: AsyncClient, tmp_path: Path) -> None:
         """Test that requesting an existing image ID returns the JPEG file."""
+        # Use a valid hex ID format (32 hex chars)
+        valid_image_id = "abcdef0123456789abcdef0123456789"
         # Point settings to tmp dir and create a fake JPEG
         original = settings.image_path
         settings.image_path = tmp_path
-        (tmp_path / "abc123.jpg").write_bytes(b"\xff\xd8\xff\xe0fake-jpeg")
+        (tmp_path / f"{valid_image_id}.jpg").write_bytes(b"\xff\xd8\xff\xe0fake-jpeg")
 
         try:
-            resp = await client.get("/images/abc123")
+            resp = await client.get(f"/images/{valid_image_id}")
             assert resp.status_code == 200
             assert resp.headers["content-type"] == JPEG_CONTENT_TYPE
         finally:

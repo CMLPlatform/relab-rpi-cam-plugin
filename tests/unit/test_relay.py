@@ -117,6 +117,7 @@ class TestHandleCommand:
 
     async def test_handles_binary_response(self) -> None:
         """Should send binary responses as bytes frames."""
+
         def _binary_handler(_: httpx.Request) -> httpx.Response:
             return httpx.Response(200, content=b"abc", headers={"content-type": "image/jpeg"})
 
@@ -129,6 +130,7 @@ class TestHandleCommand:
 
     async def test_handles_text_response(self) -> None:
         """Should send text responses as JSON frames."""
+
         def _text_handler(_: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"ok": True})
 
