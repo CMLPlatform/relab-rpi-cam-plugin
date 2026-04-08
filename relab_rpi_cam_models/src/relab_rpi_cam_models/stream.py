@@ -1,9 +1,9 @@
 """Models for Stream information."""
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
-from pydantic import AnyUrl, BaseModel, Field, PastDatetime, PositiveFloat
+from pydantic import AnyUrl, AwareDatetime, BaseModel, Field, PositiveFloat, SecretStr
 
 from .images import BaseMetadata, CameraProperties, CaptureMetadata
 
@@ -27,11 +27,11 @@ class StreamStateError(Exception):
 class YoutubeStreamConfig(BaseModel):
     """YouTube stream configuration."""
 
-    stream_key: str = Field(description="Stream key for YouTube streaming")
-    broadcast_key: str = Field(description="Broadcast key for YouTube streaming")
+    stream_key: SecretStr = Field(description="Stream key for YouTube streaming")
+    broadcast_key: SecretStr = Field(description="Broadcast key for YouTube streaming")
 
 
-class StreamMode(str, Enum):
+class StreamMode(StrEnum):
     """Stream mode. Contains ffmpeg stream and URL construction logic for each mode."""
 
     YOUTUBE = "youtube"
@@ -62,7 +62,7 @@ class StreamView(BaseModel):
 
     mode: StreamMode
     url: AnyUrl
-    started_at: PastDatetime
+    started_at: AwareDatetime
     youtube_config: YoutubeStreamConfig | None = None
     metadata: StreamMetadata
 
@@ -73,7 +73,7 @@ class Stream:
 
     mode: StreamMode | None = None
     url: AnyUrl | None = None
-    started_at: PastDatetime | None = None
+    started_at: AwareDatetime | None = None
     youtube_config: YoutubeStreamConfig | None = None
 
     @property

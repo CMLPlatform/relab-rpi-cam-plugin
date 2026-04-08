@@ -1,10 +1,10 @@
 [project]
   authors = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
   classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Framework :: FastAPI",
     "Natural Language :: English",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Graphics :: Capture",
     "Topic :: Multimedia :: Video :: Capture",
     "Topic :: System :: Hardware",
@@ -15,6 +15,7 @@
   name = "relab-rpi-cam-models"
   readme = "README.md"
   version = "0.2.0" # NOTE: Versioning is handled by commitizen
+  requires-python = ">=3.13"
 
   dependencies = ["Pillow>=10.4", "pydantic>=2.9"]
 
