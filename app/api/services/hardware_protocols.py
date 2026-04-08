@@ -1,6 +1,13 @@
 """Type-only protocols for optional hardware-backed dependencies."""
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from PIL.Image import Image as PilImage
+else:
+    # At runtime we avoid importing PIL to keep this module lightweight; use
+    # a sentinel object type for structural typing purposes.
+    PilImage = object
 
 
 class Picamera2Like(Protocol):
@@ -20,8 +27,8 @@ class Picamera2Like(Protocol):
     def close(self) -> None:
         """Release the camera."""
 
-    def capture_image(self) -> Any:  # noqa: ANN401
-        """Capture a still image."""
+    def capture_image(self) -> "PilImage":
+        """Capture a still image (PIL Image at runtime)."""
 
     def capture_metadata(self) -> dict | None:
         """Capture metadata for the last image or frame."""

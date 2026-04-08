@@ -23,10 +23,10 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+import app.core.config as core_config
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
-
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ def get_pairing_state() -> PairingState:
 
 async def run_pairing(on_paired: Callable[[], Coroutine[Any, Any, None]]) -> None:
     """Run the pairing flow: register → poll → configure → callback."""
-    base = settings.pairing_backend_url.rstrip("/")
+    base = core_config.settings.pairing_backend_url.rstrip("/")
     if not base:
         return
 
@@ -154,9 +154,9 @@ async def _pairing_cycle(
             )
 
             # Update in-memory settings
-            settings.relay_backend_url = data["ws_url"]
-            settings.relay_camera_id = data["camera_id"]
-            settings.relay_api_key = data["api_key"]
+            core_config.settings.relay_backend_url = data["ws_url"]
+            core_config.settings.relay_camera_id = data["camera_id"]
+            core_config.settings.relay_api_key = data["api_key"]
 
             # Start the relay
             await on_paired()

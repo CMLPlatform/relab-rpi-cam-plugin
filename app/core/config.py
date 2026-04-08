@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.utils.pairing import load_relay_credentials
+
 # Set the project base directory and .env file
 BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
 
@@ -76,6 +78,25 @@ class Settings(BaseSettings):
             )
         return v
 
+    @field_validator("debug", mode="before")
+    @classmethod
+    def _parse_debug(cls, v: object) -> bool:
+        """Treat common truthy values as debug, everything else as off.
+
+        This keeps settings initialization resilient in environments that set
+        DEBUG to non-boolean values such as release labels.
+        """
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            normalized = v.strip().lower()
+            if normalized in {"1", "true", "yes", "on", "debug"}:
+                return True
+            if normalized in {"0", "false", "no", "off", "release", "prod", "production"}:
+                return False
+            return False
+        return bool(v)
+
 
 # Create a settings instance that can be imported throughout the app
 settings: Settings = Settings()
@@ -86,8 +107,6 @@ def apply_relay_credentials() -> None:
 
     Should be called once during application startup (lifespan), not at import time.
     """
-    from app.utils.pairing import load_relay_credentials  # noqa: PLC0415
-
     creds = load_relay_credentials()
     if creds:
         settings.relay_backend_url = str(creds.get("relay_backend_url", ""))

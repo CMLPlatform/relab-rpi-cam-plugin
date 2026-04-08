@@ -97,8 +97,8 @@ async def validate_stream_key(youtube_config: YoutubeStreamConfig) -> bool:
                 await asyncio.sleep(delay)
                 continue
             return False
-        except Exception as e:  # noqa: BLE001
-            logger.error("Unexpected error during stream key validation: %s", e)
+        except Exception:
+            logger.exception("Unexpected error during stream key validation")
             return False
 
     return False

@@ -1,5 +1,6 @@
 """Camera management dependencies for FastAPI."""
 
+import contextlib
 import logging
 from datetime import UTC, datetime
 from typing import Annotated
@@ -56,9 +57,7 @@ async def check_stream_health() -> None:
         if stream_info is None:
             logger.warning("Stream info became unavailable; stopping stream")
             await camera_manager.stop_streaming()
-    except Exception as e:  # noqa: BLE001
+    except (OSError, RuntimeError) as e:
         logger.warning("Stream health check failed: %s. Stopping stream for recovery.", e)
-        try:
+        with contextlib.suppress(RuntimeError):
             await camera_manager.stop_streaming()
-        except RuntimeError:
-            pass  # Already stopped or error — stream is unhealthy either way

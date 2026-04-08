@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from app.__version__ import version
 from app.api.dependencies.camera_management import (
@@ -33,9 +33,18 @@ from app.utils.tasks import repeat_task
 setup_logging()
 logger = logging.getLogger(__name__)
 
+# Rate limit constants used by the rate limiter middleware
+RATE_LIMIT_METHOD = "POST"
+RATE_LIMIT_PATH = "/auth/login"
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Simple rate limiter for brute force protection on /auth/login."""
+
+class RateLimiter:
+    """Simple rate limiter for brute force protection on /auth/login.
+
+    Implemented as a plain helper class. The actual middleware is registered
+    with `@app.middleware("http")` below to avoid subclass signature/type
+    mismatch with Starlette's `BaseHTTPMiddleware.dispatch`.
+    """
 
     # Max failed login attempts per IP before rate limiting
     MAX_ATTEMPTS = 5
@@ -44,15 +53,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     # Block duration after exceeding limits (seconds)
     BLOCK_DURATION = 300  # 5 minutes
 
-    def __init__(self, app: FastAPI) -> None:
-        super().__init__(app)
+    def __init__(self) -> None:
         # Track failed attempts: {ip: [(timestamp, is_failed), ...]}
         self._attempts: dict[str, list[tuple[float, bool]]] = defaultdict(list)
 
-    async def dispatch(self, request: Request, call_next: Callable) -> JSONResponse | Request:  # type: ignore[no-untyped-def]
+    async def handle(self, request: Request, call_next: Callable) -> Response:
         """Check rate limits before passing request to the app."""
-        # Only rate limit POST requests to /auth/login
-        if request.method != "POST" or request.url.path != "/auth/login":
+        # Only rate limit the configured method/path
+        if request.method != RATE_LIMIT_METHOD or request.url.path != RATE_LIMIT_PATH:
             return await call_next(request)
 
         client_ip = request.client.host if request.client else "unknown"
@@ -151,7 +159,16 @@ app = FastAPI(
 )
 
 # Add rate limiting middleware first (outermost) for brute force protection
-app.add_middleware(RateLimitMiddleware)
+# Use function-based middleware backed by a single `RateLimiter` instance to
+# avoid signature/type mismatches with BaseHTTPMiddleware.dispatch.
+_rate_limiter = RateLimiter()
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next: Callable) -> Response:
+    """Middleware to apply rate limiting on specific endpoints."""
+    return await _rate_limiter.handle(request, call_next)
+
 
 # Add CORS middleware to allow requests from the main API host
 app.add_middleware(
@@ -167,7 +184,7 @@ app.add_middleware(
 
 # Exception handlers
 async def camera_initialization_exception_handler(
-    request: Request,  # noqa: ARG001
+    request: Request,  # noqa: ARG001 # Expected by FastAPI Exception Handler signature
     exc: Exception,
 ) -> JSONResponse:
     """Handle camera initialization errors."""

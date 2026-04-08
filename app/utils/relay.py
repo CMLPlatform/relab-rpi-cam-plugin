@@ -9,13 +9,29 @@ them to the local FastAPI app and sends the response back.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import httpx
 
 from app.core.config import apply_relay_credentials, settings
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+websockets: Any = None
+ConnectionClosed: Any = None
+
+try:
+    import websockets as _websockets
+    from websockets.exceptions import ConnectionClosed as _ConnectionClosed
+except ImportError:
+    pass
+else:
+    websockets = _websockets
+    ConnectionClosed = _ConnectionClosed
 
 # WebSocket message types
 _MSG_TYPE_PING = "ping"
@@ -31,7 +47,6 @@ class _StaleKeyError(Exception):
     """Raised when the relay API key has been rotated and needs to be reloaded."""
 
 
-
 class _AsyncWebSocket(Protocol):
     """Protocol for async WebSocket connections (e.g. websockets library)."""
 
@@ -45,6 +60,13 @@ logger = logging.getLogger(__name__)
 # Reconnection delay bounds (seconds)
 _RECONNECT_MIN = 2.0
 _RECONNECT_MAX = 60.0
+
+if ConnectionClosed is None:
+    _WEBSOCKET_CONNECTION_ERRORS: tuple[type[Exception], ...] = (OSError,)
+else:
+    _WEBSOCKET_CONNECTION_ERRORS = (ConnectionClosed, OSError)
+
+_RELAY_CONNECTION_ERRORS: tuple[type[Exception], ...] = (RuntimeError, *_WEBSOCKET_CONNECTION_ERRORS)
 
 
 async def run_relay() -> None:
@@ -67,8 +89,8 @@ async def run_relay() -> None:
                 delay = _RECONNECT_MIN  # reset on successful connect
                 logger.info("Relay connected. Waiting for commands.")
                 await _receive_loop(ws)
-        except Exception:  # noqa: BLE001
-            logger.warning("Relay connection lost. Reconnecting in %.0fs…", delay)
+        except _RELAY_CONNECTION_ERRORS as exc:
+            logger.warning("Relay connection lost. Reconnecting in %.0fs…", delay, exc_info=exc)
 
         await asyncio.sleep(delay)
         delay = min(delay * 2, _RECONNECT_MAX)
@@ -93,12 +115,11 @@ class _WebSocketContextManager:
         self._raw_ws: _AsyncWebSocket | None = None
 
     async def __aenter__(self) -> _WebSocketConnection:
-        # Use websockets library if available, else raise a clear error.
-        try:
-            import websockets  # type: ignore[import-untyped]  # noqa: PLC0415
-        except ImportError as exc:
+        # Import websockets lazily so importing this module does not require the
+        # optional dependency when relay mode is disabled.
+        if websockets is None:
             msg = "The 'websockets' package is required for relay mode. Install it with: uv add websockets"
-            raise ImportError(msg) from exc
+            raise ImportError(msg)
 
         raw_ws = cast(
             "_AsyncWebSocket",
@@ -143,44 +164,67 @@ async def _receive_loop(ws: _WebSocketConnection) -> None:
     def _on_task_done(task: asyncio.Task[None]) -> None:
         """Callback when a command task completes. Checks for stale key errors."""
         pending_tasks.discard(task)
-        try:
-            task.result()
-        except _StaleKeyError:
+        if task.cancelled():
+            return
+
+        exc = task.exception()
+        if exc is None:
+            return
+
+        if isinstance(exc, _StaleKeyError):
             # Signal reconnection by closing the WebSocket, which will exit _receive_loop
-            asyncio.create_task(_close_ws_for_reconnect(ws))
-        except Exception:  # noqa: BLE001
-            pass  # _handle_command logs its own errors
+            _task = asyncio.create_task(_close_ws_for_reconnect(ws))
+            # Keep a reference so the task isn't garbage-collected immediately
+            pending_tasks.add(_task)
+            _task.add_done_callback(pending_tasks.discard)
+            return
+
+        logger.debug("Command task failed", exc_info=exc)
 
     async with httpx.AsyncClient(base_url=str(settings.base_url).rstrip("/"), headers=auth_headers) as http:
         while True:
-            try:
-                raw = await ws.recv()
-            except Exception:  # noqa: BLE001
+            raw = await _recv_relay_message(ws)
+            if raw is None:
                 # Connection closed or error — let the outer loop reconnect.
                 return
+            await _handle_relay_message(ws, http, raw, pending_tasks, _on_task_done)
 
-            if isinstance(raw, bytes):
-                logger.warning("Unexpected binary frame from backend; ignoring.")
-                continue
 
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                logger.warning("Received invalid JSON from backend; ignoring.")
-                continue
+async def _recv_relay_message(ws: _WebSocketConnection) -> str | bytes | None:
+    with contextlib.suppress(Exception):
+        return await ws.recv()
+    return None
 
-            msg_type = msg.get("type")
 
-            if msg_type == _MSG_TYPE_PING:
-                await ws.send(json.dumps({"type": _MSG_TYPE_PONG}))
-                continue
+async def _handle_relay_message(
+    ws: _WebSocketConnection,
+    http: httpx.AsyncClient,
+    raw: str | bytes,
+    pending_tasks: set[asyncio.Task[None]],
+    on_task_done: Callable[[asyncio.Task[None]], None],
+) -> None:
+    if isinstance(raw, bytes):
+        logger.warning("Unexpected binary frame from backend; ignoring.")
+        return
 
-            if msg_type != _MSG_TYPE_REQUEST:
-                continue
+    try:
+        msg = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Received invalid JSON from backend; ignoring.")
+        return
 
-            task = asyncio.create_task(_handle_command(ws, http, msg))
-            pending_tasks.add(task)
-            task.add_done_callback(_on_task_done)
+    msg_type = msg.get("type")
+
+    if msg_type == _MSG_TYPE_PING:
+        await ws.send(json.dumps({"type": _MSG_TYPE_PONG}))
+        return
+
+    if msg_type != _MSG_TYPE_REQUEST:
+        return
+
+    task = asyncio.create_task(_handle_command(ws, http, msg))
+    pending_tasks.add(task)
+    task.add_done_callback(on_task_done)
 
 
 async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg: dict) -> None:
@@ -198,14 +242,15 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
 
     try:
         response = await http.request(method, path, params=params, json=body, timeout=30.0)
-    except Exception as exc:  # noqa: BLE001
+    except httpx.HTTPError as exc:
         await _send_error(ws, msg_id, 503, str(exc))
         return
 
     # Detect if the relay API key has been rotated (backend returns 403)
     if response.status_code == 403:
         logger.warning("Relay received 403 Unauthorized — API key may have been rotated")
-        raise _StaleKeyError("Relay API key rotated")
+        message = "Relay API key rotated"
+        raise _StaleKeyError(message)
 
     content_type = response.headers.get("content-type", "")
     is_binary = _BINARY_IMAGE in content_type or _BINARY_OCTET in content_type
@@ -226,7 +271,7 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
     else:
         try:
             data = response.json()
-        except Exception:  # noqa: BLE001
+        except ValueError:
             data = response.text
 
         await ws.send(
@@ -265,7 +310,5 @@ async def _close_ws_for_reconnect(ws: _WebSocketConnection) -> None:
     """
     logger.info("Closing relay connection to reconnect with new API key.")
     apply_relay_credentials()
-    try:
+    with contextlib.suppress(Exception):
         await ws._ws.close()  # noqa: SLF001
-    except Exception:  # noqa: BLE001
-        pass  # Already closed or error is fine — we're trying to trigger reconnection anyway

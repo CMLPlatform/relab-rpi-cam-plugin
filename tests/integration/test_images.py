@@ -162,5 +162,3 @@ class TestCaptureEndpoint:
         monkeypatch.setattr(camera_manager, "capture_jpeg", _boom)
         resp = await client.post("/images")
         assert resp.status_code == 500
-
-
