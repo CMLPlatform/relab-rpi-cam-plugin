@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}RPi Camera — Setup{% endblock %}
+
+{% block head_extra %}
+  {% if pairing.status in ('waiting', 'registering') and pairing.code %}
+    <meta http-equiv="refresh" content="5">
+  {% elif pairing.status == status_paired %}
+    <meta http-equiv="refresh" content="3">
+  {% elif pairing.status == status_error %}
+    <meta http-equiv="refresh" content="5">
+  {% endif %}
+{% endblock %}
+
+{% block body %}
+<h1>RPi Camera Setup</h1>
+
+{% if pairing.status in ('waiting', 'registering') and pairing.code %}
+  <h2>Pairing</h2>
+  <p>Enter this code in the <strong>ReLab app</strong> (Cameras &rarr; Add Camera)
+     to pair this camera automatically.</p>
+  <div style="font-size:3rem;font-weight:800;letter-spacing:.3em;font-family:monospace;
+              background:#f5f5f5;display:inline-block;padding:12px 24px;border-radius:12px;
+              border:2px dashed #999;margin:8px 0">{{ pairing.code }}</div>
+  <p style="opacity:.6">Or scan the QR code on a mobile device:</p>
+  <img src="/qr-setup" alt="QR pairing code" width="200" height="200">
+  <p style="color:#888;font-size:.85em">Code expires in 10 minutes. A new one will be generated automatically.</p>
+{% elif pairing.status == status_paired %}
+  <h2>Pairing</h2>
+  <p class="online">Paired successfully! Connecting to backend&hellip;</p>
+{% elif pairing.status == status_error %}
+  <h2>Pairing</h2>
+  <p class="offline">{{ pairing.error or 'Pairing error — retrying…' }}</p>
+{% endif %}
+
+{% if relay_enabled %}
+  <h2>Connection</h2>
+  <p>WebSocket relay: <span class="online">connected</span></p>
+  <table>
+    <tr><td>Backend URL</td><td><code>{{ relay_backend_url or 'not set' }}</code></td></tr>
+    <tr><td>Camera ID</td><td>{% if relay_camera_id %}<em>set</em>{% else %}<em>not set</em>{% endif %}</td></tr>
+  </table>
+{% elif pairing.status not in ('waiting', 'registering', 'paired') %}
+  <h2>Connection</h2>
+  <p>WebSocket relay: <span class="offline">not configured</span></p>
+{% endif %}
+
+<h2>Camera URL (HTTP mode)</h2>
+<p><code>{{ base_url }}</code></p>
+{% endblock %}

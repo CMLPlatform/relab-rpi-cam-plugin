@@ -1,20 +1,17 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>Login - RELab RPI Cam Plugin</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}" />
-  </head>
-  <body>
-    <div class="container">
-      <div class="form-container">
-        <h1>Login</h1>
-        <form action="/auth/login" method="post">
-          <input name="api_key" type="password" placeholder="API Key" required />
-          <input type="hidden" name="redirect_url" value="{{ redirect_url }}" />
-          <button type="submit" class="btn">Login</button>
-        </form>
-      </div>
-      <a href="{{ url_for('homepage') }}" class="btn" style="font-size: 0.9em;">← Back to Homepage</a>
-    </div>
-  </body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Login - RELab RPI Cam Plugin{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="form-container">
+    <h1>Login</h1>
+    <form action="/auth/login" method="post">
+      <input name="api_key" type="password" placeholder="API Key" required />
+      <input type="hidden" name="redirect_url" value="{{ redirect_url }}" />
+      <button type="submit" class="btn">Login</button>
+    </form>
+  </div>
+  <a href="{{ url_for('homepage') }}" class="btn" style="font-size: 0.9em;">← Back to Homepage</a>
+</div>
+{% endblock %}

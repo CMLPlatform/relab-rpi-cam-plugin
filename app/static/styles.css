@@ -112,3 +112,56 @@ h1 {
     color: #666;
     align-self: center;
 }
+
+/* Setup page styles */
+body {
+    max-width: 640px;
+    margin: 40px auto;
+    padding: 0 20px;
+    line-height: 1.6;
+}
+
+h2 {
+    font-size: 1.2rem;
+    margin-top: 2rem;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+}
+
+td {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    word-break: break-all;
+}
+
+td:first-child {
+    font-weight: 600;
+    width: 160px;
+    word-break: normal;
+}
+
+code {
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.online {
+    color: #2e7d32;
+    font-weight: 700;
+}
+
+.offline {
+    color: #c62828;
+    font-weight: 700;
+}
+
+img {
+    display: block;
+    margin: 1rem 0;
+}
