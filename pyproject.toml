@@ -36,8 +36,16 @@
 
 [dependency-groups]
   dev = ["commitizen>=4.8.3", "pre-commit>=4.2.0", "pyright>=1.1.403", "ruff>=0.9.6"]
+  test = ["httpx>=0.28", "pytest>=8.0", "pytest-asyncio>=0.25"]
 
 ### Tools configuration
+[tool.pytest.ini_options]
+  asyncio_mode = "auto"
+  testpaths    = ["tests"]
+
+[tool.ty.environment]
+  extra-paths = ["typings"]
+
 [tool.commitizen]
   major_version_zero       = true
   name                     = "cz_conventional_commits"
