@@ -1,7 +1,5 @@
 """Tests for frontend routes (landing, stream viewer)."""
 
-from types import SimpleNamespace
-from typing import cast
 from unittest.mock import MagicMock
 
 from httpx import AsyncClient

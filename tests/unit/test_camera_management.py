@@ -2,11 +2,14 @@
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import SecretStr
+from relab_rpi_cam_models.stream import StreamMode, YoutubeStreamConfig
 
 from app.api.dependencies import camera_management as camera_deps
+from app.api.exceptions import ActiveStreamError, YouTubeValidationError
 from app.api.services.camera_manager import CameraManager
 from app.core.config import settings
 
@@ -115,3 +118,64 @@ class TestCameraManagerCleanup:
         call_args = mock_clear_directory.call_args
         assert call_args[1]["time_to_live_s"] == settings.image_ttl_s
         assert call_args[1]["time_to_live_s"] != settings.hls_ttl_s
+
+
+class TestCameraManagerStartStreaming:
+    """Tests for CameraManager.start_streaming method."""
+
+    async def test_raises_when_stream_already_active(self) -> None:
+        """Should raise ActiveStreamError if a stream is already active."""
+        manager = CameraManager()
+        manager.stream.mode = StreamMode.LOCAL
+        manager.stream.started_at = datetime.now(UTC)
+
+        with pytest.raises(ActiveStreamError):
+            await manager.start_streaming(StreamMode.YOUTUBE)
+
+    async def test_raises_youtube_validation_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Should raise YouTubeValidationError if YouTube stream key is invalid."""
+        manager = CameraManager()
+        manager.camera = MagicMock()
+        monkeypatch.setattr(manager, "setup_camera", AsyncMock(return_value=manager.camera))
+
+        # Mock validate_stream_key to return False
+        async def mock_validate(*_args: object, **_kwargs: object) -> bool:
+            return False
+
+        monkeypatch.setattr("app.api.services.camera_manager.validate_stream_key", mock_validate)
+
+        youtube_config = YoutubeStreamConfig(
+            stream_key=SecretStr("invalid-key"),
+            broadcast_key=SecretStr("invalid-broadcast"),
+        )
+
+        with pytest.raises(YouTubeValidationError):
+            await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
+
+
+class TestCameraManagerStopStreaming:
+    """Tests for CameraManager.stop_streaming method."""
+
+    async def test_raises_when_no_stream_active(self) -> None:
+        """Should raise RuntimeError if no stream is active."""
+        manager = CameraManager()
+        # stream.is_active is False by default
+
+        with pytest.raises(RuntimeError, match="No stream active"):
+            await manager.stop_streaming()
+
+
+class TestCameraManagerGetStatus:
+    """Tests for CameraManager.get_status method."""
+
+    async def test_returns_status_without_stream(self) -> None:
+        """Should return status with no stream info when stream is inactive."""
+        manager = CameraManager()
+
+        status = await manager.get_status()
+
+        assert status.current_mode is None
+        assert status.stream is None
