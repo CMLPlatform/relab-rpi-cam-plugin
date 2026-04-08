@@ -34,19 +34,19 @@ class TestStream:
     def test_active_stream_returns_view(self) -> None:
         """get_info should return a StreamView with correct mode and metadata."""
         stream = Stream(
-            mode=StreamMode.LOCAL,
-            url=AnyUrl("http://127.0.0.1:8018/stream/watch"),
+            mode=StreamMode.YOUTUBE,
+            url=AnyUrl("https://youtube.com/watch?v=dQw4w9WgXcQ"),
             started_at=datetime.now(UTC) - timedelta(seconds=5),
         )
         info = stream.get_info({"Model": "mock"}, {"FrameDuration": 33_333})
         assert info is not None
-        assert info.mode == StreamMode.LOCAL
+        assert info.mode == StreamMode.YOUTUBE
         assert info.metadata.fps == pytest.approx(30.0, rel=0.01)
 
     def test_missing_url_raises_stream_state_error(self) -> None:
         """get_info should raise StreamStateError if the stream is active but URL is missing."""
         stream = Stream(
-            mode=StreamMode.LOCAL,
+            mode=StreamMode.YOUTUBE,
             url=None,
             started_at=datetime.now(UTC) - timedelta(seconds=5),
         )
@@ -56,8 +56,8 @@ class TestStream:
     def test_missing_started_at_raises_stream_state_error(self) -> None:
         """get_info should raise StreamStateError if the stream is active but started_at is missing."""
         stream = Stream(
-            mode=StreamMode.LOCAL,
-            url=AnyUrl("http://127.0.0.1:8018/stream/watch"),
+            mode=StreamMode.YOUTUBE,
+            url=AnyUrl("https://youtube.com/watch?v=dQw4w9WgXcQ"),
             started_at=None,
         )
         with pytest.raises(StreamStateError):

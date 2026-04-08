@@ -36,7 +36,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
     apply_relay_credentials()
 
     # Set up temporary directories
-    await setup_directory(settings.hls_path)
     await setup_directory(settings.image_path)
     logger.info("Temporary file directories set up")
 

@@ -126,7 +126,7 @@ class TestCameraManagerStartStreaming:
     async def test_raises_when_stream_already_active(self) -> None:
         """Should raise ActiveStreamError if a stream is already active."""
         manager = CameraManager()
-        manager.stream.mode = StreamMode.LOCAL
+        manager.stream.mode = StreamMode.YOUTUBE
         manager.stream.started_at = datetime.now(UTC)
 
         with pytest.raises(ActiveStreamError):

@@ -32,10 +32,9 @@ class YoutubeStreamConfig(BaseModel):
 
 
 class StreamMode(StrEnum):
-    """Stream mode. Contains ffmpeg stream and URL construction logic for each mode."""
+    """Stream mode."""
 
     YOUTUBE = "youtube"
-    LOCAL = "local"
 
 
 class StreamMetadata(BaseMetadata):

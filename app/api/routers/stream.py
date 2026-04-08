@@ -1,10 +1,9 @@
 """Router for video streaming endpoints."""
 
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Body, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from relab_rpi_cam_models.stream import (
     StreamMode,
     StreamView,
@@ -22,15 +21,11 @@ from app.core.config import settings
 # Initialize router
 router = APIRouter(prefix="/stream", tags=["stream"])
 
-# TODO: Consider adding multiplexer for simultaneous streaming to local output and YouTube.
-# This would warrant a restructuring from mode as query param to path param:
-#  /stream/{mode}/start , /stream/{mode}/status, /stream/{mode}/watch, /stream/{mode}/stop
 
-
-@router.post("/start", status_code=201, summary="Start streaming video")
+@router.post("/start", status_code=201, summary="Start YouTube streaming")
 async def start_stream(
     camera_manager: CameraManagerDependency,
-    mode: Annotated[StreamMode, Query(description="Streaming mode", examples=["local"])],
+    mode: Annotated[StreamMode, Query(description="Streaming mode (youtube)", examples=["youtube"])],
     youtube_config: Annotated[
         YoutubeStreamConfig | None,
         Body(
@@ -39,7 +34,7 @@ async def start_stream(
         ),
     ] = None,
 ) -> StreamView:
-    """Start streaming video with specified mode (youtube or local)."""
+    """Start YouTube video streaming."""
     try:
         return await camera_manager.start_streaming(mode, youtube_config=youtube_config)
 
@@ -65,46 +60,11 @@ async def status_redirect() -> RedirectResponse:
     return RedirectResponse(router.url_path_for("get_stream_status"))
 
 
-@router.get("/hls/{file_path:path}", summary="HLS files for local streaming")
-async def hls_file(file_path: str, camera_manager: CameraManagerDependency) -> FileResponse:
-    """Serve HLS files for local streaming."""
-    if camera_manager.stream.mode != StreamMode.LOCAL:
-        raise HTTPException(404, "No local stream active")
-
-    try:
-        hls_dir = settings.hls_path
-        full_path = (hls_dir / file_path).resolve()
-        if not (full_path.is_relative_to(hls_dir) and full_path.is_file()):
-            raise HTTPException(status_code=403, detail="Access to file denied")
-
-        if Path(full_path.name).suffix not in {".m3u8", ".ts"}:
-            raise HTTPException(status_code=400, detail="Invalid file type. Only HLS files (.m3u8, .ts) are supported.")
-
-        return FileResponse(path=full_path)
-    except (RuntimeError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"Invalid path: {e!s}") from e
-
-
-@router.get("/hls", summary="HLS manifest file")
-async def hls_manifest(camera_manager: CameraManagerDependency) -> RedirectResponse:
-    """Redirect to HLS manifest file."""
-    if camera_manager.stream.mode != StreamMode.LOCAL:
-        raise HTTPException(404, "No local stream active")
-    return RedirectResponse(router.url_path_for("hls_file", file_path=settings.hls_manifest_filename))
-
-
-@router.delete("/stop", status_code=204, summary="Stop streaming video")
-async def stop_stream(
-    camera_manager: CameraManagerDependency,
-    mode: Annotated[
-        StreamMode | None, Query(description="Streaming mode (youtube or local)", examples=["local"])
-    ] = None,
-) -> None:
-    """Stop any active stream. If the mode is specified, only stop that stream."""
+@router.delete("/stop", status_code=204, summary="Stop YouTube streaming")
+async def stop_stream(camera_manager: CameraManagerDependency) -> None:
+    """Stop active YouTube stream."""
     if not camera_manager.stream.is_active:
         raise HTTPException(404, "No stream active")
-    if mode and camera_manager.stream.mode != mode:
-        raise HTTPException(404, f"No {mode.value} stream active")
     try:
         return await camera_manager.stop_streaming()
     except RuntimeError as e:

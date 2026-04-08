@@ -65,11 +65,6 @@ class TestStreamUrls:
         )
         assert stream_service.get_broadcast_url(config) == AnyUrl("https://youtube.com/watch?v=broadcast-key")
 
-    def test_local_stream_url_uses_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that the local stream URL is constructed using the base URL from settings."""
-        monkeypatch.setattr(settings, "base_url", AnyUrl("http://127.0.0.1:8018/"))
-        assert stream_service.get_stream_url(StreamMode.LOCAL) == AnyUrl("http://127.0.0.1:8018/stream/watch")
-
     def test_youtube_stream_url_requires_config(self) -> None:
         """Test that requesting a YouTube stream URL without providing the necessary config raises an error."""
         with pytest.raises(YoutubeConfigRequiredError):
@@ -88,14 +83,6 @@ class TestStreamUrls:
 
 class TestFfmpegOutput:
     """Tests for FFmpeg output construction."""
-
-    def test_local_output_uses_hls_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that the local FFmpeg output is constructed using the HLS path and manifest filename from settings."""
-        monkeypatch.setattr(stream_service, "FfmpegOutput", DummyFfmpegOutput)
-        monkeypatch.setattr(settings, "hls_path", settings.hls_path / "tmp-test")
-        output = stream_service.get_ffmpeg_output(StreamMode.LOCAL)
-        assert isinstance(output, DummyFfmpegOutput)
-        assert str(settings.hls_path / settings.hls_manifest_filename) in output.output_str
 
     def test_youtube_output_requires_config(self) -> None:
         """Test that requesting a YouTube FFmpeg output without providing the necessary config raises an error."""

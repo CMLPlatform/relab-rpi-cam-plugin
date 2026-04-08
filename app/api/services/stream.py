@@ -1,7 +1,6 @@
 """Hardware-dependent business logic for streams."""
 
 from typing import TYPE_CHECKING
-from urllib.parse import urljoin
 
 import httpx
 from pydantic import AnyUrl
@@ -22,6 +21,13 @@ else:
 
 def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> FfmpegOutputLike:
     """Create FfmpegOutput object for the given streaming mode."""
+    if mode != StreamMode.YOUTUBE:
+        msg = f"Unsupported stream mode: {mode}"
+        raise ValueError(msg)
+
+    if not youtube_config:
+        raise YoutubeConfigRequiredError
+
     base_output = (
         "-g 30 -sc_threshold 0 "  # Closed GOP and disabled scene detection
         "-b:v 2500k -maxrate 2500k "  # Limit bitrate to 2500 kb/s
@@ -32,32 +38,19 @@ def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | No
         "-http_persistent 1 "
     )
 
-    match mode:
-        case StreamMode.YOUTUBE:
-            if not youtube_config:
-                raise YoutubeConfigRequiredError
-
-            output_str = base_output + (
-                f"-master_pl_name {settings.hls_manifest_filename} "  # Create a master playlist
-                "-method POST "  # Required by YouTube
-                f"{get_upload_url(youtube_config)}"  # Upload URL
-            )
-            return FfmpegOutput(
-                output_str,
-                audio=True,  # Youtube requires audio
-                audio_bitrate=8000,
-                # NOTE: Using a PulseAudio null source to avoid feedback. The built-in '-f lavfi -i anullsrc` option
-                # is preferred but PiCamera2 FfmpegOutput only accepts pulse devices.
-                audio_device="nullaudio.monitor",
-            )
-
-        case StreamMode.LOCAL:
-            output_str = base_output + str(settings.hls_path / settings.hls_manifest_filename)
-            return FfmpegOutput(output_str)
-
-        case _:
-            msg = f"Unhandled stream mode: {mode}"
-            raise ValueError(msg)
+    output_str = base_output + (
+        f"-master_pl_name {settings.hls_manifest_filename} "  # Create a master playlist
+        "-method POST "  # Required by YouTube
+        f"{get_upload_url(youtube_config)}"  # Upload URL
+    )
+    return FfmpegOutput(
+        output_str,
+        audio=True,  # Youtube requires audio
+        audio_bitrate=8000,
+        # NOTE: Using a PulseAudio null source to avoid feedback. The built-in '-f lavfi -i anullsrc` option
+        # is preferred but PiCamera2 FfmpegOutput only accepts pulse devices.
+        audio_device="nullaudio.monitor",
+    )
 
 
 def get_upload_url(youtube_config: YoutubeStreamConfig) -> AnyUrl:
@@ -82,10 +75,10 @@ async def validate_stream_key(youtube_config: YoutubeStreamConfig) -> bool:
 
 def get_stream_url(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> AnyUrl:
     """Get stream URL for a given stream mode."""
-    match mode:
-        case StreamMode.YOUTUBE:
-            if not youtube_config:
-                raise YoutubeConfigRequiredError
-            return get_broadcast_url(youtube_config)
-        case StreamMode.LOCAL:
-            return AnyUrl(urljoin(str(settings.base_url), "/stream/watch"))
+    if mode != StreamMode.YOUTUBE:
+        msg = f"Unsupported stream mode: {mode}"
+        raise ValueError(msg)
+
+    if not youtube_config:
+        raise YoutubeConfigRequiredError
+    return get_broadcast_url(youtube_config)

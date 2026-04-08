@@ -190,12 +190,10 @@ class CameraManager:
         return stream_info
 
     async def stop_streaming(self) -> None:
-        """Stop streaming to YouTube or local file."""
+        """Stop active YouTube stream."""
         async with self._camera_lock():
             if self.stream.is_active and self.camera:
                 await asyncio.to_thread(self.camera.stop_recording)
-                if self.stream.mode == StreamMode.LOCAL:
-                    await clear_directory(settings.hls_path, time_to_live_s=settings.hls_ttl_s)
                 self.stream = Stream()  # Reset stream state
             else:
                 err_msg = "No stream active"
