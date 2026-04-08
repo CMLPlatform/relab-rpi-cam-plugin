@@ -18,9 +18,14 @@ router = APIRouter(prefix="/stream/watch", tags=["stream"], dependencies=[Depend
 
 # YouTube stream viewer endpoint
 @router.get("/youtube", summary="Watch YouTube video stream in browser")
-async def watch_youtube_stream(request: Request) -> HTMLResponse:
+async def watch_youtube_stream(request: Request, camera_manager: CameraManagerDependency) -> HTMLResponse:
     """Render the YouTube stream viewer template."""
-    return templates.TemplateResponse(request, "youtube_stream_viewer.html")
+    broadcast_key = (
+        camera_manager.stream.youtube_config.broadcast_key.get_secret_value()
+        if camera_manager.stream.youtube_config
+        else ""
+    )
+    return templates.TemplateResponse(request, "youtube_stream_viewer.html", {"broadcast_key": broadcast_key})
 
 
 # Local stream viewer endpoint

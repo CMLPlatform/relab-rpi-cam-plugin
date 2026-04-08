@@ -5,7 +5,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from relab_rpi_cam_models.stream import (
     StreamMode,
     StreamView,
@@ -14,11 +13,11 @@ from relab_rpi_cam_models.stream import (
 )
 
 from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.services.camera_manager import ActiveStreamError, YouTubeValidationError
+from app.api.exceptions import (
+    ActiveStreamError,
+    YouTubeValidationError,
+)
 from app.core.config import settings
-
-# Initialize templates
-templates = Jinja2Templates(directory=settings.templates_path)
 
 # Initialize router
 router = APIRouter(prefix="/stream", tags=["stream"])
@@ -50,8 +49,6 @@ async def start_stream(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ActiveStreamError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/status")
@@ -71,7 +68,6 @@ async def status_redirect() -> RedirectResponse:
 @router.get("/hls/{file_path:path}", summary="HLS files for local streaming")
 async def hls_file(file_path: str, camera_manager: CameraManagerDependency) -> FileResponse:
     """Serve HLS files for local streaming."""
-    # TODO: Use StreamResponse here instead of FileResponse.
     if camera_manager.stream.mode != StreamMode.LOCAL:
         raise HTTPException(404, "No local stream active")
 
