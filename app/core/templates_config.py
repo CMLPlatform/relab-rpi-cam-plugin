@@ -1,9 +1,10 @@
 """Centralized Jinja2 template configuration with caching enabled."""
 
-from jinja2 import FileSystemLoader
 from fastapi.templating import Jinja2Templates
+from jinja2 import FileSystemLoader
 
 from app.core.config import settings
+
 
 # Create a single shared Jinja2Templates instance with caching enabled.
 # This avoids recreating the environment in each router and improves performance.

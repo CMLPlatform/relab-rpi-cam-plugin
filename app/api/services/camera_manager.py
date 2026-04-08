@@ -75,43 +75,48 @@ class CameraManager:
                 raise ValueError(msg)
 
     async def setup_camera(self, mode: CameraMode) -> Picamera2Like:
-        """Setup camera for specific mode."""
+        """Setup camera for specific mode (acquires lock)."""
         if self.stream.is_active and mode == CameraMode.PHOTO:
             raise ActiveStreamError(self.stream)
 
         async with self._camera_lock():
-            if self.camera is None:
-                # Create camera instance if it doesn't exist
-                try:
-                    self.camera = await asyncio.to_thread(lambda: Picamera2(camera_num=settings.camera_device_num))
-                except IndexError as e:
-                    raise CameraInitializationError(
-                        settings.camera_device_num,
-                        "Camera device not found. Check that the device number is correct and the camera is connected.",
-                    ) from e
-                except (RuntimeError, OSError) as e:
-                    raise CameraInitializationError(
-                        settings.camera_device_num,
-                        str(e),
-                    ) from e
-            elif self.current_mode == mode:
-                # Camera already set up for this mode
-                return self.camera
-            else:
-                # Stop camera if it's running before switching modes
-                await asyncio.to_thread(self.camera.stop)
+            return await self._setup_camera_locked(mode)
 
-            config = self._get_camera_config(mode, self.camera)  # pyright: ignore reportOptionalMemberAccess  # Camera is guaranteed to be initialized by the above lines
-            self.camera.configure(config)  # pyright: ignore reportOptionalMemberAccess
-            await asyncio.to_thread(self.camera.start)  # pyright: ignore reportOptionalMemberAccess
-
-            self.current_mode = mode
+    async def _setup_camera_locked(self, mode: CameraMode) -> Picamera2Like:
+        """Setup camera for specific mode. Caller must hold _camera_lock."""
+        if self.camera is None:
+            try:
+                self.camera = await asyncio.to_thread(lambda: Picamera2(camera_num=settings.camera_device_num))
+            except IndexError as e:
+                raise CameraInitializationError(
+                    settings.camera_device_num,
+                    "Camera device not found. Check that the device number is correct and the camera is connected.",
+                ) from e
+            except (RuntimeError, OSError) as e:
+                raise CameraInitializationError(
+                    settings.camera_device_num,
+                    str(e),
+                ) from e
+        elif self.current_mode == mode:
             return self.camera
+        else:
+            await asyncio.to_thread(self.camera.stop)
+
+        config = self._get_camera_config(mode, self.camera)  # pyright: ignore reportOptionalMemberAccess
+        self.camera.configure(config)  # pyright: ignore reportOptionalMemberAccess
+        await asyncio.to_thread(self.camera.start)  # pyright: ignore reportOptionalMemberAccess
+
+        self.current_mode = mode
+        return self.camera
 
     async def capture_jpeg(self) -> ImageCaptureResponse:
         """Capture image and return JPEG bytes."""
-        camera = await self.setup_camera(CameraMode.PHOTO)
+        if self.stream.is_active:
+            raise ActiveStreamError(self.stream)
+
         async with self._camera_lock():
+            camera = await self._setup_camera_locked(CameraMode.PHOTO)
+
             # Capture image
             pil_image = await asyncio.to_thread(camera.capture_image)
 
@@ -137,9 +142,13 @@ class CameraManager:
 
     async def capture_preview_jpeg(self) -> bytes:
         """Capture a low-res JPEG for viewfinder preview. Does not save to disk."""
-        camera = await self.setup_camera(CameraMode.PHOTO)
+        if self.stream.is_active:
+            raise ActiveStreamError(self.stream)
+
         async with self._camera_lock():
+            camera = await self._setup_camera_locked(CameraMode.PHOTO)
             pil_image = await asyncio.to_thread(camera.capture_image)
+
         pil_image = pil_image.resize((640, 480))
         buf = BytesIO()
         pil_image.save(buf, format="JPEG", quality=70)
@@ -151,12 +160,11 @@ class CameraManager:
         *,
         youtube_config: YoutubeStreamConfig | None = None,
     ) -> StreamView:
-        """Start streaming to YouTube or local file.
+        """Start streaming to YouTube.
 
         Raises YouTubeValidationError if stream key validation fails.
         Raises RuntimeError if ffmpeg fails to start within the timeout.
         """
-        # Check if stream is already active before any async operations
         if self.stream.is_active:
             raise ActiveStreamError(self.stream)
 
@@ -166,17 +174,16 @@ class CameraManager:
             if not await validate_stream_key(youtube_config):
                 raise YouTubeValidationError(youtube_config.stream_key.get_secret_value())
 
-        camera = await self.setup_camera(CameraMode.VIDEO)
-
         async with self._camera_lock():
+            camera = await self._setup_camera_locked(CameraMode.VIDEO)
+
             try:
                 stream_output = get_ffmpeg_output(mode, youtube_config)
-                # Start recording with a 30-second timeout to prevent hanging on ffmpeg startup
                 await asyncio.wait_for(
                     asyncio.to_thread(camera.start_recording, H264Encoder(), stream_output),
                     timeout=30.0,
                 )
-            except asyncio.TimeoutError as e:
+            except TimeoutError as e:
                 err_msg = "Failed to start recording: ffmpeg startup timeout"
                 raise RuntimeError(err_msg) from e
             except (OSError, RuntimeError) as e:
@@ -189,7 +196,6 @@ class CameraManager:
                 self.stream.started_at = datetime.now(UTC)
                 self.stream.youtube_config = youtube_config
             except Exception:
-                # Roll back: stop the recording we just started so it doesn't leak
                 await asyncio.to_thread(camera.stop_recording)
                 self.stream = Stream()
                 raise

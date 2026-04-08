@@ -115,7 +115,8 @@ class ImageMetadata(BaseMetadata):
         if self.capture_metadata.exposure_time:
             exif[Base.ExposureTime.value] = self.capture_metadata.exposure_time / 1_000_000
         if self.capture_metadata.color_temperature:
-            exif[Base.WhiteBalance.value] = self.capture_metadata.color_temperature
+            # WhiteBalance tag is 0=auto, 1=manual; the actual Kelvin value has no standard EXIF tag
+            exif[Base.WhiteBalance.value] = 1
         if self.capture_metadata.sensor_temperature:
             exif[Base.AmbientTemperature.value] = self.capture_metadata.sensor_temperature
 

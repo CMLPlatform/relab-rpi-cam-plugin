@@ -69,6 +69,9 @@ class TestCameraClose:
         camera_manager: CameraManager,
     ) -> None:
         """Test that attempting to close the camera while a stream is active returns a 409 Conflict response."""
-        camera_manager.stream.mode = StreamMode.LOCAL
-        resp = await client.post("/camera/close")
-        assert resp.status_code == 409
+        camera_manager.stream.mode = StreamMode.YOUTUBE
+        try:
+            resp = await client.post("/camera/close")
+            assert resp.status_code == 409
+        finally:
+            camera_manager.stream.mode = None

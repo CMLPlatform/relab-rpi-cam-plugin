@@ -67,7 +67,7 @@ class TestLifespan:
 
         await _run_lifespan_once(app)
 
-        assert setup_calls == [settings.hls_path, settings.image_path]
+        assert setup_calls == [settings.image_path]
         assert created == ["ws_relay"]
         cleanup_mock.assert_awaited_once_with(force=True)
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
 from app.api.dependencies.auth import get_auth_status
+from app.core.config import settings
 from app.core.templates_config import templates
 
 router = APIRouter()

@@ -156,6 +156,109 @@ class TestCameraManagerStartStreaming:
             await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
 
 
+    async def test_happy_path_youtube_streaming(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Should successfully start a YouTube stream with valid config."""
+        manager = CameraManager()
+        mock_camera = MagicMock()
+        mock_camera.camera_properties = {"Model": "test-camera"}
+        mock_camera.capture_metadata = MagicMock(return_value={"FrameDuration": 33333})
+        manager.camera = mock_camera
+        manager.current_mode = None
+
+        # Mock validate_stream_key to return True
+        async def mock_validate(*_args: object, **_kwargs: object) -> bool:
+            return True
+
+        monkeypatch.setattr("app.api.services.camera_manager.validate_stream_key", mock_validate)
+        # Mock H264Encoder to avoid picamera2 dependency
+        monkeypatch.setattr("app.api.services.camera_manager.H264Encoder", MagicMock)
+
+        youtube_config = YoutubeStreamConfig(
+            stream_key=SecretStr("valid-key"),
+            broadcast_key=SecretStr("valid-broadcast"),
+        )
+
+        result = await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
+
+        assert result.mode == StreamMode.YOUTUBE
+        assert manager.stream.is_active
+        assert manager.stream.youtube_config == youtube_config
+        mock_camera.start_recording.assert_called_once()
+
+    async def test_stream_state_update_failure_rolls_back(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Should roll back recording if stream state update fails."""
+        manager = CameraManager()
+        mock_camera = MagicMock()
+        mock_camera.camera_properties = {"Model": "test-camera"}
+        mock_camera.capture_metadata = MagicMock(return_value={"FrameDuration": 33333})
+        manager.camera = mock_camera
+
+        async def mock_validate(*_args: object, **_kwargs: object) -> bool:
+            return True
+
+        monkeypatch.setattr("app.api.services.camera_manager.validate_stream_key", mock_validate)
+        monkeypatch.setattr("app.api.services.camera_manager.H264Encoder", MagicMock)
+
+        # Make get_stream_url raise to simulate state update failure
+        monkeypatch.setattr(
+            "app.api.services.camera_manager.get_stream_url",
+            MagicMock(side_effect=ValueError("bad url")),
+        )
+
+        youtube_config = YoutubeStreamConfig(
+            stream_key=SecretStr("key"),
+            broadcast_key=SecretStr("broadcast"),
+        )
+
+        with pytest.raises(ValueError, match="bad url"):
+            await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
+
+        # Recording should have been stopped (rolled back)
+        mock_camera.stop_recording.assert_called_once()
+        assert not manager.stream.is_active
+
+    async def test_recording_failure_raises_runtime_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Should raise RuntimeError when camera.start_recording fails."""
+        manager = CameraManager()
+        mock_camera = MagicMock()
+        mock_camera.start_recording = MagicMock(side_effect=OSError("camera disconnected"))
+        manager.camera = mock_camera
+
+        async def mock_validate(*_args: object, **_kwargs: object) -> bool:
+            return True
+
+        monkeypatch.setattr("app.api.services.camera_manager.validate_stream_key", mock_validate)
+        monkeypatch.setattr("app.api.services.camera_manager.H264Encoder", MagicMock)
+
+        youtube_config = YoutubeStreamConfig(
+            stream_key=SecretStr("key"),
+            broadcast_key=SecretStr("broadcast"),
+        )
+
+        with pytest.raises(RuntimeError, match="camera disconnected"):
+            await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
+
+        assert not manager.stream.is_active
+
+    async def test_requires_youtube_config(self) -> None:
+        """Should raise YoutubeConfigRequiredError when no config provided for YouTube mode."""
+        from relab_rpi_cam_models.stream import YoutubeConfigRequiredError
+
+        manager = CameraManager()
+
+        with pytest.raises(YoutubeConfigRequiredError):
+            await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=None)
+
+
 class TestCameraManagerStopStreaming:
     """Tests for CameraManager.stop_streaming method."""
 

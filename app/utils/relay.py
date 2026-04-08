@@ -30,7 +30,6 @@ _BINARY_OCTET = "octet-stream"
 class _StaleKeyError(Exception):
     """Raised when the relay API key has been rotated and needs to be reloaded."""
 
-    pass
 
 
 class _AsyncWebSocket(Protocol):

@@ -16,7 +16,6 @@ from app.api.exceptions import (
     ActiveStreamError,
     YouTubeValidationError,
 )
-from app.core.config import settings
 
 # Initialize router
 router = APIRouter(prefix="/stream", tags=["stream"])

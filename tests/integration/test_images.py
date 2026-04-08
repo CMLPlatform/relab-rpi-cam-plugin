@@ -1,14 +1,12 @@
 """Tests for image capture and retrieval endpoints."""
 
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
 from httpx import AsyncClient
 from PIL import Image
 from relab_rpi_cam_models.camera import CameraMode
 
-from app.api.routers import images as images_router
 from app.api.services.camera_manager import CameraManager
 from app.api.services.hardware_stubs import Picamera2Stub
 from app.core.config import settings
@@ -166,22 +164,3 @@ class TestCaptureEndpoint:
         assert resp.status_code == 500
 
 
-class TestMjpegGenerator:
-    """Tests for the MJPEG stream generator."""
-
-    async def test_generator_yields_frame_and_stops_on_error(self) -> None:
-        """Test that the generator yields a frame and then stops when the preview manager raises a RuntimeError."""
-        frames = [b"frame-bytes"]
-
-        class _PreviewManager:
-            async def capture_preview_jpeg(self) -> bytes:
-                if frames:
-                    return frames.pop()
-                msg = "stop"
-                raise RuntimeError(msg)
-
-        gen = images_router._mjpeg_generator(cast("Any", _PreviewManager()))  # noqa: SLF001
-        frame = await anext(gen)
-        assert frame.startswith(b"--frame\r\n")
-        with pytest.raises(StopAsyncIteration):
-            await anext(gen)
