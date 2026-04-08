@@ -68,8 +68,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
     all_tasks = background_tasks | recurring_tasks
     for task in all_tasks:
         task.cancel()
-    if all_tasks:
-        await asyncio.gather(*all_tasks, return_exceptions=True)
+    await asyncio.gather(
+        *(task for task in all_tasks if isinstance(task, asyncio.Task)),
+        return_exceptions=True,
+    )
 
     # Cleanup camera resources
     await camera_manager.cleanup(force=True)
@@ -100,7 +102,7 @@ app.add_middleware(
 # Exception handlers
 async def camera_initialization_exception_handler(
     request: Request,  # noqa: ARG001
-    exc: CameraInitializationError,
+    exc: Exception,
 ) -> JSONResponse:
     """Handle camera initialization errors."""
     return JSONResponse(

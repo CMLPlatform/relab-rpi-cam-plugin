@@ -41,7 +41,10 @@ async def _mjpeg_generator(camera_manager: CameraManagerDependency) -> AsyncGene
 @router.get("/preview")
 async def preview_image(camera_manager: CameraManagerDependency) -> Response:
     """Return a low-res JPEG snapshot for viewfinder preview. Does not save to disk."""
-    jpeg_bytes = await camera_manager.capture_preview_jpeg()
+    try:
+        jpeg_bytes = await camera_manager.capture_preview_jpeg()
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
     return Response(content=jpeg_bytes, media_type="image/jpeg")
 
 
@@ -49,7 +52,10 @@ async def preview_image(camera_manager: CameraManagerDependency) -> Response:
 async def mjpeg_stream(camera_manager: CameraManagerDependency) -> StreamingResponse:
     """Stream continuous MJPEG frames for live viewfinder preview."""
     # Validate camera is accessible before starting stream
-    await camera_manager.capture_preview_jpeg()
+    try:
+        await camera_manager.capture_preview_jpeg()
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
     return StreamingResponse(
         _mjpeg_generator(camera_manager),
         media_type="multipart/x-mixed-replace; boundary=frame",
@@ -62,7 +68,10 @@ async def capture_image(
     camera_manager: CameraManagerDependency,
 ) -> ImageCaptureResponse:
     """Capture image and return metadata with URL."""
-    return await camera_manager.capture_jpeg()
+    try:
+        return await camera_manager.capture_jpeg()
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/{image_id}")

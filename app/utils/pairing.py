@@ -13,10 +13,11 @@ from __future__ import annotations
 import asyncio
 import json as json_mod
 import logging
-import os
 import secrets
 import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -177,13 +178,11 @@ def _save_relay_credentials(
         tmp_path = tmp.name
         tmp.write(json_mod.dumps(data, indent=2))
     try:
-        os.replace(tmp_path, _CREDENTIALS_FILE)
+        Path(tmp_path).replace(_CREDENTIALS_FILE)
     except OSError:
         # Clean up temp file if replace fails
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        with suppress(OSError):
+            Path(tmp_path).unlink()
         raise
     logger.info("Relay credentials saved to %s", _CREDENTIALS_FILE)
 
