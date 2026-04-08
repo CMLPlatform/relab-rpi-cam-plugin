@@ -1,22 +1,26 @@
 """Hardware-dependent business logic for streams."""
 
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
 import httpx
-
-try:
-    from picamera2.outputs import FfmpegOutput
-except ImportError:
-    from app.api.services._stubs import FfmpegOutputStub as FfmpegOutput  # type: ignore[assignment]
-
-
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode, YoutubeConfigRequiredError, YoutubeStreamConfig
 
+from app.api.services.hardware_protocols import FfmpegOutputLike
+from app.api.services.hardware_stubs import FfmpegOutputStub
 from app.core.config import settings
 
+if TYPE_CHECKING:
+    from picamera2.outputs import FfmpegOutput
+else:
+    try:
+        from picamera2.outputs import FfmpegOutput
+    except ImportError:
+        FfmpegOutput = FfmpegOutputStub
 
-def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> FfmpegOutput:
+
+def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> FfmpegOutputLike:
     """Create FfmpegOutput object for the given streaming mode."""
     base_output = (
         "-g 30 -sc_threshold 0 "  # Closed GOP and disabled scene detection

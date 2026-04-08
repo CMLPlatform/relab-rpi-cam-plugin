@@ -35,4 +35,4 @@ jobs:
         run: uv run ty
 
       - name: Run tests
-        run: uv run pytest --cov=app --cov-report=term-missing
+        run: uv run pytest --cov=app --cov=relab_rpi_cam_models --cov-report=term-missing

@@ -17,8 +17,6 @@ from app.api.dependencies.camera_management import CameraManagerDependency
 from app.api.services.camera_manager import ActiveStreamError, YouTubeValidationError
 from app.core.config import settings
 
-HLS_DIR = settings.hls_path
-
 # Initialize templates
 templates = Jinja2Templates(directory=settings.templates_path)
 
@@ -73,13 +71,14 @@ async def status_redirect() -> RedirectResponse:
 @router.get("/hls/{file_path:path}", summary="HLS files for local streaming")
 async def hls_file(file_path: str, camera_manager: CameraManagerDependency) -> FileResponse:
     """Serve HLS files for local streaming."""
-    # TODO: Use StreamResponse here and in the proxy HLS endpoint of the Main API instead of FileResponse
+    # TODO: Use StreamResponse here instead of FileResponse.
     if camera_manager.stream.mode != StreamMode.LOCAL:
         raise HTTPException(404, "No local stream active")
 
     try:
-        full_path = (HLS_DIR / file_path).resolve()
-        if not (full_path.is_relative_to(HLS_DIR) and full_path.is_file()):
+        hls_dir = settings.hls_path
+        full_path = (hls_dir / file_path).resolve()
+        if not (full_path.is_relative_to(hls_dir) and full_path.is_file()):
             raise HTTPException(status_code=403, detail="Access to file denied")
 
         if Path(full_path.name).suffix not in {".m3u8", ".ts"}:

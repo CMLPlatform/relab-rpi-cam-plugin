@@ -6,18 +6,10 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
 from pydantic import AnyUrl
-
-try:
-    from picamera2 import Picamera2
-    from picamera2.encoders import H264Encoder
-except ImportError:
-    from app.api.services._stubs import H264EncoderStub as H264Encoder  # type: ignore[assignment]
-    from app.api.services._stubs import Picamera2Stub as Picamera2  # type: ignore[assignment]
-
-
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 from relab_rpi_cam_models.images import ImageCaptureResponse, ImageMetadata
 from relab_rpi_cam_models.stream import (
@@ -28,9 +20,22 @@ from relab_rpi_cam_models.stream import (
     YoutubeStreamConfig,
 )
 
+from app.api.services.hardware_protocols import Picamera2Like
+from app.api.services.hardware_stubs import H264EncoderStub, Picamera2Stub
 from app.api.services.stream import get_ffmpeg_output, get_stream_url, validate_stream_key
 from app.core.config import settings
 from app.utils.files import clear_directory
+
+if TYPE_CHECKING:
+    from picamera2 import Picamera2
+    from picamera2.encoders import H264Encoder
+else:
+    try:
+        from picamera2 import Picamera2
+        from picamera2.encoders import H264Encoder
+    except ImportError:
+        Picamera2 = Picamera2Stub
+        H264Encoder = H264EncoderStub
 
 
 class YouTubeValidationError(Exception):
@@ -53,7 +58,7 @@ class CameraManager:
     """Main camera manager class which handles camera setup, streaming, and cleanup."""
 
     def __init__(self) -> None:
-        self.camera: Picamera2 | None = None
+        self.camera: Picamera2Like | None = None
         self.current_mode: CameraMode | None = None
         self.stream = Stream()
         self.lock = asyncio.Lock()
@@ -73,7 +78,7 @@ class CameraManager:
                 self.lock.release()
 
     @staticmethod
-    def _get_camera_config(mode: CameraMode, camera: Picamera2) -> dict:
+    def _get_camera_config(mode: CameraMode, camera: Picamera2Like) -> dict:
         """Camera configuration generator."""
         match mode:
             case CameraMode.PHOTO:
@@ -81,7 +86,7 @@ class CameraManager:
             case CameraMode.VIDEO:
                 return camera.create_video_configuration(raw=None)
 
-    async def setup_camera(self, mode: CameraMode) -> Picamera2:
+    async def setup_camera(self, mode: CameraMode) -> Picamera2Like:
         """Setup camera for specific mode."""
         if self.stream.is_active and mode == CameraMode.PHOTO:
             raise ActiveStreamError(self.stream)

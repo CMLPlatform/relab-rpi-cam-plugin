@@ -9,8 +9,6 @@ from app.api.dependencies.auth import require_cookie_auth
 from app.api.dependencies.camera_management import CameraManagerDependency
 from app.core.config import settings
 
-HLS_DIR = settings.hls_path
-
 # Initialize templates
 templates = Jinja2Templates(directory=settings.templates_path)
 
@@ -22,17 +20,14 @@ router = APIRouter(prefix="/stream/watch", tags=["stream"], dependencies=[Depend
 @router.get("/youtube", summary="Watch YouTube video stream in browser")
 async def watch_youtube_stream(request: Request) -> HTMLResponse:
     """Render the YouTube stream viewer template."""
-    return templates.TemplateResponse(
-        "youtube_stream_viewer.html",
-        {"request": request},
-    )
+    return templates.TemplateResponse(request, "youtube_stream_viewer.html")
 
 
 # Local stream viewer endpoint
 @router.get("/local", summary="Watch local video stream in browser")
 async def watch_local_stream(request: Request) -> HTMLResponse:
     """Render the local stream viewer template."""
-    return templates.TemplateResponse("local_stream_viewer.html", {"request": request})
+    return templates.TemplateResponse(request, "local_stream_viewer.html")
 
 
 # Main redirect endpoint

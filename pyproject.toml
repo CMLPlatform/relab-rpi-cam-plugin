@@ -52,6 +52,10 @@
   asyncio_mode = "auto"
   testpaths    = ["tests"]
 
+[tool.coverage.report]
+  fail_under   = 80
+  show_missing = true
+
 [tool.commitizen]
   major_version_zero       = true
   name                     = "cz_conventional_commits"
@@ -60,12 +64,6 @@
   version_files            = ["app/__version__.py", "relab_rpi_cam_models/pyproject.toml"]
   version_provider         = "pep621"
   version_scheme           = "semver2"
-
-[tool.ty.environment]
-  extra-paths = ["typings"]
-
-[tool.ty.src]
-  exclude = ["tests"]
 
 [tool.ruff]
   fix            = true
@@ -95,8 +93,9 @@
       "D107", # undocumented-public-init (__init__ methods are often self-explanatory)
 
       # TODO: Re-enable these linting rules when we have more than one developer.
-      "TD002", # Allow todos without authors
-      "TD003", # Allow todos without issue links
+      "FIX002", # Allow TODO comments that are tracked separately.
+      "TD002",  # Allow todos without authors
+      "TD003",  # Allow todos without issue links
     ]
 
     [tool.ruff.lint.flake8-bugbear]
@@ -109,7 +108,7 @@
       runtime-evaluated-base-classes = ["pydantic.BaseModel"]
 
     [tool.ruff.lint.per-file-ignores]
-      "tests/**" = ["D102", "PLR2004", "S101"]
+      "tests/**" = ["S101"]
 
     [tool.ruff.lint.pydocstyle]
       convention = "google"
@@ -117,6 +116,9 @@
     [tool.ruff.lint.pylint]
       allow-magic-value-types = ["int"]
       max-args                = 10
+
+[tool.ty.environment]
+  extra-paths = ["typings"]
 
 # UV configuration
 [tool.uv.sources]
