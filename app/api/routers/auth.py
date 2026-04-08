@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Form, HTTPException, Response
 from fastapi.responses import RedirectResponse
 
+from app.api.dependencies.auth import _is_authorized
 from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -15,7 +16,7 @@ async def login(
     response: Response, api_key: Annotated[str, Form()], redirect_url: Annotated[str, Form()] = "/"
 ) -> RedirectResponse:
     """Cookie-based login."""
-    if api_key not in settings.authorized_api_keys:
+    if not _is_authorized(api_key):
         raise HTTPException(status_code=403, detail="Invalid API Key")
     response = RedirectResponse(url=redirect_url, status_code=303)
     response.set_cookie(key="X-API-Key", value=api_key, httponly=True, secure=True, samesite="lax")

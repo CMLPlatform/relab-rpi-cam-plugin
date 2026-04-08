@@ -1,5 +1,6 @@
 """Models for Stream information."""
 
+from dataclasses import dataclass
 from enum import Enum
 
 from pydantic import AnyUrl, BaseModel, Field, PastDatetime, PositiveFloat
@@ -66,6 +67,7 @@ class StreamView(BaseModel):
     metadata: StreamMetadata
 
 
+@dataclass
 class Stream:
     """Main Stream model."""
 

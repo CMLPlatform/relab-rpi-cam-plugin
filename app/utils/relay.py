@@ -75,9 +75,7 @@ async def run_relay() -> None:
 
 
 def _relay_configured() -> bool:
-    return bool(
-        settings.relay_enabled and settings.relay_backend_url and settings.relay_camera_id and settings.relay_api_key,
-    )
+    return settings.relay_enabled
 
 
 def _build_relay_url() -> str:
@@ -134,6 +132,7 @@ async def _receive_loop(ws: _WebSocketConnection) -> None:
     """Process command messages from the backend until the connection closes."""
     # Include the relay API key so the local API accepts relayed commands.
     auth_headers = {settings.auth_key_name: settings.relay_api_key} if settings.relay_api_key else {}
+    pending_tasks: set[asyncio.Task[None]] = set()
     async with httpx.AsyncClient(base_url=_LOCAL_BASE_URL, headers=auth_headers) as http:
         while True:
             try:
@@ -161,7 +160,9 @@ async def _receive_loop(ws: _WebSocketConnection) -> None:
             if msg_type != _MSG_TYPE_REQUEST:
                 continue
 
-            asyncio.create_task(_handle_command(ws, http, msg))  # noqa: RUF006
+            task = asyncio.create_task(_handle_command(ws, http, msg))
+            pending_tasks.add(task)
+            task.add_done_callback(pending_tasks.discard)
 
 
 async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg: dict) -> None:

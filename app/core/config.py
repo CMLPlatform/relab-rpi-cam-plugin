@@ -1,5 +1,6 @@
 """Configuration settings for the Raspberry Pi API app."""
 
+import warnings
 from pathlib import Path
 
 from pydantic import HttpUrl, field_validator
@@ -47,11 +48,15 @@ class Settings(BaseSettings):
     # Auth
     auth_key_name: str = "X-API-Key"
 
-    # WebSocket relay (opt-in; used when the RPi cannot be reached directly)
-    relay_enabled: bool = False
+    # WebSocket relay (auto-enabled when all three fields are set)
     relay_backend_url: str = ""  # wss://your-backend/plugins/rpi-cam/ws/connect
     relay_camera_id: str = ""
     relay_api_key: str = ""
+
+    @property
+    def relay_enabled(self) -> bool:
+        """Relay is enabled when all three relay fields are set."""
+        return bool(self.relay_backend_url and self.relay_camera_id and self.relay_api_key)
 
     # Pairing: set this to the backend's HTTP(S) API URL to enable zero-config pairing.
     # When set and relay credentials are absent, the RPi enters pairing mode on boot.
@@ -67,8 +72,6 @@ class Settings(BaseSettings):
             msg = "relay_backend_url must use the wss:// (or ws://) scheme, not http/https"
             raise ValueError(msg)
         if v.startswith("ws://"):
-            import warnings  # noqa: PLC0415
-
             warnings.warn(
                 "relay_backend_url uses unencrypted ws://. Switch to wss:// in production.",
                 stacklevel=2,
@@ -79,14 +82,16 @@ class Settings(BaseSettings):
 # Create a settings instance that can be imported throughout the app
 settings: Settings = Settings()
 
-# Load relay credentials from pairing JSON file (written by pairing flow).
-# This overrides .env values so that pairing "just works" on next boot.
-def _apply_relay_credentials() -> None:
+
+def apply_relay_credentials() -> None:
+    """Load relay credentials from pairing JSON file (written by pairing flow).
+
+    Should be called once during application startup (lifespan), not at import time.
+    """
     from app.utils.pairing import load_relay_credentials  # noqa: PLC0415
 
     creds = load_relay_credentials()
-    if creds and creds.get("relay_enabled"):
-        settings.relay_enabled = True
+    if creds:
         settings.relay_backend_url = str(creds.get("relay_backend_url", ""))
         settings.relay_camera_id = str(creds.get("relay_camera_id", ""))
         settings.relay_api_key = str(creds.get("relay_api_key", ""))
@@ -94,6 +99,3 @@ def _apply_relay_credentials() -> None:
     # Ensure the relay API key is accepted by the local API for loopback calls.
     if settings.relay_api_key and settings.relay_api_key not in settings.authorized_api_keys:
         settings.authorized_api_keys.append(settings.relay_api_key)
-
-
-_apply_relay_credentials()

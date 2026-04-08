@@ -6,7 +6,6 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
-from typing import Any, ClassVar
 from urllib.parse import urljoin
 
 from pydantic import AnyUrl
@@ -15,51 +14,8 @@ try:
     from picamera2 import Picamera2
     from picamera2.encoders import H264Encoder
 except ImportError:
-    _ERR = "picamera2 is not available; camera operations require a Raspberry Pi."
-
-    class Picamera2:  # type: ignore[no-redef]
-        """Stub used on non-Raspberry Pi hosts so the app can start."""
-
-        camera_properties: ClassVar[dict[str, Any]] = {}
-
-        def __init__(self, camera_num: int = 0) -> None:  # noqa: ARG002
-            raise RuntimeError(_ERR)
-
-        def configure(self, config: object) -> None:  # noqa: D102
-            ...
-
-        def start(self) -> None:  # noqa: D102
-            ...
-
-        def stop(self) -> None:  # noqa: D102
-            ...
-
-        def close(self) -> None:  # noqa: D102
-            ...
-
-        def capture_image(self) -> Any:  # noqa: ANN401, D102
-            ...
-
-        def capture_metadata(self) -> dict | None:  # noqa: D102
-            ...
-
-        def start_recording(self, encoder: object, output: object) -> None:  # noqa: D102
-            ...
-
-        def stop_recording(self) -> None:  # noqa: D102
-            ...
-
-        def create_still_configuration(self, **kwargs: object) -> dict:  # noqa: ARG002, D102
-            return {}
-
-        def create_video_configuration(self, **kwargs: object) -> dict:  # noqa: ARG002, D102
-            return {}
-
-    class H264Encoder:  # type: ignore[no-redef]
-        """Stub used on non-Raspberry Pi hosts so the app can start."""
-
-        def __init__(self) -> None:
-            raise RuntimeError(_ERR)
+    from app.api.services._stubs import H264EncoderStub as H264Encoder  # type: ignore[assignment]
+    from app.api.services._stubs import Picamera2Stub as Picamera2  # type: ignore[assignment]
 
 
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
@@ -166,7 +122,7 @@ class CameraManager:
             image_path = settings.image_path / f"{image_id}.jpg"
             await asyncio.to_thread(pil_image.save, image_path, exif=img_metadata.to_exif(), format="JPEG", quality=90)
 
-            expires_at = datetime.fromtimestamp(datetime.now(UTC).timestamp() + settings.image_ttl_s, tz=UTC)
+            expires_at = datetime.now(UTC) + timedelta(seconds=settings.image_ttl_s)
 
         return ImageCaptureResponse(
             image_id=image_id,
@@ -207,15 +163,20 @@ class CameraManager:
             try:
                 stream_output = get_ffmpeg_output(mode, youtube_config)
                 await asyncio.to_thread(camera.start_recording, H264Encoder(), stream_output)
+            except (OSError, RuntimeError) as e:
+                err_msg = f"Failed to start recording: {e}"
+                raise RuntimeError(err_msg) from e
+
+            try:
                 self.stream.mode = mode
                 self.stream.url = get_stream_url(mode, youtube_config)
                 self.stream.started_at = datetime.now(UTC) - timedelta(seconds=5)
                 self.stream.youtube_config = youtube_config
-
-            # TODO: Improve error handling here
-            except Exception as e:
-                err_msg = f"Failed to start streaming: {e}"
-                raise RuntimeError(err_msg) from e
+            except Exception:
+                # Roll back: stop the recording we just started so it doesn't leak
+                await asyncio.to_thread(camera.stop_recording)
+                self.stream = Stream()
+                raise
 
         if (stream_info := await self.get_stream_info()) is None:
             err_msg = "Failed to get stream information"

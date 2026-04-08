@@ -33,10 +33,13 @@ router = APIRouter(prefix="/stream", tags=["stream"])
 @router.post("/start", status_code=201, summary="Start streaming video")
 async def start_stream(
     camera_manager: CameraManagerDependency,
-    mode: Annotated[StreamMode, Query(description="Streaming mode", example="local")],
+    mode: Annotated[StreamMode, Query(description="Streaming mode", examples=["local"])],
     youtube_config: Annotated[
         YoutubeStreamConfig | None,
-        Body(description="YouTube stream configuration", example={"stream_key": "abc123", "broadcast_key": "def456"}),
+        Body(
+            description="YouTube stream configuration",
+            examples=[{"stream_key": "abc123", "broadcast_key": "def456"}],
+        ),
     ] = None,
 ) -> StreamView:
     """Start streaming video with specified mode (youtube or local)."""
@@ -98,7 +101,9 @@ async def hls_manifest(camera_manager: CameraManagerDependency) -> RedirectRespo
 @router.delete("/stop", status_code=204, summary="Stop streaming video")
 async def stop_stream(
     camera_manager: CameraManagerDependency,
-    mode: Annotated[StreamMode | None, Query(description="Streaming mode (youtube or local)", example="local")] = None,
+    mode: Annotated[
+        StreamMode | None, Query(description="Streaming mode (youtube or local)", examples=["local"])
+    ] = None,
 ) -> None:
     """Stop any active stream. If the mode is specified, only stop that stream."""
     if not camera_manager.stream.is_active:

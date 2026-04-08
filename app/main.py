@@ -12,7 +12,7 @@ from app.__version__ import version
 from app.api.dependencies.camera_management import camera_manager, camera_to_standby, check_stream_duration
 from app.api.routers.main import router as main_router
 from app.api.routers.setup import router as setup_router
-from app.core.config import settings
+from app.core.config import apply_relay_credentials, settings
 from app.utils.files import cleanup_images, setup_directory
 from app.utils.logging import setup_logging
 from app.utils.pairing import run_pairing
@@ -29,6 +29,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
 
     Note that the camera is set up lazily to avoid unnecessary resource use.
     """
+    # Load relay credentials from pairing file (if present)
+    apply_relay_credentials()
+
     # Set up temporary directories
     await setup_directory(settings.hls_path)
     await setup_directory(settings.image_path)
@@ -39,7 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
 
     background_tasks: set[asyncio.Task[None]] = set()
 
-    if settings.relay_enabled and settings.relay_camera_id and settings.relay_api_key:
+    if settings.relay_enabled:
         background_tasks.add(asyncio.create_task(run_relay(), name="ws_relay"))
         logger.info("WebSocket relay started")
     elif settings.pairing_backend_url:

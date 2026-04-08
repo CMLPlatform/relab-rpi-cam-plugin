@@ -7,12 +7,7 @@ import httpx
 try:
     from picamera2.outputs import FfmpegOutput
 except ImportError:
-
-    class FfmpegOutput:  # type: ignore[no-redef]
-        """Stub for non-Raspberry Pi environments."""
-
-        def __init__(self, output_str: str, /, **kwargs: object) -> None:
-            pass
+    from app.api.services._stubs import FfmpegOutputStub as FfmpegOutput  # type: ignore[assignment]
 
 
 from pydantic import AnyUrl
@@ -72,7 +67,7 @@ def get_broadcast_url(youtube_config: YoutubeStreamConfig) -> AnyUrl:
 async def validate_stream_key(youtube_config: YoutubeStreamConfig) -> bool:
     """Validate stream key by checking if the upload URL is valid."""
     url_str = str(get_upload_url(youtube_config))
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(url_str)
         return response.status_code == 202
 

@@ -1,7 +1,7 @@
 """Shared fixtures for the RPi camera plugin test suite."""
 
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -26,7 +26,7 @@ def camera_manager() -> CameraManager:
 
 
 @pytest.fixture
-def client(camera_manager: CameraManager) -> AsyncGenerator[AsyncClient]:
+async def client(camera_manager: CameraManager) -> AsyncGenerator[AsyncClient]:
     """Async test client with auth and camera manager dependencies overridden."""
 
     async def _override_auth() -> str:
@@ -36,15 +36,17 @@ def client(camera_manager: CameraManager) -> AsyncGenerator[AsyncClient]:
     app.dependency_overrides[get_camera_manager] = lambda: camera_manager
 
     transport = ASGITransport(app=app)
-    yield AsyncClient(transport=transport, base_url="http://test")
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
 
     app.dependency_overrides.clear()
 
 
 @pytest.fixture
-def unauthed_client() -> AsyncGenerator[AsyncClient]:
+async def unauthed_client() -> AsyncGenerator[AsyncClient]:
     """Async test client without auth override (requests will be rejected)."""
     app.dependency_overrides.clear()
     transport = ASGITransport(app=app)
-    yield AsyncClient(transport=transport, base_url="http://test")
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
     app.dependency_overrides.clear()

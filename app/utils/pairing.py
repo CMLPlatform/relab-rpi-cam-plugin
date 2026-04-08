@@ -65,11 +65,11 @@ async def run_pairing(on_paired: Callable[[], Coroutine[Any, Any, None]]) -> Non
                 await _pairing_cycle(client, base, on_paired)
             except Exception:
                 logger.exception("Pairing cycle failed, retrying in 10s")
-            else:
-                return  # Successfully paired
                 _state.status = "error"
                 _state.error = "Pairing failed — retrying…"
                 await asyncio.sleep(10)
+            else:
+                return  # Successfully paired
 
 
 async def _pairing_cycle(
@@ -137,7 +137,6 @@ async def _pairing_cycle(
             )
 
             # Update in-memory settings
-            settings.relay_enabled = True
             settings.relay_backend_url = data["ws_url"]
             settings.relay_camera_id = data["camera_id"]
             settings.relay_api_key = data["api_key"]
@@ -164,7 +163,6 @@ def _save_relay_credentials(
     quotes, or other settings. The config loads these on next boot.
     """
     data = {
-        "relay_enabled": True,
         "relay_backend_url": relay_backend_url,
         "relay_camera_id": camera_id,
         "relay_api_key": api_key,
