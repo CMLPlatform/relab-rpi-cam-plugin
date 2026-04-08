@@ -1,15 +1,18 @@
 """Main module for the Raspberry Pi camera streaming application."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.__version__ import version
 from app.api.dependencies.camera_management import camera_manager, camera_to_standby, check_stream_duration
+from app.api.exceptions import CameraInitializationError
 from app.api.routers.main import router as main_router
 from app.api.routers.setup import router as setup_router
 from app.core.config import apply_relay_credentials, settings
@@ -38,14 +41,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
     logger.info("Temporary file directories set up")
 
     # Start WebSocket relay or pairing mode
-    import asyncio  # noqa: PLC0415
-
     background_tasks: set[asyncio.Task[None]] = set()
 
     if settings.relay_enabled:
         background_tasks.add(asyncio.create_task(run_relay(), name="ws_relay"))
         logger.info("WebSocket relay started")
     elif settings.pairing_backend_url:
+
         async def _on_paired() -> None:
             background_tasks.add(asyncio.create_task(run_relay(), name="ws_relay"))
             logger.info("Pairing complete — WebSocket relay started")
@@ -62,9 +64,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
     logger.info("Recurring cleanup tasks started")
     yield
 
-    # Shutdown recurring tasks
-    for task in recurring_tasks:
+    # Shutdown all background and recurring tasks
+    all_tasks = background_tasks | recurring_tasks
+    for task in all_tasks:
         task.cancel()
+    if all_tasks:
+        await asyncio.gather(*all_tasks, return_exceptions=True)
 
     # Cleanup camera resources
     await camera_manager.cleanup(force=True)
@@ -90,6 +95,21 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+
+# Exception handlers
+async def camera_initialization_exception_handler(
+    request: Request,  # noqa: ARG001
+    exc: CameraInitializationError,
+) -> JSONResponse:
+    """Handle camera initialization errors."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+    )
+
+
+app.add_exception_handler(CameraInitializationError, camera_initialization_exception_handler)
 
 # Include routers
 app.include_router(main_router)
