@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 
 from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.services.camera_manager import ActiveStreamError
+from app.api.exceptions import ActiveStreamError
 
 router = APIRouter(prefix="/camera", tags=["camera"])
 
