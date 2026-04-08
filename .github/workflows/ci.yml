@@ -2,50 +2,32 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: "3.13"
 
 jobs:
-  lint-test-audit:
-    name: Lint, Test, and Audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  lint:
+    uses: ./.github/workflows/lint-reusable.yml
+    with:
+      python_version: ${{ env.PYTHON_VERSION }}
 
-      - name: Set up Python and uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
+  test:
+    uses: ./.github/workflows/test-reusable.yml
+    with:
+      python_version: ${{ env.PYTHON_VERSION }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: uv sync --frozen --all-groups
-
-      - name: Ruff check
-        run: uv run ruff check
-
-      - name: Ruff format check
-        run: uv run ruff format --check
-
-      - name: Ty (type check)
-        run: uv run ty
-
-      - name: Dependency audit
-        run: uv audit --preview-features audit --frozen --no-dev
-
-      - name: Run tests
-        run: uv run pytest --cov=app --cov=relab_rpi_cam_models --cov-report=term-missing
+  audit:
+    uses: ./.github/workflows/audit-reusable.yml
+    with:
+      python_version: ${{ env.PYTHON_VERSION }}

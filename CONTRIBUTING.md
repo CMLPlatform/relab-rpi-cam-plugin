@@ -158,12 +158,17 @@ All configuration is in `.env`. Key debugging settings:
 
 ## Release Process
 
-Versioning is handled automatically by `commitizen`. The process is:
+Releases are fully automated via `commitizen` and GitHub Actions.
 
-1. Make commits following [Conventional Commits](https://www.conventionalcommits.org/) format
-1. Run `cz bump` to update version and generate changelog
-1. Push the version tag: `git push origin --tags`
-1. CI will build and package the release
+1. Write commits following [Conventional Commits](https://www.conventionalcommits.org/) — `fix:` bumps patch, `feat:` bumps minor, `feat!:` / `BREAKING CHANGE:` bumps major
+1. Merge to `main` — CI runs lint, tests, and dependency audit
+1. On CI success, the release workflow automatically:
+   - Bumps the version in `pyproject.toml`, `app/__version__.py`, and `relab_rpi_cam_models/pyproject.toml`
+   - Updates `CHANGELOG.md`
+   - Pushes a `vX.Y.Z` tag
+   - Creates a GitHub release with auto-generated notes
+
+If no commits since the last tag warrant a bump, the release step skips silently. No manual version management needed.
 
 ## Questions?
 

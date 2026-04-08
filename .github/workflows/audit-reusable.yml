@@ -1,0 +1,29 @@
+name: Dependency Audit (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        required: false
+        type: string
+        default: "3.13"
+      runs_on:
+        required: false
+        type: string
+        default: "ubuntu-24.04"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Dependency Audit
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Dependency audit
+        run: uv audit --preview-features audit --frozen --no-dev
