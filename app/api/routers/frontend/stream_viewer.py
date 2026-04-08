@@ -2,15 +2,11 @@
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.dependencies.auth import require_cookie_auth
 from app.api.dependencies.camera_management import CameraManagerDependency
-from app.core.config import settings
-
-# Initialize templates
-templates = Jinja2Templates(directory=settings.templates_path)
+from app.core.templates_config import templates
 
 # Initialize router
 router = APIRouter(prefix="/stream/watch", tags=["stream"], dependencies=[Depends(require_cookie_auth)])

@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json as json_mod
 import logging
+import os
 import secrets
 import tempfile
 from contextlib import suppress
@@ -25,11 +26,24 @@ import httpx
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
-from app.core.config import BASE_DIR, settings
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_CREDENTIALS_FILE = BASE_DIR / "relay_credentials.json"
+
+def _get_credentials_file() -> Path:
+    """Get the path to the relay credentials file.
+
+    Respects env var RELAB_CREDENTIALS_FILE if set, otherwise uses:
+    ~/.config/relab/relay_credentials.json (following XDG Base Directory Spec)
+    """
+    if env_path := os.getenv("RELAB_CREDENTIALS_FILE"):
+        return Path(env_path)
+    config_dir = Path.home() / ".config" / "relab"
+    return config_dir / "relay_credentials.json"
+
+
+_CREDENTIALS_FILE = _get_credentials_file()
 _POLL_INTERVAL_S = 3
 _CODE_LENGTH = 3  # token_hex(3) → 6 hex chars
 
@@ -165,12 +179,15 @@ def _save_relay_credentials(
     This avoids corrupting the user's .env which may contain comments,
     quotes, or other settings. The config loads these on next boot.
     Writes atomically to prevent corruption on power loss.
+    Ensures the credentials directory exists before writing.
     """
     data = {
         "relay_backend_url": relay_backend_url,
         "relay_camera_id": camera_id,
         "relay_api_key": api_key,
     }
+    # Ensure the directory exists
+    _CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Write to a temp file first, then atomically replace
     with tempfile.NamedTemporaryFile(
         mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"

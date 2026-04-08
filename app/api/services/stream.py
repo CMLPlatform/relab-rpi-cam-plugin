@@ -1,5 +1,7 @@
 """Hardware-dependent business logic for streams."""
 
+import asyncio
+import logging
 from typing import TYPE_CHECKING
 
 import httpx
@@ -9,6 +11,8 @@ from relab_rpi_cam_models.stream import StreamMode, YoutubeConfigRequiredError, 
 from app.api.services.hardware_protocols import FfmpegOutputLike
 from app.api.services.hardware_stubs import FfmpegOutputStub
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from picamera2.outputs import FfmpegOutput
@@ -36,6 +40,8 @@ def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | No
         "-hls_segment_type mpegts "  # MPEG-TS segments
         "-hls_flags delete_segments+independent_segments "
         "-http_persistent 1 "
+        "-connect_timeout 10000000 "  # 10 second connection timeout (microseconds)
+        "-rw_timeout 30000000 "  # 30 second read/write timeout (microseconds)
     )
 
     output_str = base_output + (
@@ -66,11 +72,36 @@ def get_broadcast_url(youtube_config: YoutubeStreamConfig) -> AnyUrl:
 
 
 async def validate_stream_key(youtube_config: YoutubeStreamConfig) -> bool:
-    """Validate stream key by checking if the upload URL is valid."""
+    """Validate stream key by checking if the upload URL is valid.
+
+    Retries with exponential backoff on network failures or server errors.
+    """
     url_str = str(get_upload_url(youtube_config))
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.post(url_str)
-        return response.status_code == 202
+    max_retries = 3
+    base_delay = 1.0  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.post(url_str)
+                if response.status_code == 202:
+                    return True
+                # Don't retry on client errors (4xx), only server errors (5xx)
+                if response.status_code < 500:
+                    logger.warning("YouTube stream key validation returned %d", response.status_code)
+                    return False
+        except (httpx.TimeoutException, httpx.NetworkError) as e:
+            logger.warning("Stream key validation attempt %d failed: %s", attempt + 1, e)
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)  # exponential backoff
+                await asyncio.sleep(delay)
+                continue
+            return False
+        except Exception as e:  # noqa: BLE001
+            logger.error("Unexpected error during stream key validation: %s", e)
+            return False
+
+    return False
 
 
 def get_stream_url(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> AnyUrl:

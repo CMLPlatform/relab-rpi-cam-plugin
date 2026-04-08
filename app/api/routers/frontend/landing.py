@@ -4,13 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from app.api.dependencies.auth import get_auth_status
-from app.core.config import settings
-
-# Initialize templates
-templates = Jinja2Templates(directory=settings.templates_path)
+from app.core.templates_config import templates
 
 router = APIRouter()
 

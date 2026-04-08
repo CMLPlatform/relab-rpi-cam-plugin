@@ -2,16 +2,24 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
+import time
+from collections import defaultdict
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.__version__ import version
-from app.api.dependencies.camera_management import camera_manager, camera_to_standby, check_stream_duration
+from app.api.dependencies.camera_management import (
+    camera_manager,
+    camera_to_standby,
+    check_stream_duration,
+    check_stream_health,
+)
 from app.api.exceptions import CameraInitializationError
 from app.api.routers.main import router as main_router
 from app.api.routers.setup import router as setup_router
@@ -24,6 +32,59 @@ from app.utils.tasks import repeat_task
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Simple rate limiter for brute force protection on /auth/login."""
+
+    # Max failed login attempts per IP before rate limiting
+    MAX_ATTEMPTS = 5
+    # Time window for tracking attempts (seconds)
+    WINDOW_SIZE = 300  # 5 minutes
+    # Block duration after exceeding limits (seconds)
+    BLOCK_DURATION = 300  # 5 minutes
+
+    def __init__(self, app: FastAPI) -> None:
+        super().__init__(app)
+        # Track failed attempts: {ip: [(timestamp, is_failed), ...]}
+        self._attempts: dict[str, list[tuple[float, bool]]] = defaultdict(list)
+
+    async def dispatch(self, request: Request, call_next: Callable) -> JSONResponse | Request:  # type: ignore[no-untyped-def]
+        """Check rate limits before passing request to the app."""
+        # Only rate limit POST requests to /auth/login
+        if request.method != "POST" or request.url.path != "/auth/login":
+            return await call_next(request)
+
+        client_ip = request.client.host if request.client else "unknown"
+
+        # Clean old attempts outside the window
+        now = time.time()
+        if client_ip in self._attempts:
+            self._attempts[client_ip] = [
+                (ts, failed) for ts, failed in self._attempts[client_ip] if now - ts < self.WINDOW_SIZE
+            ]
+
+        # Check if client is currently blocked
+        attempts = self._attempts[client_ip]
+        if attempts:
+            failed_count = sum(1 for _, failed in attempts if failed)
+            if failed_count >= self.MAX_ATTEMPTS:
+                # Check if the most recent block is still active
+                last_failed_time = max(ts for ts, failed in attempts if failed)
+                if now - last_failed_time < self.BLOCK_DURATION:
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "Too many failed login attempts. Try again later."},
+                    )
+
+        # Call the endpoint
+        response = await call_next(request)
+
+        # Track the attempt result (check response status for failure)
+        is_failed = response.status_code >= 400
+        self._attempts[client_ip].append((now, is_failed))
+
+        return response
 
 
 @asynccontextmanager
@@ -54,13 +115,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
         background_tasks.add(asyncio.create_task(run_pairing(_on_paired), name="pairing"))
         logger.info("No relay credentials — entering pairing mode")
 
-    # Start recurring cleanup tasks
+    # Start recurring cleanup and health check tasks
     recurring_tasks = {
         repeat_task(cleanup_images, settings.cleanup_interval_s, "cleanup_images"),
         repeat_task(camera_to_standby, settings.camera_standby_s, "camera_to_standby"),
         repeat_task(check_stream_duration, settings.check_stream_interval_s, "check_stream_duration"),
+        repeat_task(check_stream_health, 30, "check_stream_health"),  # Check health every 30 seconds
     }
-    logger.info("Recurring cleanup tasks started")
+    logger.info("Recurring cleanup and health check tasks started")
     yield
 
     # Shutdown all background and recurring tasks
@@ -87,6 +149,10 @@ app = FastAPI(
         '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank"> RELab GitHub</a>.'
     ),
 )
+
+# Add rate limiting middleware first (outermost) for brute force protection
+app.add_middleware(RateLimitMiddleware)
+
 # Add CORS middleware to allow requests from the main API host
 app.add_middleware(
     CORSMiddleware,
@@ -94,7 +160,8 @@ app.add_middleware(
     allow_origins=[str(origin).rstrip("/") for origin in settings.allowed_cors_origins],
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["*"],
+    # Only allow necessary headers for security
+    allow_headers=["Content-Type", "Authorization", "Accept"],
 )
 
 

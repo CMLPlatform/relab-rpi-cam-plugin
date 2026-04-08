@@ -15,7 +15,7 @@ from typing import Protocol, cast
 
 import httpx
 
-from app.core.config import settings
+from app.core.config import apply_relay_credentials, settings
 
 # WebSocket message types
 _MSG_TYPE_PING = "ping"
@@ -25,6 +25,12 @@ _MSG_TYPE_REQUEST = "request"
 # Content-type substrings used to detect binary responses
 _BINARY_IMAGE = "image"
 _BINARY_OCTET = "octet-stream"
+
+
+class _StaleKeyError(Exception):
+    """Raised when the relay API key has been rotated and needs to be reloaded."""
+
+    pass
 
 
 class _AsyncWebSocket(Protocol):
@@ -134,6 +140,18 @@ async def _receive_loop(ws: _WebSocketConnection) -> None:
     # Include the relay API key so the local API accepts relayed commands.
     auth_headers = {settings.auth_key_name: settings.relay_api_key} if settings.relay_api_key else {}
     pending_tasks: set[asyncio.Task[None]] = set()
+
+    def _on_task_done(task: asyncio.Task[None]) -> None:
+        """Callback when a command task completes. Checks for stale key errors."""
+        pending_tasks.discard(task)
+        try:
+            task.result()
+        except _StaleKeyError:
+            # Signal reconnection by closing the WebSocket, which will exit _receive_loop
+            asyncio.create_task(_close_ws_for_reconnect(ws))
+        except Exception:  # noqa: BLE001
+            pass  # _handle_command logs its own errors
+
     async with httpx.AsyncClient(base_url=str(settings.base_url).rstrip("/"), headers=auth_headers) as http:
         while True:
             try:
@@ -163,11 +181,14 @@ async def _receive_loop(ws: _WebSocketConnection) -> None:
 
             task = asyncio.create_task(_handle_command(ws, http, msg))
             pending_tasks.add(task)
-            task.add_done_callback(pending_tasks.discard)
+            task.add_done_callback(_on_task_done)
 
 
 async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg: dict) -> None:
-    """Dispatch a single command to the local API and send the response."""
+    """Dispatch a single command to the local API and send the response.
+
+    Raises _StaleKeyError if the relay API key has been rotated (403 response).
+    """
     msg_id = msg.get("id", "")
     method: str = msg.get("method", "GET").upper()
     path: str = msg.get("path", "/")
@@ -181,6 +202,11 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
     except Exception as exc:  # noqa: BLE001
         await _send_error(ws, msg_id, 503, str(exc))
         return
+
+    # Detect if the relay API key has been rotated (backend returns 403)
+    if response.status_code == 403:
+        logger.warning("Relay received 403 Unauthorized — API key may have been rotated")
+        raise _StaleKeyError("Relay API key rotated")
 
     content_type = response.headers.get("content-type", "")
     is_binary = _BINARY_IMAGE in content_type or _BINARY_OCTET in content_type
@@ -230,3 +256,17 @@ async def _send_error(ws: _WebSocketConnection, msg_id: str, status: int, detail
             },
         ),
     )
+
+
+async def _close_ws_for_reconnect(ws: _WebSocketConnection) -> None:
+    """Close the WebSocket connection to trigger reconnection with new credentials.
+
+    Called when the relay API key is detected to have been rotated (403 response).
+    Reloads credentials before closing so the next connection uses the new key.
+    """
+    logger.info("Closing relay connection to reconnect with new API key.")
+    apply_relay_credentials()
+    try:
+        await ws._ws.close()  # noqa: SLF001
+    except Exception:  # noqa: BLE001
+        pass  # Already closed or error is fine — we're trying to trigger reconnection anyway

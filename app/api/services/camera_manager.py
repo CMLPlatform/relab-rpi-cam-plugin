@@ -151,7 +151,11 @@ class CameraManager:
         *,
         youtube_config: YoutubeStreamConfig | None = None,
     ) -> StreamView:
-        """Start streaming to YouTube or local file."""
+        """Start streaming to YouTube or local file.
+
+        Raises YouTubeValidationError if stream key validation fails.
+        Raises RuntimeError if ffmpeg fails to start within the timeout.
+        """
         # Check if stream is already active before any async operations
         if self.stream.is_active:
             raise ActiveStreamError(self.stream)
@@ -167,7 +171,14 @@ class CameraManager:
         async with self._camera_lock():
             try:
                 stream_output = get_ffmpeg_output(mode, youtube_config)
-                await asyncio.to_thread(camera.start_recording, H264Encoder(), stream_output)
+                # Start recording with a 30-second timeout to prevent hanging on ffmpeg startup
+                await asyncio.wait_for(
+                    asyncio.to_thread(camera.start_recording, H264Encoder(), stream_output),
+                    timeout=30.0,
+                )
+            except asyncio.TimeoutError as e:
+                err_msg = "Failed to start recording: ffmpeg startup timeout"
+                raise RuntimeError(err_msg) from e
             except (OSError, RuntimeError) as e:
                 err_msg = f"Failed to start recording: {e}"
                 raise RuntimeError(err_msg) from e

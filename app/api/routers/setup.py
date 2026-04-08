@@ -7,15 +7,12 @@ import io
 import qrcode
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
 
 from app.core.config import settings
+from app.core.templates_config import templates
 from app.utils.pairing import STATUS_PAIRED, get_pairing_state
 
 _STATUS_ERROR = "error"
-
-# Initialize templates
-templates = Jinja2Templates(directory=settings.templates_path)
 
 router = APIRouter(tags=["setup"])
 

@@ -10,17 +10,27 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHON_VERSION: "3.13"
+
 jobs:
-  lint-and-test:
+  lint-test-audit:
+    name: Lint, Test, and Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - name: Set up Python and uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Set up Python
-        run: uv python install
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
         run: uv sync --frozen --all-groups
@@ -31,8 +41,11 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check
 
-      - name: Ty
+      - name: Ty (type check)
         run: uv run ty
+
+      - name: Dependency audit
+        run: uv audit --preview-features audit --frozen --no-dev
 
       - name: Run tests
         run: uv run pytest --cov=app --cov=relab_rpi_cam_models --cov-report=term-missing
