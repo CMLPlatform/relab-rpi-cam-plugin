@@ -7,7 +7,7 @@ install:
     uv sync --all-extras
 
 dev:
-    uv run python -m <app>
+    uv run fastapi dev
 
 test:
     uv run pytest

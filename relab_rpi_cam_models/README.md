@@ -1,10 +1,10 @@
 # relab-rpi-cam-models
 
-Shared Pydantic models for the [RELab Raspberry Pi Camera plugin](https://github.com/CMLPlatform/relab-rpi-cam-plugin) and the [RELab platform](https://github.com/CMLPlatform/relab), part of the [CML RELab project](https://cml-relab.org).
+Shared transport contracts for the [RELab Raspberry Pi Camera plugin](https://github.com/CMLPlatform/relab-rpi-cam-plugin) and the [RELab platform](https://github.com/CMLPlatform/relab), part of the [CML RELab project](https://cml-relab.org).
 
 ## Overview
 
-This package provides pure, hardware-independent data models for camera, image, and stream metadata. It is designed for use in both device-side and platform-side Python projects that interact with the RELab ecosystem.
+This package provides stable, hardware-independent DTOs for camera, image, and stream payloads exchanged between the plugin and backend.
 
 ## Usage
 
@@ -22,11 +22,26 @@ from relab_rpi_cam_models.images import ImageMetadata
 from relab_rpi_cam_models.stream import StreamView, StreamMode
 ```
 
-## Features
+## Public API
 
-- Pure Pydantic models (no hardware dependencies)
-- Camera, image, and streaming metadata schemas
-- Compatible with FastAPI, Pydantic v2, and standard Python
+The supported public API is intentionally small:
+
+- `CameraMode`
+- `CameraStatusView`
+- `StreamMode`
+- `StreamView`
+- `StreamMetadata`
+- `ImageCaptureResponse`
+- image metadata DTOs used inside those responses
+
+This package does not own:
+
+- runtime stream state
+- provider-specific request models such as YouTube stream config
+- Pillow or EXIF helper behavior
+- implementation-specific exceptions
+
+Treat anything outside the documented DTOs as private and subject to change.
 
 ## License
 

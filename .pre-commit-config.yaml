@@ -1,55 +1,55 @@
 # Configuration of Pre-commit Hooks. For more information, see https://pre-commit.com.
 repos:
-    - repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update
-      rev: v0.9.0
-      hooks:
-          - id: pre-commit-update # Autoupdate pre-commit hooks
+-   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update
+    rev: v0.9.0
+    hooks:
+    -   id: pre-commit-update     # Autoupdate pre-commit hooks
 
-    - repo: https://github.com/pre-commit/pre-commit-hooks
-      rev: v6.0.0
-      hooks:
-          - id: check-added-large-files
-          - id: check-case-conflict # Check for files with names that differ only in case.
-          - id: check-executables-have-shebangs
-          - id: check-shebang-scripts-are-executable
-          - id: check-json
-          - id: check-toml
-          - id: check-yaml
-          - id: detect-private-key
-          - id: end-of-file-fixer # Ensure files end with a newline.
-          - id: mixed-line-ending
-          - id: no-commit-to-branch # Prevent commits to main and master branches.
-          - id: trailing-whitespace
-            args: [ "--markdown-linebreak-ext", "md" ] # Preserve Markdown hard line breaks.
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+    -   id: check-added-large-files
+    -   id: check-case-conflict     # Check for files with names that differ only in case.
+    -   id: check-executables-have-shebangs
+    -   id: check-shebang-scripts-are-executable
+    -   id: check-json
+    -   id: check-toml
+    -   id: check-yaml
+    -   id: detect-private-key
+    -   id: end-of-file-fixer     # Ensure files end with a newline.
+    -   id: mixed-line-ending
+    -   id: no-commit-to-branch     # Prevent commits to main and master branches.
+    -   id: trailing-whitespace
+        args: ["--markdown-linebreak-ext", "md"]       # Preserve Markdown hard line breaks.
 
-    - repo: https://github.com/gitleaks/gitleaks # Detect secrets in commits.
-      rev: v8.30.1
-      hooks:
-          - id: gitleaks
+-   repo: https://github.com/gitleaks/gitleaks   # Detect secrets in commits.
+    rev: v8.30.1
+    hooks:
+    -   id: gitleaks
 
-    - repo: https://github.com/executablebooks/mdformat
-      rev: 1.0.0
-      hooks:
-          - id: mdformat # Format Markdown files.
-            additional_dependencies:
-                - mdformat-gfm # Support GitHub Flavored Markdown.
+-   repo: https://github.com/executablebooks/mdformat
+    rev: 1.0.0
+    hooks:
+    -   id: mdformat     # Format Markdown files.
+        additional_dependencies:
+        -   mdformat-gfm       # Support GitHub Flavored Markdown.
 
-    - repo: https://github.com/astral-sh/ruff-pre-commit # Lint and format Python code with Ruff.
-      rev: v0.15.9
-      hooks:
-          - id: ruff-check
-          - id: ruff-format
+-   repo: https://github.com/astral-sh/ruff-pre-commit   # Lint and format Python code with Ruff.
+    rev: v0.15.9
+    hooks:
+    -   id: ruff-check
+    -   id: ruff-format
 
-    - repo: https://github.com/astral-sh/uv-pre-commit # Update the uv lockfile.
-      rev: 0.11.4
-      hooks:
-          - id: uv-lock
+-   repo: https://github.com/astral-sh/uv-pre-commit   # Update the uv lockfile.
+    rev: 0.11.5
+    hooks:
+    -   id: uv-lock
 
-    - repo: local
-      hooks:
-          - id: ty
-            name: ty-check
-            entry: uv run ty check
-            language: python
-            types: [ python ]
-            pass_filenames: true
+-   repo: local
+    hooks:
+    -   id: ty
+        name: ty-check
+        entry: uv run ty check
+        language: python
+        types: [python]
+        pass_filenames: true

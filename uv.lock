@@ -965,31 +965,25 @@ wheels = [
 
 [[package]]
 name = "relab-rpi-cam-models"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "relab_rpi_cam_models" }
 dependencies = [
-    { name = "pillow" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "pillow", specifier = ">=10.4" },
-    { name = "pydantic", specifier = ">=2.9" },
-]
+requires-dist = [{ name = "pydantic", specifier = ">=2.9" }]
 
 [[package]]
 name = "relab-rpi-cam-plugin"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
-    { name = "httpx" },
     { name = "pillow" },
     { name = "pydantic-settings" },
     { name = "qrcode", extra = ["pil"] },
     { name = "relab-rpi-cam-models" },
-    { name = "rich" },
     { name = "websockets" },
 ]
 
@@ -1012,12 +1006,10 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.8" },
-    { name = "httpx", specifier = ">=0.28" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pydantic-settings", specifier = ">=2.8.0" },
     { name = "qrcode", extras = ["pil"], specifier = ">=7.4" },
     { name = "relab-rpi-cam-models", editable = "relab_rpi_cam_models" },
-    { name = "rich", specifier = ">=13.0" },
     { name = "websockets", specifier = ">=14.0" },
 ]
 

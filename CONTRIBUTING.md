@@ -91,13 +91,15 @@ pre-commit run --all-files
 
 ### Update Camera Logic
 
-- Camera interface: `app/utils/camera.py`
-- Stream handling: `relab_rpi_cam_models/src/relab_rpi_cam_models/stream.py`
+- Camera backend interface: `app/api/services/camera_backend.py`
+- Camera manager orchestration: `app/api/services/camera_manager.py`
+- Runtime stream state: `app/api/services/stream_state.py`
+- Shared stream DTOs: `relab_rpi_cam_models/src/relab_rpi_cam_models/stream.py`
 - Tests: `tests/unit/test_*.py`
 
 ### Update Models
 
-Shared data models live in the `relab_rpi_cam_models` package. After changes:
+Shared cross-repo contract DTOs live in the `relab_rpi_cam_models` package. Keep runtime logic in the plugin repo. After contract changes:
 
 1. Update version in `relab_rpi_cam_models/pyproject.toml`
 1. Rebuild the main project's lock file: `uv lock --upgrade relab-rpi-cam-models`
@@ -134,8 +136,10 @@ YouTube RTMP is the only supported streaming mode. The Pi sends HLS segments to 
 View Docker logs:
 
 ```sh
-docker compose logs -f rpi-cam-plugin
+docker compose logs -f app
 ```
+
+If you started the optional observability profile, Alloy ships logs to Loki and Grafana is available on `http://localhost:3000`; Alloy can be inspected on `http://localhost:12345`.
 
 View direct server logs:
 
@@ -158,17 +162,32 @@ All configuration is in `.env`. Key debugging settings:
 
 ## Release Process
 
-Releases are fully automated via `commitizen` and GitHub Actions.
+Plugin application releases and `relab_rpi_cam_models` releases are versioned independently.
+
+### Plugin App
+
+The plugin app release remains fully automated via `commitizen` and GitHub Actions.
 
 1. Write commits following [Conventional Commits](https://www.conventionalcommits.org/) — `fix:` bumps patch, `feat:` bumps minor, `feat!:` / `BREAKING CHANGE:` bumps major
 1. Merge to `main` — CI runs lint, tests, and dependency audit
 1. On CI success, the release workflow automatically:
-   - Bumps the version in `pyproject.toml`, `app/__version__.py`, and `relab_rpi_cam_models/pyproject.toml`
+   - Bumps the version in `pyproject.toml` and `app/__version__.py`
    - Updates `CHANGELOG.md`
    - Pushes a `vX.Y.Z` tag
    - Creates a GitHub release with auto-generated notes
 
-If no commits since the last tag warrant a bump, the release step skips silently. No manual version management needed.
+If no commits since the last tag warrant a bump, the plugin release step skips silently.
+
+### `relab_rpi_cam_models`
+
+The contract package publishes independently to PyPI.
+
+1. Update `relab_rpi_cam_models/pyproject.toml` to the package version you want to publish
+1. Rebuild the workspace lock file: `uv lock --upgrade relab-rpi-cam-models`
+1. Merge the package changes to `main`
+1. Create and push a tag named `relab-rpi-cam-models-vX.Y.Z`
+
+The publish workflow verifies that the tag version matches `relab_rpi_cam_models/pyproject.toml`, reruns package-focused checks, builds the distributions, and publishes them to PyPI via GitHub trusted publishing.
 
 ## Questions?
 
