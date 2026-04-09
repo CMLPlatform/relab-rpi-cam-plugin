@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 
 import httpx
 from pydantic import AnyUrl
-from relab_rpi_cam_models.stream import StreamMode, YoutubeConfigRequiredError, YoutubeStreamConfig
+from relab_rpi_cam_models.stream import StreamMode
 
-from app.api.services.hardware_protocols import FfmpegOutputLike
+from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services.hardware_stubs import FfmpegOutputStub
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ else:
 _YOUTUBE_MANIFEST = "master.m3u8"
 
 
-def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> FfmpegOutputLike:
+def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> object:
     """Create FfmpegOutput object for YouTube HLS ingestion."""
     if mode != StreamMode.YOUTUBE:
         msg = f"Unsupported stream mode: {mode}"
@@ -71,6 +71,12 @@ def get_broadcast_url(youtube_config: YoutubeStreamConfig) -> AnyUrl:
     return AnyUrl(f"https://youtube.com/watch?v={youtube_config.broadcast_key.get_secret_value()}")
 
 
+def get_youtube_embed_url(broadcast_url: AnyUrl) -> str:
+    """Convert a public YouTube watch URL into an embeddable URL."""
+    url_str = str(broadcast_url)
+    return url_str.replace("https://youtube.com/watch?v=", "https://www.youtube.com/embed/", 1)
+
+
 async def validate_stream_key(youtube_config: YoutubeStreamConfig) -> bool:
     """Validate stream key by checking if the upload URL is valid.
 
@@ -80,9 +86,9 @@ async def validate_stream_key(youtube_config: YoutubeStreamConfig) -> bool:
     max_retries = 3
     base_delay = 1.0  # seconds
 
-    for attempt in range(max_retries):
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
+    async with httpx.AsyncClient(timeout=10) as client:
+        for attempt in range(max_retries):
+            try:
                 response = await client.post(url_str)
                 if response.status_code == 202:
                     return True
@@ -90,26 +96,15 @@ async def validate_stream_key(youtube_config: YoutubeStreamConfig) -> bool:
                 if response.status_code < 500:
                     logger.warning("YouTube stream key validation returned %d", response.status_code)
                     return False
-        except (httpx.TimeoutException, httpx.NetworkError) as e:
-            logger.warning("Stream key validation attempt %d failed: %s", attempt + 1, e)
-            if attempt < max_retries - 1:
-                delay = base_delay * (2**attempt)  # exponential backoff
-                await asyncio.sleep(delay)
-                continue
-            return False
-        except Exception:
-            logger.exception("Unexpected error during stream key validation")
-            return False
+            except (httpx.TimeoutException, httpx.NetworkError) as e:
+                logger.warning("Stream key validation attempt %d failed: %s", attempt + 1, e)
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2**attempt)  # exponential backoff
+                    await asyncio.sleep(delay)
+                    continue
+                return False
+            except Exception:
+                logger.exception("Unexpected error during stream key validation")
+                return False
 
     return False
-
-
-def get_stream_url(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> AnyUrl:
-    """Get stream URL for a given stream mode."""
-    if mode != StreamMode.YOUTUBE:
-        msg = f"Unsupported stream mode: {mode}"
-        raise ValueError(msg)
-
-    if not youtube_config:
-        raise YoutubeConfigRequiredError
-    return get_broadcast_url(youtube_config)

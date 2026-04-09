@@ -2,40 +2,38 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, HTTPException, Query
-from fastapi.responses import RedirectResponse
-from relab_rpi_cam_models.stream import (
-    StreamMode,
-    StreamView,
-    YoutubeConfigRequiredError,
-    YoutubeStreamConfig,
-)
+from fastapi import APIRouter, Body, HTTPException
+from relab_rpi_cam_models.stream import StreamMode, StreamView
 
 from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.exceptions import (
-    ActiveStreamError,
-    YouTubeValidationError,
-)
+from app.api.exceptions import ActiveStreamError, YouTubeValidationError
+from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 
-# Initialize router
 router = APIRouter(prefix="/stream", tags=["stream"])
 
 
-@router.post("/start", status_code=201, summary="Start YouTube streaming")
+@router.post(
+    "",
+    status_code=201,
+    summary="Start YouTube streaming",
+    responses={
+        201: {"description": "YouTube stream started successfully."},
+        400: {"description": "YouTube config is missing or invalid."},
+        409: {"description": "A stream is already active."},
+    },
+)
 async def start_stream(
     camera_manager: CameraManagerDependency,
-    mode: Annotated[StreamMode, Query(description="Streaming mode (youtube)", examples=["youtube"])],
     youtube_config: Annotated[
-        YoutubeStreamConfig | None,
+        YoutubeStreamConfig,
         Body(
-            description="YouTube stream configuration",
-            examples=[{"stream_key": "abc123", "broadcast_key": "def456"}],
+            examples=[{"stream_key": "your-stream-key", "broadcast_key": "your-broadcast-id"}],
         ),
-    ] = None,
+    ],
 ) -> StreamView:
-    """Start YouTube video streaming."""
+    """Start a YouTube stream using the provided stream and broadcast keys."""
     try:
-        return await camera_manager.start_streaming(mode, youtube_config=youtube_config)
+        return await camera_manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
 
     except YoutubeConfigRequiredError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -45,7 +43,7 @@ async def start_stream(
         raise HTTPException(status_code=409, detail=str(e)) from e
 
 
-@router.get("/status")
+@router.get("", summary="Get active stream")
 async def get_stream_status(camera_manager: CameraManagerDependency) -> StreamView:
     """Get current stream status."""
     if (stream_info := await camera_manager.get_stream_info()) is None:
@@ -53,13 +51,12 @@ async def get_stream_status(camera_manager: CameraManagerDependency) -> StreamVi
     return stream_info
 
 
-@router.get("")
-async def status_redirect() -> RedirectResponse:
-    """Redirect to stream status."""
-    return RedirectResponse(router.url_path_for("get_stream_status"))
-
-
-@router.delete("/stop", status_code=204, summary="Stop YouTube streaming")
+@router.delete(
+    "",
+    status_code=204,
+    summary="Stop YouTube streaming",
+    responses={204: {"description": "Active YouTube stream stopped."}, 404: {"description": "No active stream."}},
+)
 async def stop_stream(camera_manager: CameraManagerDependency) -> None:
     """Stop active YouTube stream."""
     if not camera_manager.stream.is_active:

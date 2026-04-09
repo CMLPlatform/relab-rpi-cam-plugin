@@ -11,25 +11,29 @@
         <div id="status"></div>
       </div>
     </div>
-    <div id="config" data-broadcast-key="{{ broadcast_key | e }}"></div>
+    <div id="config" data-embed-url="{{ embed_url | e }}"></div>
     <script>
       const playerDiv = document.getElementById('player')
       const statusDiv = document.getElementById('status')
-      const broadcastKey = document.getElementById('config').dataset.broadcastKey
+      const embedUrl = document.getElementById('config').dataset.embedUrl
 
       async function checkStreamStatus() {
         try {
-          const response = await fetch('/camera/status', { credentials: 'include' })
+          const response = await fetch('/camera', { credentials: 'include' })
           const status = await response.json()
-          return status.stream?.mode === 'youtube' && status.stream?.is_active && status.stream?.youtube_config?.broadcast_key
+          return status.stream?.mode === 'youtube' && Boolean(status.stream?.url)
         } catch {
           return false
         }
       }
 
       function createPlayer() {
+        if (!embedUrl) {
+          statusDiv.innerHTML = 'Stream URL unavailable'
+          return
+        }
         playerDiv.innerHTML = `
-          <iframe src="https://www.youtube.com/embed/${broadcastKey}?autoplay=1"
+          <iframe src="${embedUrl}?autoplay=1"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowfullscreen>
           </iframe>`
@@ -49,7 +53,7 @@
           return
         }
         try {
-          await fetch('/stream/stop?mode=youtube', { method: 'DELETE', credentials: 'include' })
+          await fetch('/stream', { method: 'DELETE', credentials: 'include' })
           playerDiv.innerHTML = ''
           statusDiv.innerHTML = 'Stream stopped'
         } catch {

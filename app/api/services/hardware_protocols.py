@@ -33,6 +33,9 @@ class Picamera2Like(Protocol):
     def capture_metadata(self) -> dict | None:
         """Capture metadata for the last image or frame."""
 
+    def switch_mode_and_capture_image(self, config: object) -> "PilImage":
+        """Switch to the provided configuration and capture a still image."""
+
     def start_recording(self, encoder: object, output: object) -> None:
         """Start recording using the provided encoder and output."""
 
@@ -45,10 +48,5 @@ class Picamera2Like(Protocol):
     def create_video_configuration(self, **kwargs: object) -> dict:
         """Create a video capture configuration."""
 
-
-class H264EncoderLike(Protocol):
-    """Behavior required from an H264 encoder object."""
-
-
-class FfmpegOutputLike(Protocol):
-    """Behavior required from an FFmpeg output object."""
+    def create_preview_configuration(self, **kwargs: object) -> dict:
+        """Create a low-resolution preview capture configuration."""

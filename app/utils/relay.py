@@ -12,26 +12,16 @@ import asyncio
 import contextlib
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import httpx
+import websockets
+from websockets.exceptions import ConnectionClosed
 
 from app.core.config import apply_relay_credentials, settings
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
-websockets: Any = None
-ConnectionClosed: Any = None
-
-try:
-    import websockets as _websockets
-    from websockets.exceptions import ConnectionClosed as _ConnectionClosed
-except ImportError:
-    pass
-else:
-    websockets = _websockets
-    ConnectionClosed = _ConnectionClosed
+    from collections.abc import AsyncGenerator, Callable
 
 # WebSocket message types
 _MSG_TYPE_PING = "ping"
@@ -60,11 +50,9 @@ logger = logging.getLogger(__name__)
 # Reconnection delay bounds (seconds)
 _RECONNECT_MIN = 2.0
 _RECONNECT_MAX = 60.0
+_MAX_CONCURRENT_COMMANDS = 8
 
-if ConnectionClosed is None:
-    _WEBSOCKET_CONNECTION_ERRORS: tuple[type[Exception], ...] = (OSError,)
-else:
-    _WEBSOCKET_CONNECTION_ERRORS = (ConnectionClosed, OSError)
+_WEBSOCKET_CONNECTION_ERRORS: tuple[type[Exception], ...] = (ConnectionClosed, OSError)
 
 _RELAY_CONNECTION_ERRORS: tuple[type[Exception], ...] = (RuntimeError, *_WEBSOCKET_CONNECTION_ERRORS)
 
@@ -107,36 +95,6 @@ def _build_relay_url() -> str:
     return f"{settings.relay_backend_url.rstrip('/')}?camera_id={settings.relay_camera_id}"
 
 
-class _WebSocketContextManager:
-    """Minimal async context manager wrapping a websockets connection."""
-
-    def __init__(self, url: str) -> None:
-        self._url = url
-        self._raw_ws: _AsyncWebSocket | None = None
-
-    async def __aenter__(self) -> _WebSocketConnection:
-        # Import websockets lazily so importing this module does not require the
-        # optional dependency when relay mode is disabled.
-        if websockets is None:
-            msg = "The 'websockets' package is required for relay mode. Install it with: uv add websockets"
-            raise ImportError(msg)
-
-        raw_ws = cast(
-            "_AsyncWebSocket",
-            await websockets.connect(
-                self._url,
-                max_size=1_048_576,  # 1 MiB limit
-                additional_headers={"Authorization": f"Bearer {settings.relay_api_key}"},
-            ),
-        )
-        self._raw_ws = raw_ws
-        return _WebSocketConnection(raw_ws)
-
-    async def __aexit__(self, *_: object) -> None:
-        if self._raw_ws:
-            await self._raw_ws.close()
-
-
 class _WebSocketConnection:
     def __init__(self, ws: _AsyncWebSocket) -> None:
         self._ws = ws
@@ -150,9 +108,25 @@ class _WebSocketConnection:
     async def recv(self) -> str | bytes:
         return await self._ws.recv()
 
+    async def close(self) -> None:
+        await self._ws.close()
 
-def _websocket_connect(url: str) -> _WebSocketContextManager:
-    return _WebSocketContextManager(url)
+
+@contextlib.asynccontextmanager
+async def _websocket_connect(url: str) -> AsyncGenerator[_WebSocketConnection]:
+    """Connect to a WebSocket and yield a wrapped connection."""
+    raw_ws = cast(
+        "_AsyncWebSocket",
+        await websockets.connect(
+            url,
+            max_size=1_048_576,  # 1 MiB limit
+            additional_headers={"Authorization": f"Bearer {settings.relay_api_key}"},
+        ),
+    )
+    try:
+        yield _WebSocketConnection(raw_ws)
+    finally:
+        await raw_ws.close()
 
 
 async def _receive_loop(ws: _WebSocketConnection) -> None:
@@ -160,6 +134,7 @@ async def _receive_loop(ws: _WebSocketConnection) -> None:
     # Include the relay API key so the local API accepts relayed commands.
     auth_headers = {settings.auth_key_name: settings.relay_api_key} if settings.relay_api_key else {}
     pending_tasks: set[asyncio.Task[None]] = set()
+    command_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_COMMANDS)
 
     def _on_task_done(task: asyncio.Task[None]) -> None:
         """Callback when a command task completes. Checks for stale key errors."""
@@ -182,16 +157,22 @@ async def _receive_loop(ws: _WebSocketConnection) -> None:
         logger.debug("Command task failed", exc_info=exc)
 
     async with httpx.AsyncClient(base_url=str(settings.base_url).rstrip("/"), headers=auth_headers) as http:
-        while True:
-            raw = await _recv_relay_message(ws)
-            if raw is None:
-                # Connection closed or error — let the outer loop reconnect.
-                return
-            await _handle_relay_message(ws, http, raw, pending_tasks, _on_task_done)
+        try:
+            while True:
+                raw = await _recv_relay_message(ws)
+                if raw is None:
+                    # Connection closed or error — let the outer loop reconnect.
+                    return
+                await _handle_relay_message(ws, http, raw, pending_tasks, _on_task_done, command_semaphore)
+        except asyncio.CancelledError:
+            await _drain_pending_tasks(pending_tasks, cancel=True)
+            raise
+        finally:
+            await _drain_pending_tasks(pending_tasks)
 
 
 async def _recv_relay_message(ws: _WebSocketConnection) -> str | bytes | None:
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(*_WEBSOCKET_CONNECTION_ERRORS):
         return await ws.recv()
     return None
 
@@ -202,6 +183,7 @@ async def _handle_relay_message(
     raw: str | bytes,
     pending_tasks: set[asyncio.Task[None]],
     on_task_done: Callable[[asyncio.Task[None]], None],
+    command_semaphore: asyncio.Semaphore,
 ) -> None:
     if isinstance(raw, bytes):
         logger.warning("Unexpected binary frame from backend; ignoring.")
@@ -222,9 +204,30 @@ async def _handle_relay_message(
     if msg_type != _MSG_TYPE_REQUEST:
         return
 
-    task = asyncio.create_task(_handle_command(ws, http, msg))
+    task = asyncio.create_task(_run_command(ws, http, msg, command_semaphore))
     pending_tasks.add(task)
     task.add_done_callback(on_task_done)
+
+
+async def _run_command(
+    ws: _WebSocketConnection,
+    http: httpx.AsyncClient,
+    msg: dict,
+    command_semaphore: asyncio.Semaphore,
+) -> None:
+    """Run a relayed command with bounded concurrency."""
+    async with command_semaphore:
+        await _handle_command(ws, http, msg)
+
+
+async def _drain_pending_tasks(pending_tasks: set[asyncio.Task[None]], *, cancel: bool = False) -> None:
+    """Wait for outstanding command tasks, optionally cancelling them first."""
+    if not pending_tasks:
+        return
+    if cancel:
+        for task in pending_tasks:
+            task.cancel()
+    await asyncio.gather(*pending_tasks, return_exceptions=True)
 
 
 async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg: dict) -> None:
@@ -311,4 +314,4 @@ async def _close_ws_for_reconnect(ws: _WebSocketConnection) -> None:
     logger.info("Closing relay connection to reconnect with new API key.")
     apply_relay_credentials()
     with contextlib.suppress(Exception):
-        await ws._ws.close()  # noqa: SLF001
+        await ws.close()

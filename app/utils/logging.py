@@ -1,33 +1,56 @@
 """Custom logging configuration for the app."""
 
+import json
 import logging
+import sys
+from datetime import UTC, datetime
 from logging.config import dictConfig
 from pathlib import Path
 
 from app.core.config import settings
 
 
+class JsonFormatter(logging.Formatter):
+    """JSON log formatter for structured, machine-readable file output."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Serialize a log record into a JSON string."""
+        log_entry: dict[str, object] = {
+            "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            log_entry["exception"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            log_entry["stack_info"] = self.formatStack(record.stack_info)
+        return json.dumps(log_entry, ensure_ascii=False)
+
+
 def setup_logging(log_level: str = "INFO", log_file: Path | str = settings.log_path / "app.log") -> None:
-    """Simple logging setup with Rich console output and file logging."""
+    """Logging setup with human-readable console output and structured JSON file logging."""
     # Create log directory if it doesn't exist
     settings.log_path.mkdir(exist_ok=True)
-
-    date_fmt = "%Y-%m-%d %H:%M:%S"
 
     config = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            "console_format": {"format": "%(name)s: %(message)s", "datefmt": date_fmt},
-            "file_format": {"format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s", "datefmt": date_fmt},
+            "console_format": {
+                "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
+            },
+            "json_format": {
+                "()": JsonFormatter,
+            },
         },
         "handlers": {
             "console": {
-                "class": "rich.logging.RichHandler",
+                "class": "logging.StreamHandler",
+                "stream": sys.stdout,
                 "level": log_level.upper(),
                 "formatter": "console_format",
-                "rich_tracebacks": True,
-                "tracebacks_show_locals": settings.debug,
             },
             "file": {
                 "class": "logging.handlers.TimedRotatingFileHandler",
@@ -37,7 +60,7 @@ def setup_logging(log_level: str = "INFO", log_file: Path | str = settings.log_p
                 "encoding": "utf-8",
                 "utc": True,
                 "level": log_level.upper(),
-                "formatter": "file_format",
+                "formatter": "json_format",
             },
         },
         "loggers": {

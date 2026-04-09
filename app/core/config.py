@@ -2,6 +2,8 @@
 
 import warnings
 from pathlib import Path
+from collections.abc import Iterable
+from typing import Literal, cast
 
 from pydantic import HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -10,6 +12,7 @@ from app.utils.pairing import load_relay_credentials
 
 # Set the project base directory and .env file
 BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
+_HTTPS_SCHEME = "https"
 
 
 class Settings(BaseSettings):
@@ -38,12 +41,16 @@ class Settings(BaseSettings):
     image_ttl_s: int = 60 * 60  # Time-to-live for captured images in seconds (1 hour)
     max_stream_duration_s: int = 60 * 60 * 5  # Maximum duration for a stream in seconds (5 hours)
     check_stream_interval_s: int = 60  # Interval for checking stream duration in seconds (1 minute)
+    check_stream_health_interval_s: int = 30  # Interval for checking stream health in seconds
 
     # Camera settings
+    camera_backend: Literal["picamera2"] = "picamera2"
     camera_standby_s: int = 60 * 10  # Camera standby time in seconds (10 minutes)
 
     # Auth
     auth_key_name: str = "X-API-Key"
+    auth_cookie_secure: bool | None = None
+    session_cookie_name: str = "relab_session"
 
     # Debug mode
     debug: bool = False
@@ -57,6 +64,13 @@ class Settings(BaseSettings):
     def relay_enabled(self) -> bool:
         """Relay is enabled when all three relay fields are set."""
         return bool(self.relay_backend_url and self.relay_camera_id and self.relay_api_key)
+
+    @property
+    def cookie_secure(self) -> bool:
+        """Return whether auth cookies should be marked secure."""
+        if self.auth_cookie_secure is not None:
+            return self.auth_cookie_secure
+        return self.base_url.scheme == _HTTPS_SCHEME
 
     # Pairing: set this to the backend's HTTP(S) API URL to enable zero-config pairing.
     # When set and relay credentials are absent, the RPi enters pairing mode on boot.
@@ -77,6 +91,36 @@ class Settings(BaseSettings):
                 stacklevel=2,
             )
         return v
+
+    @field_validator("authorized_api_keys", mode="before")
+    @classmethod
+    def _parse_api_keys(cls, v: object) -> list[str]:
+        """Accept a JSON array, a comma-separated string, or an empty value.
+
+        Handles common .env mistakes such as ``[KEY]`` (unquoted JSON string)
+        by falling back to comma-splitting so the app still starts with a
+        meaningful error rather than a cryptic JSONDecodeError.
+        """
+        if isinstance(v, list):
+            return cast(list[str], v)
+        if not isinstance(v, str):
+            if isinstance(v, Iterable):
+                return cast(list[str], list(v))
+            return []
+        stripped = v.strip()
+        if not stripped:
+            return []
+        import json  # noqa: PLC0415
+
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            # Fall back to comma-separated: "key1, key2" or "[key1, key2]"
+            stripped = stripped.strip("[]")
+            return [k.strip().strip("\"'") for k in stripped.split(",") if k.strip()]
+        if not isinstance(parsed, list):
+            return [parsed]
+        return parsed
 
     @field_validator("debug", mode="before")
     @classmethod
@@ -109,10 +153,29 @@ def apply_relay_credentials() -> None:
     """
     creds = load_relay_credentials()
     if creds:
-        settings.relay_backend_url = str(creds.get("relay_backend_url", ""))
-        settings.relay_camera_id = str(creds.get("relay_camera_id", ""))
-        settings.relay_api_key = str(creds.get("relay_api_key", ""))
+        set_runtime_relay_credentials(
+            relay_backend_url=str(creds.get("relay_backend_url", "")),
+            relay_camera_id=str(creds.get("relay_camera_id", "")),
+            relay_api_key=str(creds.get("relay_api_key", "")),
+        )
+
+
+def set_runtime_relay_credentials(
+    *,
+    relay_backend_url: str,
+    relay_camera_id: str,
+    relay_api_key: str,
+) -> None:
+    """Apply relay credentials at runtime and refresh dependent auth state."""
+    settings.relay_backend_url = relay_backend_url
+    settings.relay_camera_id = relay_camera_id
+    settings.relay_api_key = relay_api_key
 
     # Ensure the relay API key is accepted by the local API for loopback calls.
     if settings.relay_api_key and settings.relay_api_key not in settings.authorized_api_keys:
         settings.authorized_api_keys.append(settings.relay_api_key)
+
+    # Refresh the pre-computed auth key hashes after modifying the key list.
+    from app.api.dependencies.auth import reload_authorized_hashes  # noqa: PLC0415 — deferred to avoid circular import
+
+    reload_authorized_hashes()

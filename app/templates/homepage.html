@@ -24,7 +24,9 @@
     <a href="{{ url_for('swagger_ui_html') }}" class="btn">API Docs</a>
     {% if logged_in %}
       <a href="{{ url_for('redirect_stream_viewer') }}" class="btn">Stream Viewer</a>
-      <a href="{{ url_for('logout') }}" class="btn logout">Logout</a>
+      <form action="{{ url_for('logout') }}" method="post" style="display: inline;">
+        <button type="submit" class="btn logout">Logout</button>
+      </form>
     {% endif %}
   </div>
 </div>

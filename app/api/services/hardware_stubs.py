@@ -31,6 +31,9 @@ class Picamera2Stub:
     def capture_metadata(self) -> dict | None:
         """Return stub capture metadata."""
 
+    def switch_mode_and_capture_image(self, _config: object) -> object:
+        """Switch to a stub config and capture a stub image."""
+
     def start_recording(self, encoder: object, output: object) -> None:
         """Start stub recording."""
 
@@ -45,6 +48,10 @@ class Picamera2Stub:
         """Create a stub video configuration."""
         return {}
 
+    def create_preview_configuration(self, **_kwargs: object) -> dict:
+        """Create a stub preview configuration."""
+        return {}
+
 
 class H264EncoderStub:
     """Stub used on non-Raspberry Pi hosts so the app can start."""
@@ -56,5 +63,5 @@ class H264EncoderStub:
 class FfmpegOutputStub:
     """Stub for non-Raspberry Pi environments."""
 
-    def __init__(self, output_str: str, /, **kwargs: object) -> None:
-        pass
+    def __init__(self, _output_str: str, /, **_kwargs: object) -> None:
+        raise RuntimeError(_ERR)

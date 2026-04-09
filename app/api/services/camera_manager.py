@@ -2,136 +2,82 @@
 
 import asyncio
 import uuid
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from io import BytesIO
-from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
 from pydantic import AnyUrl
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
-from relab_rpi_cam_models.images import ImageCaptureResponse, ImageMetadata
-from relab_rpi_cam_models.stream import (
-    Stream,
-    StreamMode,
-    StreamView,
-    YoutubeConfigRequiredError,
-    YoutubeStreamConfig,
-)
+from relab_rpi_cam_models.images import ImageCaptureResponse
+from relab_rpi_cam_models.stream import StreamMode, StreamView
 
-from app.api.exceptions import ActiveStreamError, CameraInitializationError, YouTubeValidationError
-from app.api.services.hardware_protocols import Picamera2Like
-from app.api.services.hardware_stubs import H264EncoderStub, Picamera2Stub
-from app.api.services.stream import get_ffmpeg_output, get_stream_url, validate_stream_key
+from app.api.exceptions import ActiveStreamError
+from app.api.schemas.streaming import YoutubeStreamConfig
+from app.api.services.backend_factory import create_camera_backend
+from app.api.services.camera_backend import CameraBackend
+from app.api.services.contract_adapters import build_image_metadata, image_metadata_to_exif
+from app.api.services.stream_service import StreamService
+from app.api.services.stream_state import ActiveStreamState
 from app.core.config import settings
 from app.utils.files import clear_directory
-
-if TYPE_CHECKING:
-    from picamera2 import Picamera2
-    from picamera2.encoders import H264Encoder
-else:
-    try:
-        from picamera2 import Picamera2
-        from picamera2.encoders import H264Encoder
-    except ImportError:
-        Picamera2 = Picamera2Stub
-        H264Encoder = H264EncoderStub
 
 
 class CameraManager:
     """Main camera manager class which handles camera setup, streaming, and cleanup."""
 
-    def __init__(self) -> None:
-        self.camera: Picamera2Like | None = None
-        self.current_mode: CameraMode | None = None
-        self.stream = Stream()
+    def __init__(self, backend: CameraBackend | None = None) -> None:
+        self.backend = backend or create_camera_backend()
+        self.stream_service = StreamService()
         self.lock = asyncio.Lock()
         self.lock_timeout = 10
 
-    @asynccontextmanager
-    async def _camera_lock(self) -> AsyncGenerator[None]:
-        """Context manager for camera lock with timeout."""
+    @property
+    def stream(self) -> ActiveStreamState:
+        """Expose active stream state for existing callers."""
+        return self.stream_service.state
+
+    async def _acquire_lock(self) -> None:
+        """Acquire the camera lock with a timeout."""
         try:
             await asyncio.wait_for(self.lock.acquire(), timeout=self.lock_timeout)
-            yield
         except TimeoutError as e:
             err_msg = f"Failed to acquire camera lock - timeout error: {e}"
             raise RuntimeError(err_msg) from e
-        finally:
-            if self.lock.locked():
-                self.lock.release()
 
-    @staticmethod
-    def _get_camera_config(mode: CameraMode, camera: Picamera2Like) -> dict:
-        """Camera configuration generator."""
-        match mode:
-            case CameraMode.PHOTO:
-                return camera.create_still_configuration(main={"size": (1920, 1080)}, raw=None)
-            case CameraMode.VIDEO:
-                return camera.create_video_configuration(raw=None)
-            case _:
-                msg = f"Unhandled camera mode: {mode}"
-                raise ValueError(msg)
-
-    async def setup_camera(self, mode: CameraMode) -> Picamera2Like:
-        """Setup camera for specific mode (acquires lock)."""
+    async def setup_camera(self, mode: CameraMode) -> None:
+        """Prepare the configured backend for the requested camera mode."""
         if self.stream.is_active and mode == CameraMode.PHOTO:
             raise ActiveStreamError(self.stream)
 
-        async with self._camera_lock():
-            return await self._setup_camera_locked(mode)
-
-    async def _setup_camera_locked(self, mode: CameraMode) -> Picamera2Like:
-        """Setup camera for specific mode. Caller must hold _camera_lock."""
-        if self.camera is None:
-            try:
-                self.camera = await asyncio.to_thread(lambda: Picamera2(camera_num=settings.camera_device_num))
-            except IndexError as e:
-                raise CameraInitializationError(
-                    settings.camera_device_num,
-                    "Camera device not found. Check that the device number is correct and the camera is connected.",
-                ) from e
-            except (RuntimeError, OSError) as e:
-                raise CameraInitializationError(
-                    settings.camera_device_num,
-                    str(e),
-                ) from e
-        elif self.current_mode == mode:
-            return self.camera
-        else:
-            await asyncio.to_thread(self.camera.stop)
-
-        config = self._get_camera_config(mode, self.camera)  # pyright: ignore reportOptionalMemberAccess
-        self.camera.configure(config)  # pyright: ignore reportOptionalMemberAccess
-        await asyncio.to_thread(self.camera.start)  # pyright: ignore reportOptionalMemberAccess
-
-        self.current_mode = mode
-        return self.camera
+        await self._acquire_lock()
+        try:
+            await self.backend.open(mode)
+        finally:
+            self.lock.release()
 
     async def capture_jpeg(self) -> ImageCaptureResponse:
         """Capture image and return JPEG bytes."""
         if self.stream.is_active:
             raise ActiveStreamError(self.stream)
 
-        async with self._camera_lock():
-            camera = await self._setup_camera_locked(CameraMode.PHOTO)
-
-            # Capture image
-            pil_image = await asyncio.to_thread(camera.capture_image)
-
-            # Capture metadata
-            if (capture_metadata := await asyncio.to_thread(camera.capture_metadata)) is None:
-                err_msg = "Failed to capture image metadata"
-                raise RuntimeError(err_msg)
-            img_metadata = ImageMetadata.from_metadata(pil_image, camera.camera_properties, capture_metadata)
+        await self._acquire_lock()
+        try:
+            result = await self.backend.capture_image()
+            img_metadata = build_image_metadata(result.image, result.camera_properties, result.capture_metadata)
 
             # Save image to local file
             image_id = uuid.uuid4().hex
             image_path = settings.image_path / f"{image_id}.jpg"
-            await asyncio.to_thread(pil_image.save, image_path, exif=img_metadata.to_exif(), format="JPEG", quality=90)
+            await asyncio.to_thread(
+                result.image.save,
+                image_path,
+                exif=image_metadata_to_exif(img_metadata),
+                format="JPEG",
+                quality=90,
+            )
 
             expires_at = datetime.now(UTC) + timedelta(seconds=settings.image_ttl_s)
+        finally:
+            self.lock.release()
 
         return ImageCaptureResponse(
             image_id=image_id,
@@ -145,14 +91,11 @@ class CameraManager:
         if self.stream.is_active:
             raise ActiveStreamError(self.stream)
 
-        async with self._camera_lock():
-            camera = await self._setup_camera_locked(CameraMode.PHOTO)
-            pil_image = await asyncio.to_thread(camera.capture_image)
-
-        pil_image = pil_image.resize((640, 480))
-        buf = BytesIO()
-        pil_image.save(buf, format="JPEG", quality=70)
-        return buf.getvalue()
+        await self._acquire_lock()
+        try:
+            return await self.backend.capture_preview_jpeg()
+        finally:
+            self.lock.release()
 
     async def start_streaming(
         self,
@@ -160,45 +103,20 @@ class CameraManager:
         *,
         youtube_config: YoutubeStreamConfig | None = None,
     ) -> StreamView:
-        """Start streaming to YouTube.
-
-        Raises YouTubeValidationError if stream key validation fails.
-        Raises RuntimeError if ffmpeg fails to start within the timeout.
-        """
+        """Start streaming for the requested provider/mode."""
         if self.stream.is_active:
             raise ActiveStreamError(self.stream)
 
-        if mode == StreamMode.YOUTUBE:
-            if not youtube_config:
-                raise YoutubeConfigRequiredError
-            if not await validate_stream_key(youtube_config):
-                raise YouTubeValidationError(youtube_config.stream_key.get_secret_value())
-
-        async with self._camera_lock():
-            camera = await self._setup_camera_locked(CameraMode.VIDEO)
-
+        await self._acquire_lock()
+        try:
             try:
-                stream_output = get_ffmpeg_output(mode, youtube_config)
-                await asyncio.wait_for(
-                    asyncio.to_thread(camera.start_recording, H264Encoder(), stream_output),
-                    timeout=30.0,
-                )
-            except TimeoutError as e:
-                err_msg = "Failed to start recording: ffmpeg startup timeout"
-                raise RuntimeError(err_msg) from e
-            except (OSError, RuntimeError) as e:
-                err_msg = f"Failed to start recording: {e}"
-                raise RuntimeError(err_msg) from e
-
-            try:
-                self.stream.mode = mode
-                self.stream.url = get_stream_url(mode, youtube_config)
-                self.stream.started_at = datetime.now(UTC)
-                self.stream.youtube_config = youtube_config
+                result = await self.backend.start_stream(mode, youtube_config=youtube_config)
+                self.stream_service.start(result)
             except Exception:
-                await asyncio.to_thread(camera.stop_recording)
-                self.stream = Stream()
+                self.stream_service.reset()
                 raise
+        finally:
+            self.lock.release()
 
         if (stream_info := await self.get_stream_info()) is None:
             err_msg = "Failed to get stream information"
@@ -207,14 +125,17 @@ class CameraManager:
         return stream_info
 
     async def stop_streaming(self) -> None:
-        """Stop active YouTube stream."""
-        async with self._camera_lock():
-            if self.stream.is_active and self.camera:
-                await asyncio.to_thread(self.camera.stop_recording)
-                self.stream = Stream()  # Reset stream state
+        """Stop an active stream."""
+        await self._acquire_lock()
+        try:
+            if self.stream.is_active:
+                await self.backend.stop_stream()
+                self.stream_service.reset()
             else:
                 err_msg = "No stream active"
                 raise RuntimeError(err_msg)
+        finally:
+            self.lock.release()
 
     async def cleanup(self, *, force: bool = False) -> None:
         """Clean up camera and streaming resources. If force is True, this happens even if there is an active stream."""
@@ -226,21 +147,18 @@ class CameraManager:
 
         await clear_directory(settings.image_path, time_to_live_s=settings.image_ttl_s)
 
-        async with self._camera_lock():
-            if self.camera:
-                await asyncio.to_thread(self.camera.stop)
-                await asyncio.to_thread(self.camera.close)
-                self.camera = None
-                self.current_mode = None
+        await self._acquire_lock()
+        try:
+            await self.backend.cleanup()
+        finally:
+            self.lock.release()
 
     async def get_stream_info(self) -> StreamView | None:
         """Get stream information including metadata if active."""
-        if self.camera and self.stream.is_active:
-            if (capture_metadata := await asyncio.to_thread(self.camera.capture_metadata)) is None:
-                err_msg = "Failed to capture image metadata"
-                raise RuntimeError(err_msg)
-            return self.stream.get_info(
-                camera_properties=self.camera.camera_properties,
+        if self.stream.is_active:
+            camera_properties, capture_metadata = await self.backend.get_stream_metadata()
+            return self.stream_service.build_view(
+                camera_properties=camera_properties,
                 capture_metadata=capture_metadata,
             )
         # Return empty stream view if no stream is active
@@ -249,4 +167,7 @@ class CameraManager:
     async def get_status(self) -> CameraStatusView:
         """Return the current camera status including active stream info."""
         stream_info = await self.get_stream_info()
-        return CameraStatusView(current_mode=self.current_mode, stream=stream_info if self.stream.is_active else None)
+        return CameraStatusView(
+            current_mode=self.backend.current_mode,
+            stream=stream_info if self.stream.is_active else None,
+        )

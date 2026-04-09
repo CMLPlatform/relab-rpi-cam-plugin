@@ -1,19 +1,19 @@
 """API exception classes."""
 
-from relab_rpi_cam_models.stream import Stream
+from app.api.services.stream_state import ActiveStreamState
 
 
 class YouTubeValidationError(Exception):
     """Raised when YouTube stream key validation fails."""
 
-    def __init__(self, stream_key: str | None = None) -> None:
-        super().__init__(f"Invalid YouTube stream key{f': {stream_key}' if stream_key else ''}.")
+    def __init__(self) -> None:
+        super().__init__("Invalid YouTube stream key.")
 
 
 class ActiveStreamError(Exception):
     """Raised when trying to access the camera while a stream is active."""
 
-    def __init__(self, stream: Stream) -> None:
+    def __init__(self, stream: ActiveStreamState) -> None:
         self.mode = stream.mode
         self.url = stream.url
         super().__init__(f"Stream active in {self.mode} mode at {self.url}. Stop streaming first.")

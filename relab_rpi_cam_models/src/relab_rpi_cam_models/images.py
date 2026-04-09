@@ -1,10 +1,8 @@
-"""Pydantic models for Image information."""
+"""Pydantic models for image transport contracts."""
 
 from datetime import UTC, datetime
 from typing import Annotated
 
-from PIL.ExifTags import Base
-from PIL.Image import Exif, Image
 from pydantic import (
     AliasGenerator,
     AnyUrl,
@@ -86,41 +84,6 @@ class ImageMetadata(BaseMetadata):
     """Complete image metadata model."""
 
     image_properties: ImageProperties
-
-    @classmethod
-    def from_metadata(cls, img: Image, camera_properties: dict, capture_metadata: dict) -> "ImageMetadata":
-        """Create an ImageMetadata instance from raw camera capture data."""
-        return cls(
-            image_properties=ImageProperties(width=img.size[0], height=img.size[1]),
-            camera_properties=CameraProperties.model_validate(camera_properties),
-            capture_metadata=CaptureMetadata.model_validate(capture_metadata),
-        )
-
-    def to_exif(self) -> Exif:
-        """Convert metadata to PIL Exif object."""
-        exif = Exif()
-
-        # Required fields
-        exif.update(
-            {
-                Base.Make.value: "Raspberry Pi",
-                Base.Software.value: "picamera2",
-                Base.DateTime.value: self.image_properties.capture_time.strftime("%Y:%m:%d %H:%M:%S"),
-                Base.ImageWidth.value: self.image_properties.width,
-                Base.ImageLength.value: self.image_properties.height,
-            }
-        )
-
-        # Optional fields
-        if self.capture_metadata.exposure_time:
-            exif[Base.ExposureTime.value] = self.capture_metadata.exposure_time / 1_000_000
-        if self.capture_metadata.color_temperature:
-            # WhiteBalance tag is 0=auto, 1=manual; the actual Kelvin value has no standard EXIF tag
-            exif[Base.WhiteBalance.value] = 1
-        if self.capture_metadata.sensor_temperature:
-            exif[Base.AmbientTemperature.value] = self.capture_metadata.sensor_temperature
-
-        return exif
 
 
 class ImageCaptureResponse(BaseModel):

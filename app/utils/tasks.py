@@ -5,8 +5,6 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from starlette.concurrency import run_in_threadpool
-
 logger = logging.getLogger(__name__)
 
 
@@ -24,8 +22,7 @@ def repeat_task(
                 if asyncio.iscoroutinefunction(task_func):
                     await task_func()
                 else:
-                    await run_in_threadpool(task_func)
-                logger.info("Task '%s' executed successfully", task_name)
+                    await asyncio.to_thread(task_func)
             except Exception:
                 logger.exception("Exception in task '%s'", task_name)
 
