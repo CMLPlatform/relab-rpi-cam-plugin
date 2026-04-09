@@ -48,6 +48,8 @@ Optional observability is split into two compose profiles:
 
 For a single-machine local setup, run both profiles together. For a fleet, run `observability-ship` on each Pi and point `LOKI_PUSH_URL` at a central host running `observability-collect`. Without either profile, logs are still written to the `app_logs` volume on disk; you just lose the browsing UI and shipping layer.
 
+For multi-Pi setups, set a unique `OBSERVABILITY_INSTANCE` on each Pi so Grafana can filter logs by device.
+
 For platform management and operation, see the [RELab camera guide](https://docs.cml-relab.org/user-guides/rpi-cam/).
 
 ## Troubleshooting

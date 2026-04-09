@@ -26,7 +26,8 @@ loki.process "app" {
 
   stage.static_labels {
     values = {
-      job = "rpi-cam-plugin",
+      job      = "rpi-cam-plugin",
+      instance = sys.env("OBSERVABILITY_INSTANCE"),
     }
   }
 

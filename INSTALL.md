@@ -122,6 +122,7 @@ For cases where automatic pairing isn't available.
    To ship logs from a Pi to a separate central collector:
 
    ```sh
+   export OBSERVABILITY_INSTANCE=pi-01
    export LOKI_PUSH_URL=http://your-central-host:3100/loki/api/v1/push
    docker compose --profile observability-ship up -d
    ```

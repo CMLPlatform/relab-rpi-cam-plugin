@@ -51,7 +51,7 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{job=\"rpi-cam-plugin\"}",
+          "expr": "{job=\"rpi-cam-plugin\", instance=~\"$instance\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -67,7 +67,27 @@
     "loki"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": ".*",
+          "value": ".*"
+        },
+        "label": "Instance",
+        "name": "instance",
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "query": ".*",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
   },
   "time": {
     "from": "now-15m",
