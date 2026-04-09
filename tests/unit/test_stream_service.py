@@ -5,13 +5,15 @@ from typing import Self
 
 import pytest
 from pydantic import AnyUrl, SecretStr
-from relab_rpi_cam_models.stream import StreamMode, YoutubeConfigRequiredError, YoutubeStreamConfig
+from relab_rpi_cam_models.stream import StreamMode
 
+from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services import stream as stream_service
 
 MANIFEST_NAME_KEY = "master_pl_name"
 POST_METHOD_MARKER = "method POST"
 UPLOAD_URL = "https://example.com/upload"
+EMBED_URL = "https://www.youtube.com/embed/broadcast-key"
 
 
 class DummyFfmpegOutput:
@@ -63,20 +65,9 @@ class TestStreamUrls:
         )
         assert stream_service.get_broadcast_url(config) == AnyUrl("https://youtube.com/watch?v=broadcast-key")
 
-    def test_youtube_stream_url_requires_config(self) -> None:
-        """Test that requesting a YouTube stream URL without providing the necessary config raises an error."""
-        with pytest.raises(YoutubeConfigRequiredError):
-            stream_service.get_stream_url(StreamMode.YOUTUBE)
-
-    def test_youtube_stream_url_uses_broadcast_key(self) -> None:
-        """Test that the YouTube stream URL is constructed using the broadcast key from the config."""
-        config = YoutubeStreamConfig(
-            stream_key=SecretStr("stream-key"),
-            broadcast_key=SecretStr("broadcast-key"),
-        )
-        assert stream_service.get_stream_url(StreamMode.YOUTUBE, config) == AnyUrl(
-            "https://youtube.com/watch?v=broadcast-key",
-        )
+    def test_embed_url(self) -> None:
+        """Test that a watch URL is converted into an embed URL."""
+        assert stream_service.get_youtube_embed_url(AnyUrl("https://youtube.com/watch?v=broadcast-key")) == EMBED_URL
 
 
 class TestFfmpegOutput:

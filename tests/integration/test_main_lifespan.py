@@ -1,6 +1,7 @@
 """Tests for application lifespan startup and shutdown."""
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -10,6 +11,8 @@ from fastapi import FastAPI
 
 import app.main as main_mod
 from app.core.config import settings
+
+PAIRING_MODE_LOG = "PAIRING MODE | state=awaiting_claim setup=/setup pairing_backend=https://example.com"
 
 
 class DummyTask:
@@ -71,13 +74,18 @@ class TestLifespan:
         assert created == ["ws_relay"]
         cleanup_mock.assert_awaited_once_with(force=True)
 
-    async def test_pairing_mode_starts_relay_after_pairing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_pairing_mode_starts_relay_after_pairing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """Test that when no relay credentials are set, the relay is started after pairing."""
         app = FastAPI()
         monkeypatch.setattr(settings, "relay_backend_url", "")
         monkeypatch.setattr(settings, "relay_camera_id", "")
         monkeypatch.setattr(settings, "relay_api_key", "")
         monkeypatch.setattr(settings, "pairing_backend_url", "https://example.com")
+        monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
         monkeypatch.setattr(main_mod, "apply_relay_credentials", lambda: None)
         monkeypatch.setattr(main_mod, "setup_directory", AsyncMock())
         monkeypatch.setattr(main_mod, "repeat_task", lambda _task_func, _seconds, task_name: DummyTask(task_name))
@@ -99,7 +107,9 @@ class TestLifespan:
 
         monkeypatch.setattr(asyncio, "create_task", _create_task)
 
-        await _run_lifespan_once(app)
+        with caplog.at_level(logging.INFO):
+            await _run_lifespan_once(app)
 
         assert created == ["pairing", "ws_relay"]
+        assert PAIRING_MODE_LOG in caplog.text
         cleanup_mock.assert_awaited_once_with(force=True)

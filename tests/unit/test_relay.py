@@ -74,20 +74,20 @@ class TestReceiveLoop:
     async def test_ignores_binary_frames(self) -> None:
         """Should ignore binary frames without crashing."""
         ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=[b"\x00binary", Exception("closed")])
+        ws.recv = AsyncMock(side_effect=[b"\x00binary", OSError("closed")])
         await _receive_loop(ws)
         # Should not crash, just log and continue until connection closes
 
     async def test_ignores_invalid_json(self) -> None:
         """Should ignore frames that aren't valid JSON without crashing."""
         ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=["not json {{{", Exception("closed")])
+        ws.recv = AsyncMock(side_effect=["not json {{{", OSError("closed")])
         await _receive_loop(ws)
 
     async def test_handles_ping(self) -> None:
         """Should respond to ping messages with a pong."""
         ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=[json.dumps({"type": "ping"}), Exception("closed")])
+        ws.recv = AsyncMock(side_effect=[json.dumps({"type": "ping"}), OSError("closed")])
         await _receive_loop(ws)
         # Should have sent a pong
         ws.send.assert_called_once()
@@ -97,13 +97,13 @@ class TestReceiveLoop:
     async def test_ignores_unknown_type(self) -> None:
         """Should ignore messages with unknown type without crashing."""
         ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=[json.dumps({"type": "unknown"}), Exception("closed")])
+        ws.recv = AsyncMock(side_effect=[json.dumps({"type": "unknown"}), OSError("closed")])
         await _receive_loop(ws)
 
     async def test_dispatches_request_messages(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should dispatch messages of type "request" to the command handler."""
         ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=[json.dumps({"type": "request", "id": "1"}), Exception("closed")])
+        ws.recv = AsyncMock(side_effect=[json.dumps({"type": "request", "id": "1"}), OSError("closed")])
         monkeypatch.setattr(relay_mod.asyncio, "create_task", lambda coro: asyncio.get_running_loop().create_task(coro))
         handler = AsyncMock()
         monkeypatch.setattr(relay_mod, "_handle_command", handler)

@@ -1,49 +1,20 @@
 """Tests for image capture and retrieval endpoints."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
-from PIL import Image
-from relab_rpi_cam_models.camera import CameraMode
+from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.services.camera_manager import CameraManager
-from app.api.services.hardware_stubs import Picamera2Stub
 from app.core.config import settings
 from tests.constants import JPEG_CONTENT_TYPE
 
 IMAGE_ID_KEY = "image_id"
 IMAGE_URL_KEY = "image_url"
 EXPIRES_AT_KEY = "expires_at"
-
-
-class MockPicamera2(Picamera2Stub):
-    """Typed camera stub for image endpoint tests."""
-
-    def __init__(self, image: Image.Image, metadata: dict[str, int]) -> None:
-        self._image = image
-        self._metadata = metadata
-        self.camera_properties: dict[str, str] = {"Model": "mock"}
-
-    def capture_image(self) -> Image.Image:
-        """Return the preset image."""
-        return self._image
-
-    def capture_metadata(self) -> dict[str, int] | None:
-        """Return the preset metadata."""
-        return self._metadata
-
-    def configure(self, config: object) -> None:
-        """Mock configure does nothing."""
-
-    def start(self) -> None:
-        """Mock start does nothing."""
-
-    def stop(self) -> None:
-        """Mock stop does nothing."""
-
-    def close(self) -> None:
-        """Mock close does nothing."""
+CONFLICT_RESPONSE_CODE = "409"
 
 
 class TestGetImage:
@@ -81,6 +52,17 @@ class TestPreviewEndpoint:
         assert resp.status_code == 200
         assert resp.headers["content-type"] == JPEG_CONTENT_TYPE
 
+    async def test_preview_does_not_write_files(self, client: AsyncClient, tmp_path: Path) -> None:
+        """Preview frames should not be persisted to disk."""
+        original = settings.image_path
+        settings.image_path = tmp_path
+        try:
+            resp = await client.get("/images/preview")
+            assert resp.status_code == 200
+            assert await asyncio.to_thread(lambda: list(tmp_path.iterdir())) == []
+        finally:
+            settings.image_path = original
+
     async def test_preview_runtime_error_returns_500(
         self,
         client: AsyncClient,
@@ -97,6 +79,23 @@ class TestPreviewEndpoint:
         resp = await client.get("/images/preview")
         assert resp.status_code == 500
 
+    async def test_preview_while_streaming_returns_409(
+        self,
+        client: AsyncClient,
+        camera_manager: CameraManager,
+    ) -> None:
+        """Preview should be unavailable while a stream is active."""
+        camera_manager.stream.mode = StreamMode.YOUTUBE
+        resp = await client.get("/images/preview")
+        assert resp.status_code == 409
+
+    async def test_openapi_documents_409_response(self, client: AsyncClient) -> None:
+        """OpenAPI should document preview conflicts while streaming."""
+        resp = await client.get("/openapi.json")
+        assert resp.status_code == 200
+        preview_get = resp.json()["paths"]["/images/preview"]["get"]
+        assert CONFLICT_RESPONSE_CODE in preview_get["responses"]
+
 
 class TestCaptureEndpoint:
     """Tests for POST /images."""
@@ -104,17 +103,11 @@ class TestCaptureEndpoint:
     async def test_capture_returns_201(
         self,
         client: AsyncClient,
-        camera_manager: CameraManager,
         tmp_path: Path,
     ) -> None:
         """Test that capturing an image returns a 201 with the image ID and URL."""
         original = settings.image_path
         settings.image_path = tmp_path
-
-        # Create a real PIL image that the mock camera will return
-        pil_img = Image.new("RGB", (100, 100), color="red")
-        camera_manager.camera = MockPicamera2(pil_img, {"FrameDuration": 33333})
-        camera_manager.current_mode = CameraMode.PHOTO
 
         try:
             resp = await client.post("/images")
@@ -129,16 +122,11 @@ class TestCaptureEndpoint:
     async def test_capture_saves_file_to_disk(
         self,
         client: AsyncClient,
-        camera_manager: CameraManager,
         tmp_path: Path,
     ) -> None:
         """Test that capturing an image saves the JPEG file to disk."""
         original = settings.image_path
         settings.image_path = tmp_path
-
-        pil_img = Image.new("RGB", (100, 100), color="blue")
-        camera_manager.camera = MockPicamera2(pil_img, {"FrameDuration": 33333})
-        camera_manager.current_mode = CameraMode.PHOTO
 
         try:
             resp = await client.post("/images")

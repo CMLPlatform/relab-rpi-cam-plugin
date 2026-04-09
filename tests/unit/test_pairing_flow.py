@@ -1,12 +1,14 @@
 """Tests for the pairing flow helpers."""
 
 import json
+import logging
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Self, cast
 from unittest.mock import AsyncMock
 
 import pytest
 
+from app.api.dependencies.auth import reload_authorized_hashes
 from app.core.config import settings
 from app.utils import pairing as pairing_mod
 
@@ -16,6 +18,11 @@ RELAY_CAMERA_ID = "cam-1"
 RELAY_API_KEY = "key-1"
 PAIRING_CODE_1 = "CODE1"
 PAIRING_CODE_2 = "CODE2"
+PAIRING_MODE_LOG_PREFIX = "PAIRING MODE | state=awaiting_claim setup=/setup"
+PAIRING_FAILURE_LOG = "Pairing cycle failed"
+FINGERPRINT_2 = "FP2"
+LAN_SETUP_URL = "http://192.168.1.42:8018/setup"
+RELATIVE_SETUP_PATH = "/setup"
 
 
 class FakeResponse:
@@ -43,6 +50,14 @@ class FakeClient:
         self._posts = post_responses
         self._gets = get_responses
 
+    async def __aenter__(self) -> Self:
+        """Support async context manager usage like httpx.AsyncClient."""
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        """No-op async context manager exit."""
+        return
+
     async def post(self, *_: object, **__: object) -> FakeResponse:
         """Return the next queued POST response."""
         return self._posts.pop(0)
@@ -66,13 +81,20 @@ class TestRunPairing:
 class TestPairingCycle:
     """Tests for a single pairing cycle."""
 
-    async def test_retries_on_collision_and_completes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_retries_on_collision_and_completes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """Test that a collision on registration retries and then completes pairing."""
         original_settings = (
             settings.relay_backend_url,
             settings.relay_camera_id,
             settings.relay_api_key,
+            list(settings.authorized_api_keys),
         )
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+        monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
         monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         client = FakeClient(
@@ -95,14 +117,92 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_mod, "_generate_code_and_fingerprint", lambda: generated.pop(0))
 
         try:
+            with caplog.at_level(logging.INFO):
+                pairing_mod.log_pairing_mode_started()
             await pairing_mod._pairing_cycle(cast("Any", client), EXAMPLE_BACKEND_URL, on_paired)  # noqa: SLF001
 
             on_paired.assert_awaited_once()
             assert settings.relay_backend_url == RELAY_BACKEND_URL
             assert settings.relay_camera_id == RELAY_CAMERA_ID
             assert settings.relay_api_key == RELAY_API_KEY
+            assert RELAY_API_KEY in settings.authorized_api_keys
+            log_text = caplog.text
+            assert PAIRING_MODE_LOG_PREFIX in log_text
+            assert f"PAIRING READY | code={PAIRING_CODE_2} setup=/setup" in log_text
+            assert f"PAIRING COMPLETE | camera_id={RELAY_CAMERA_ID} relay_starting=true" in log_text
+            assert RELAY_API_KEY not in log_text
+            assert FINGERPRINT_2 not in log_text
         finally:
-            settings.relay_backend_url, settings.relay_camera_id, settings.relay_api_key = original_settings
+            (
+                settings.relay_backend_url,
+                settings.relay_camera_id,
+                settings.relay_api_key,
+                settings.authorized_api_keys,
+            ) = original_settings
+            reload_authorized_hashes()
+
+    async def test_expired_code_rotates_without_error_stacktrace(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Expired pairing codes should rotate cleanly and log the new ready code."""
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+        monkeypatch.setattr(settings, "base_url", "https://camera.example/")
+        monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
+        client = FakeClient(
+            post_responses=[FakeResponse(201), FakeResponse(201)],
+            get_responses=[
+                FakeResponse(404),
+                FakeResponse(
+                    200,
+                    {
+                        "status": pairing_mod.STATUS_PAIRED,
+                        "camera_id": RELAY_CAMERA_ID,
+                        "ws_url": RELAY_BACKEND_URL,
+                        "api_key": RELAY_API_KEY,
+                    },
+                ),
+            ],
+        )
+        on_paired = AsyncMock()
+        generated = [(PAIRING_CODE_1, "FP1"), (PAIRING_CODE_2, "FP2")]
+        monkeypatch.setattr(pairing_mod, "_generate_code_and_fingerprint", lambda: generated.pop(0))
+        monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: client)
+
+        with caplog.at_level(logging.INFO):
+            await pairing_mod.run_pairing(on_paired)
+
+        on_paired.assert_awaited_once()
+        log_text = caplog.text
+        assert f"PAIRING READY | code={PAIRING_CODE_1} setup=https://camera.example/setup" in log_text
+        assert f"PAIRING ROTATING | expired_code={PAIRING_CODE_1} reason=expired" in log_text
+        assert f"PAIRING READY | code={PAIRING_CODE_2} setup=https://camera.example/setup" in log_text
+        assert PAIRING_FAILURE_LOG not in log_text
+
+    def test_pairing_mode_prefers_detected_lan_setup_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Loopback base URLs should prefer a best-effort LAN setup URL in logs."""
+        monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
+        monkeypatch.setattr(pairing_mod.socket, "gethostname", lambda: "rpi-cam")
+        monkeypatch.setattr(
+            pairing_mod.socket,
+            "gethostbyname_ex",
+            lambda _host: ("rpi-cam", [], ["127.0.0.1", "192.168.1.42"]),
+        )
+
+        assert pairing_mod._pairing_setup_location() == LAN_SETUP_URL  # noqa: SLF001
+
+    def test_pairing_mode_falls_back_to_relative_setup_path_without_lan_address(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """If no non-loopback LAN address is available, logs should keep the safe /setup fallback."""
+        monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
+        monkeypatch.setattr(pairing_mod.socket, "gethostname", lambda: "rpi-cam")
+        monkeypatch.setattr(pairing_mod.socket, "gethostbyname_ex", lambda _host: ("rpi-cam", [], ["127.0.0.1"]))
+
+        assert pairing_mod._pairing_setup_location() == RELATIVE_SETUP_PATH  # noqa: SLF001
 
     async def test_saves_and_loads_credentials(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that credentials are saved to and loaded from disk correctly."""

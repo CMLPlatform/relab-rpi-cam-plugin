@@ -1,17 +1,44 @@
-"""Tests for camera management dependencies."""
+"""Tests for camera management dependencies and orchestration."""
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from typing import cast
+from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import SecretStr
-from relab_rpi_cam_models.stream import StreamMode, YoutubeConfigRequiredError, YoutubeStreamConfig
+from PIL import Image
+from pydantic import AnyUrl, SecretStr
+from relab_rpi_cam_models.camera import CameraMode
+from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.dependencies import camera_management as camera_deps
-from app.api.exceptions import ActiveStreamError, YouTubeValidationError
+from app.api.exceptions import ActiveStreamError
+from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
+from app.api.services.camera_backend import CameraBackend, CaptureResult, StreamStartResult
 from app.api.services.camera_manager import CameraManager
+from app.api.services.stream_service import StreamService
 from app.core.config import settings
+
+YOUTUBE_PROVIDER = "youtube"
+MOCK_CAMERA = "mock-camera"
+
+
+class FakeBackend:
+    """Small backend stub for camera-manager unit tests."""
+
+    def __init__(self) -> None:
+        self.current_mode: CameraMode | None = None
+        self.cleanup = AsyncMock()
+        self.stop_stream = AsyncMock()
+        self.open = AsyncMock(side_effect=self._open)
+        self.capture_image = AsyncMock()
+        self.capture_preview_jpeg = AsyncMock(return_value=b"preview")
+        self.start_stream = AsyncMock()
+        self.get_stream_metadata = AsyncMock(return_value=({"Model": "mock-camera"}, {"FrameDuration": 33_333}))
+
+    async def _open(self, mode: CameraMode) -> None:
+        self.current_mode = mode
 
 
 @pytest.fixture
@@ -35,10 +62,7 @@ class TestCameraToStandby:
         mock_camera_manager.cleanup.assert_awaited_once()
 
     async def test_skips_cleanup_when_active(self, mock_camera_manager: SimpleNamespace) -> None:
-        """Should not call cleanup if the stream is active.
-
-        It may be needed for an ongoing stream and we don't want to disrupt it.
-        """
+        """Should not call cleanup if the stream is active."""
         mock_camera_manager.stream.is_active = True
         await camera_deps.camera_to_standby()
         mock_camera_manager.cleanup.assert_not_awaited()
@@ -52,10 +76,7 @@ class TestCheckStreamDuration:
         mock_camera_manager: SimpleNamespace,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Should stop the stream if it has been active longer than the configured maximum duration.
-
-        This prevents runaway streaming sessions that could consume resources indefinitely.
-        """
+        """Should stop the stream if it has been active longer than the configured maximum duration."""
         monkeypatch.setattr(settings, "max_stream_duration_s", 10)
         mock_camera_manager.stream.is_active = True
         mock_camera_manager.stream.started_at = datetime.now(UTC) - timedelta(seconds=20)
@@ -97,17 +118,12 @@ class TestCheckStreamDuration:
 class TestCameraManagerCleanup:
     """Tests for CameraManager.cleanup method."""
 
-    async def test_cleanup_uses_correct_ttl(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
+    async def test_cleanup_uses_correct_ttl(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should call clear_directory with image_ttl_s."""
         mock_clear_directory = AsyncMock()
         monkeypatch.setattr("app.api.services.camera_manager.clear_directory", mock_clear_directory)
 
-        manager = CameraManager()
-        manager.camera = None
-        manager.stream = SimpleNamespace(is_active=False)
+        manager = CameraManager(backend=cast("CameraBackend", FakeBackend()))
 
         await manager.cleanup()
 
@@ -121,118 +137,39 @@ class TestCameraManagerStartStreaming:
 
     async def test_raises_when_stream_already_active(self) -> None:
         """Should raise ActiveStreamError if a stream is already active."""
-        manager = CameraManager()
+        manager = CameraManager(backend=cast("CameraBackend", FakeBackend()))
         manager.stream.mode = StreamMode.YOUTUBE
         manager.stream.started_at = datetime.now(UTC)
 
         with pytest.raises(ActiveStreamError):
             await manager.start_streaming(StreamMode.YOUTUBE)
 
-    async def test_raises_youtube_validation_error(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Should raise YouTubeValidationError if YouTube stream key is invalid."""
-        manager = CameraManager()
-        manager.camera = MagicMock()
-        monkeypatch.setattr(manager, "setup_camera", AsyncMock(return_value=manager.camera))
-
-        # Mock validate_stream_key to return False
-        async def mock_validate(*_args: object, **_kwargs: object) -> bool:
-            return False
-
-        monkeypatch.setattr("app.api.services.camera_manager.validate_stream_key", mock_validate)
-
-        youtube_config = YoutubeStreamConfig(
-            stream_key=SecretStr("invalid-key"),
-            broadcast_key=SecretStr("invalid-broadcast"),
+    async def test_happy_path_youtube_streaming(self) -> None:
+        """Should start a stream and expose provider-neutral stream state."""
+        backend = FakeBackend()
+        backend.start_stream.return_value = StreamStartResult(
+            mode=StreamMode.YOUTUBE,
+            url=AnyUrl("https://youtube.com/watch?v=valid-broadcast"),
         )
-
-        with pytest.raises(YouTubeValidationError):
-            await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
-
-    async def test_happy_path_youtube_streaming(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Should successfully start a YouTube stream with valid config."""
-        manager = CameraManager()
-        mock_camera = MagicMock()
-        mock_camera.camera_properties = {"Model": "test-camera"}
-        mock_camera.capture_metadata = MagicMock(return_value={"FrameDuration": 33333})
-        manager.camera = mock_camera
-        manager.current_mode = None
-
-        # Mock validate_stream_key to return True
-        async def mock_validate(*_args: object, **_kwargs: object) -> bool:
-            return True
-
-        monkeypatch.setattr("app.api.services.camera_manager.validate_stream_key", mock_validate)
-        # Mock H264Encoder to avoid picamera2 dependency
-        monkeypatch.setattr("app.api.services.camera_manager.H264Encoder", MagicMock)
+        manager = CameraManager(backend=cast("CameraBackend", backend))
 
         youtube_config = YoutubeStreamConfig(
             stream_key=SecretStr("valid-key"),
             broadcast_key=SecretStr("valid-broadcast"),
         )
-
         result = await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
 
         assert result.mode == StreamMode.YOUTUBE
+        assert result.provider == YOUTUBE_PROVIDER
         assert manager.stream.is_active
-        assert manager.stream.youtube_config == youtube_config
-        mock_camera.start_recording.assert_called_once()
+        assert manager.stream_service.state.is_active
+        backend.start_stream.assert_awaited_once_with(StreamMode.YOUTUBE, youtube_config=youtube_config)
 
-    async def test_stream_state_update_failure_rolls_back(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Should roll back recording if stream state update fails."""
-        manager = CameraManager()
-        mock_camera = MagicMock()
-        mock_camera.camera_properties = {"Model": "test-camera"}
-        mock_camera.capture_metadata = MagicMock(return_value={"FrameDuration": 33333})
-        manager.camera = mock_camera
-
-        async def mock_validate(*_args: object, **_kwargs: object) -> bool:
-            return True
-
-        monkeypatch.setattr("app.api.services.camera_manager.validate_stream_key", mock_validate)
-        monkeypatch.setattr("app.api.services.camera_manager.H264Encoder", MagicMock)
-
-        # Make get_stream_url raise to simulate state update failure
-        monkeypatch.setattr(
-            "app.api.services.camera_manager.get_stream_url",
-            MagicMock(side_effect=ValueError("bad url")),
-        )
-
-        youtube_config = YoutubeStreamConfig(
-            stream_key=SecretStr("key"),
-            broadcast_key=SecretStr("broadcast"),
-        )
-
-        with pytest.raises(ValueError, match="bad url"):
-            await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
-
-        # Recording should have been stopped (rolled back)
-        mock_camera.stop_recording.assert_called_once()
-        assert not manager.stream.is_active
-
-    async def test_recording_failure_raises_runtime_error(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Should raise RuntimeError when camera.start_recording fails."""
-        manager = CameraManager()
-        mock_camera = MagicMock()
-        mock_camera.start_recording = MagicMock(side_effect=OSError("camera disconnected"))
-        manager.camera = mock_camera
-
-        async def mock_validate(*_args: object, **_kwargs: object) -> bool:
-            return True
-
-        monkeypatch.setattr("app.api.services.camera_manager.validate_stream_key", mock_validate)
-        monkeypatch.setattr("app.api.services.camera_manager.H264Encoder", MagicMock)
+    async def test_stream_start_failure_resets_state(self) -> None:
+        """Should reset stream state if the backend fails to start the stream."""
+        backend = FakeBackend()
+        backend.start_stream.side_effect = RuntimeError("camera disconnected")
+        manager = CameraManager(backend=cast("CameraBackend", backend))
 
         youtube_config = YoutubeStreamConfig(
             stream_key=SecretStr("key"),
@@ -245,11 +182,39 @@ class TestCameraManagerStartStreaming:
         assert not manager.stream.is_active
 
     async def test_requires_youtube_config(self) -> None:
-        """Should raise YoutubeConfigRequiredError when no config provided for YouTube mode."""
-        manager = CameraManager()
+        """Should bubble up provider-specific validation errors from the backend."""
+        backend = FakeBackend()
+        backend.start_stream.side_effect = YoutubeConfigRequiredError
+        manager = CameraManager(backend=cast("CameraBackend", backend))
 
         with pytest.raises(YoutubeConfigRequiredError):
             await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=None)
+
+
+class TestCameraManagerCapture:
+    """Tests for CameraManager capture flows."""
+
+    async def test_capture_uses_backend_result(self, tmp_path: Path) -> None:
+        """Should build an image response from the backend capture result."""
+        backend = FakeBackend()
+        image = Image.new("RGB", (64, 64), color="green")
+        backend.capture_image.return_value = CaptureResult(
+            image=image,
+            camera_properties={"Model": "mock-camera"},
+            capture_metadata={"FrameDuration": 33_333},
+        )
+        manager = CameraManager(backend=cast("CameraBackend", backend))
+        original = settings.image_path
+        settings.image_path = tmp_path / "images"
+        settings.image_path.mkdir()
+
+        try:
+            response = await manager.capture_jpeg()
+        finally:
+            settings.image_path = original
+
+        assert response.metadata.camera_properties.camera_model == MOCK_CAMERA
+        backend.capture_image.assert_awaited_once()
 
 
 class TestCameraManagerStopStreaming:
@@ -257,11 +222,23 @@ class TestCameraManagerStopStreaming:
 
     async def test_raises_when_no_stream_active(self) -> None:
         """Should raise RuntimeError if no stream is active."""
-        manager = CameraManager()
-        # stream.is_active is False by default
+        manager = CameraManager(backend=cast("CameraBackend", FakeBackend()))
 
         with pytest.raises(RuntimeError, match="No stream active"):
             await manager.stop_streaming()
+
+    async def test_stops_active_stream(self) -> None:
+        """Should stop the stream through the backend."""
+        backend = FakeBackend()
+        manager = CameraManager(backend=cast("CameraBackend", backend))
+        manager.stream.mode = StreamMode.YOUTUBE
+        manager.stream.url = AnyUrl("https://youtube.com/watch?v=valid-broadcast")
+        manager.stream.started_at = datetime.now(UTC)
+
+        await manager.stop_streaming()
+
+        backend.stop_stream.assert_awaited_once()
+        assert not manager.stream.is_active
 
 
 class TestCameraManagerGetStatus:
@@ -269,9 +246,55 @@ class TestCameraManagerGetStatus:
 
     async def test_returns_status_without_stream(self) -> None:
         """Should return status with no stream info when stream is inactive."""
-        manager = CameraManager()
+        manager = CameraManager(backend=cast("CameraBackend", FakeBackend()))
 
         status = await manager.get_status()
 
         assert status.current_mode is None
         assert status.stream is None
+
+
+class TestStreamService:
+    """Tests for focused stream state orchestration."""
+
+    def test_start_populates_state(self) -> None:
+        """Starting a stream should populate stream state."""
+        service = StreamService()
+        service.start(
+            StreamStartResult(
+                mode=StreamMode.YOUTUBE,
+                url=AnyUrl("https://youtube.com/watch?v=valid-broadcast"),
+            )
+        )
+
+        assert service.state.is_active
+        assert service.state.mode == StreamMode.YOUTUBE
+
+    def test_reset_clears_state(self) -> None:
+        """Reset should clear active stream state."""
+        service = StreamService()
+        service.start(
+            StreamStartResult(
+                mode=StreamMode.YOUTUBE,
+                url=AnyUrl("https://youtube.com/watch?v=valid-broadcast"),
+            )
+        )
+
+        service.reset()
+
+        assert not service.state.is_active
+
+    def test_build_view_returns_contract_view(self) -> None:
+        """The service should build the public stream view from runtime state."""
+        service = StreamService()
+        service.start(
+            StreamStartResult(
+                mode=StreamMode.YOUTUBE,
+                url=AnyUrl("https://youtube.com/watch?v=valid-broadcast"),
+            )
+        )
+
+        view = service.build_view({"Model": MOCK_CAMERA}, {"FrameDuration": 33_333})
+
+        assert view is not None
+        assert view.mode == StreamMode.YOUTUBE

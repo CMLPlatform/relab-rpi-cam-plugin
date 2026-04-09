@@ -40,6 +40,40 @@ class TestRelayUrlValidation:
             Settings(relay_backend_url=HTTPS_URL)
 
 
+class TestAuthorizedApiKeysValidation:
+    """Tests for the authorized_api_keys field validator."""
+
+    def test_valid_json_array(self) -> None:
+        """Should accept a properly JSON-encoded list of keys."""
+        s = Settings.model_validate({"authorized_api_keys": '["key1", "key2"]'})
+        assert s.authorized_api_keys == ["key1", "key2"]
+
+    def test_empty_string_returns_empty_list(self) -> None:
+        """An empty env var should produce an empty list without raising."""
+        s = Settings.model_validate({"authorized_api_keys": ""})
+        assert s.authorized_api_keys == []
+
+    def test_unquoted_json_array_falls_back_to_comma_split(self) -> None:
+        """[KEY] (unquoted string) — common .env mistake — should not crash."""
+        s = Settings.model_validate({"authorized_api_keys": "[CHANGE_ME]"})
+        assert s.authorized_api_keys == ["CHANGE_ME"]
+
+    def test_comma_separated_string(self) -> None:
+        """Comma-separated values without brackets should also be accepted."""
+        s = Settings.model_validate({"authorized_api_keys": "key1, key2, key3"})
+        assert s.authorized_api_keys == ["key1", "key2", "key3"]
+
+    def test_single_key_string(self) -> None:
+        """A single key without brackets or commas should be wrapped in a list."""
+        s = Settings.model_validate({"authorized_api_keys": '["only-key"]'})
+        assert s.authorized_api_keys == ["only-key"]
+
+    def test_list_passthrough(self) -> None:
+        """A Python list passed directly should be returned unchanged."""
+        s = Settings(authorized_api_keys=["a", "b"])
+        assert s.authorized_api_keys == ["a", "b"]
+
+
 class TestSettingsDefaults:
     """Tests for sensible default configuration values."""
 

@@ -55,6 +55,7 @@ class TestApplyRelayCredentials:
         with (
             patch("app.utils.pairing._CREDENTIALS_FILE", creds_file),
             patch("app.core.config.settings") as mock_settings,
+            patch("app.api.dependencies.auth.reload_authorized_hashes"),
         ):
             mock_settings.relay_backend_url = ""
             mock_settings.relay_camera_id = ""
@@ -72,6 +73,7 @@ class TestApplyRelayCredentials:
         with (
             patch("app.utils.pairing._CREDENTIALS_FILE", creds_file),
             patch("app.core.config.settings") as mock_settings,
+            patch("app.api.dependencies.auth.reload_authorized_hashes"),
         ):
             mock_settings.relay_backend_url = ""
             mock_settings.relay_api_key = ""
