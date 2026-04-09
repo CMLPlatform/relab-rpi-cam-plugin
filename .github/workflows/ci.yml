@@ -12,22 +12,82 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   PYTHON_VERSION: "3.13"
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      models: ${{ steps.filter.outputs.models }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            models:
+              - 'relab_rpi_cam_models/**'
+              - 'tests/unit/test_contract_package.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/models-check-reusable.yml'
+
   lint:
-    uses: ./.github/workflows/lint-reusable.yml
-    with:
-      python_version: ${{ env.PYTHON_VERSION }}
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen --all-groups
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run ty
 
   test:
-    uses: ./.github/workflows/test-reusable.yml
-    with:
-      python_version: ${{ env.PYTHON_VERSION }}
+    name: Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen --all-groups
+      - name: Run tests
+        run: uv run pytest --cov=app --cov=relab_rpi_cam_models --cov-report=term-missing --cov-report=xml:coverage.xml
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v6
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   audit:
-    uses: ./.github/workflows/audit-reusable.yml
+    name: Dependency Audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8
+      - run: uv audit --preview-features audit --frozen --no-dev
+
+  models-check:
+    name: Models Check
+    needs: changes
+    if: needs.changes.outputs.models == 'true'
+    uses: ./.github/workflows/models-check-reusable.yml
     with:
-      python_version: ${{ env.PYTHON_VERSION }}
+      python_version: "3.13"

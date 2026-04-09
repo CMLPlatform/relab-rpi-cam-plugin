@@ -1,0 +1,61 @@
+name: relab-rpi-cam-models Checks (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        required: false
+        type: string
+        default: "3.13"
+      runs_on:
+        required: false
+        type: string
+        default: "ubuntu-24.04"
+      upload_artifact:
+        required: false
+        type: boolean
+        default: false
+      artifact_name:
+        required: false
+        type: string
+        default: "relab-rpi-cam-models-dist"
+
+permissions:
+  contents: read
+
+jobs:
+  models-check:
+    name: relab-rpi-cam-models Checks
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-groups
+
+      - name: Ruff check
+        run: uv run ruff check relab_rpi_cam_models/src/relab_rpi_cam_models tests/unit/test_contract_package.py
+
+      - name: Ruff format check
+        run: uv run ruff format --check relab_rpi_cam_models/src/relab_rpi_cam_models tests/unit/test_contract_package.py
+
+      - name: Run contract package tests
+        run: uv run pytest tests/unit/test_contract_package.py -q
+
+      - name: Build package
+        run: uv build --package relab-rpi-cam-models --out-dir dist/relab-rpi-cam-models --clear
+
+      - name: Upload package artifacts
+        if: inputs.upload_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: dist/relab-rpi-cam-models/*
+          retention-days: 7
