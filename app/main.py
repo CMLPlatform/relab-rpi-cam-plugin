@@ -25,7 +25,7 @@ from app.api.routers.main import router as main_router
 from app.api.routers.setup import router as setup_router
 from app.core.config import apply_relay_credentials, settings
 from app.utils.files import cleanup_images, setup_directory
-from app.utils.logging import setup_logging
+from app.utils.logging import configure_library_loggers, setup_logging
 from app.utils.pairing import log_pairing_mode_started, run_pairing
 from app.utils.relay import run_relay
 from app.utils.tasks import repeat_task
@@ -115,6 +115,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
 
     Note that the camera is set up lazily to avoid unnecessary resource use.
     """
+    # Re-apply our logger normalization after Uvicorn/FastAPI have finished bootstrapping.
+    configure_library_loggers()
+
     # Load relay credentials from pairing file (if present)
     apply_relay_credentials()
 

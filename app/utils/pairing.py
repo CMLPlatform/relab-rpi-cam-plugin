@@ -166,24 +166,21 @@ def log_pairing_mode_started() -> None:
     )
 
 
-def _format_pairing_ready_banner(code: str) -> str:
-    """Return a boxed pairing banner that stands out in noisy logs."""
-    lines = [
-        "PAIRING READY",
-        f"code: {_sanitize_log_value(code)}",
-        f"setup: {_pairing_setup_location()}",
-        f"backend: {core_config.settings.pairing_backend_url.rstrip('/')}",
-        "claim in: RELab app > Cameras > Add Camera",
-    ]
-    width = max(len(line) for line in lines)
-    border = f"+{'-' * (width + 2)}+"
-    body = "\n".join(f"| {line.ljust(width)} |" for line in lines)
-    return f"{border}\n{body}\n{border}"
+def _format_pairing_ready_message(code: str) -> str:
+    """Return a single-line pairing message that stays readable in Docker logs."""
+    return (
+        "PAIRING READY | code=%s | setup=%s | pairing_backend=%s | "
+        "claim_in='RELab app > Cameras > Add Camera'"
+    ) % (
+        _sanitize_log_value(code),
+        _pairing_setup_location(),
+        core_config.settings.pairing_backend_url.rstrip("/"),
+    )
 
 
 def _log_pairing_ready(code: str) -> None:
     """Emit the currently active pairing code for operators over SSH/logs."""
-    logger.info("%s", _format_pairing_ready_banner(code))
+    logger.info("%s", _format_pairing_ready_message(code))
 
 
 def _log_pairing_connect_error(exc: httpx.ConnectError, base_url: str) -> None:

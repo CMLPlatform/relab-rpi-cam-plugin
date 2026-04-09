@@ -28,6 +28,32 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(log_entry, ensure_ascii=False)
 
 
+def configure_library_loggers() -> None:
+    """Normalize third-party loggers so app output stays readable."""
+    root_handlers = logging.getLogger().handlers.copy()
+
+    passthrough_loggers = [
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "fastapi_cloud_cli",
+        "fastapi_cli",
+    ]
+    for logger_name in passthrough_loggers:
+        logger = logging.getLogger(logger_name)
+        logger.handlers = root_handlers.copy()
+        logger.propagate = False
+
+    for logger_name in ["httpx", "httpcore", "watchfiles.main"]:
+        logger = logging.getLogger(logger_name)
+        logger.handlers.clear()
+        logger.propagate = True
+
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
+
+
 def setup_logging(log_level: str = "INFO", log_file: Path | str = settings.log_path / "app.log") -> None:
     """Logging setup with human-readable console output and structured JSON file logging."""
     # Create log directory if it doesn't exist
@@ -67,19 +93,10 @@ def setup_logging(log_level: str = "INFO", log_file: Path | str = settings.log_p
             "": {
                 "level": log_level.upper(),
                 "handlers": ["console", "file"],
-                "propagate": True,
+                "propagate": False,
             }
         },
     }
 
     dictConfig(config)
-
-    # Set log level of noisy loggers to warning
-    for logger_name in ["watchfiles.main"]:
-        logging.getLogger(logger_name).setLevel(logging.WARNING)
-
-    # Ensure uvicorn loggers propagate to root
-    for logger_name in ["uvicorn", "uvicorn.error", "uvicorn.access", "fastapi_cloud_cli", "fastapi_cli"]:
-        logger = logging.getLogger(logger_name)
-        logger.handlers.clear()  # Remove existing handlers
-        logger.propagate = True  # Let root logger handle it
+    configure_library_loggers()
