@@ -60,9 +60,8 @@ COPY --link --chown=1000:44 --from=builder /app/.venv .venv
 COPY --link --chown=1000:44 --from=builder /app/app app
 COPY --link --chown=1000:44 scripts/docker_entrypoint.sh scripts/docker_entrypoint.sh
 
-RUN mkdir -p /app/logs && chown 1000:44 /app/logs
+RUN mkdir -p /app/logs /home/rpicam/.config/relab && chown -R 1000:44 /app/logs /home/rpicam/.config
 
-USER rpicam
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8018/')" || exit 1

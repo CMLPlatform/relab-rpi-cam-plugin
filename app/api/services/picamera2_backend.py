@@ -44,7 +44,6 @@ class Picamera2Backend(CameraBackend):
         self.current_mode: CameraMode | None = None
         self._still_config: dict | None = None
         self._video_config: dict | None = None
-        self._preview_config: dict | None = None
 
     def _get_camera_config(self, mode: CameraMode, camera: Picamera2Like) -> dict:
         """Build or reuse the underlying Picamera2 config for the requested mode."""
@@ -60,12 +59,6 @@ class Picamera2Backend(CameraBackend):
             case _:
                 msg = f"Unhandled camera mode: {mode}"
                 raise ValueError(msg)
-
-    def _get_preview_config(self, camera: Picamera2Like) -> dict:
-        """Build or reuse the low-resolution preview configuration."""
-        if self._preview_config is None:
-            self._preview_config = camera.create_preview_configuration(main={"size": _PREVIEW_SIZE}, raw=None)
-        return self._preview_config
 
     async def open(self, mode: CameraMode) -> None:
         """Initialize or reconfigure the Picamera2 camera."""
@@ -174,7 +167,6 @@ class Picamera2Backend(CameraBackend):
             self.current_mode = None
             self._still_config = None
             self._video_config = None
-            self._preview_config = None
 
     def _require_camera(self) -> Picamera2Like:
         """Return the initialized camera or raise a runtime error."""
@@ -183,20 +175,10 @@ class Picamera2Backend(CameraBackend):
             raise RuntimeError(msg)
         return self._camera
 
-    async def _capture_preview_image(self) -> tuple[PilImage, Literal["direct_preview", "fallback_resize"]]:
-        """Try a dedicated low-res preview capture, then fall back to resize."""
-        await self.open(CameraMode.PHOTO)
-        camera = self._require_camera()
-        try:
-            image = await asyncio.to_thread(camera.switch_mode_and_capture_image, self._get_preview_config(camera))
-        except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
-            logger.debug("Falling back to resized still capture for preview", exc_info=True)
-        else:
-            self.current_mode = CameraMode.PHOTO
-            return image, "direct_preview"
-
+    async def _capture_preview_image(self) -> tuple[PilImage, Literal["still_resize"]]:
+        """Capture preview frames from the active photo pipeline without reconfiguring sensor modes."""
         result = await self.capture_image()
-        return result.image.resize(_PREVIEW_SIZE), "fallback_resize"
+        return result.image.resize(_PREVIEW_SIZE), "still_resize"
 
 
 def _raise_missing_stream_url() -> NoReturn:
