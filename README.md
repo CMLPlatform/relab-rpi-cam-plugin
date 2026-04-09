@@ -39,6 +39,8 @@ Supports **Raspberry Pi 5/4** with **Camera Module 3/v2**, running on Raspberry 
    - `/stream/watch` — YouTube viewer UI for an active YouTube stream
    - `/docs` — API reference
 
+If you use Docker Compose on the Pi, generate `compose.override.yml` with `./scripts/generate_compose_override.py`. The override targets the existing `app` service from `compose.yml`, so the device mappings merge into the plugin container cleanly.
+
 For headless setup, the active 6-character pairing code is also printed to stdout in a stable `PAIRING READY` log line, so you can read it over SSH, `docker compose logs`, or `journalctl` without opening the browser UI.
 
 Optional observability is split into two compose profiles:

@@ -40,7 +40,7 @@ tests/
   integration/         # Integration tests
 scripts/
   local_setup.sh       # Local development setup
-  generate_compose_override.py  # Docker device mapping
+  generate_compose_override.py  # Docker device mapping for the existing compose `app` service
 ```
 
 ## Testing

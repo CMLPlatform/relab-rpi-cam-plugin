@@ -106,6 +106,8 @@ For cases where automatic pairing isn't available.
    ./scripts/generate_compose_override.py > compose.override.yml
    ```
 
+   The generated override targets the existing `app` service from `compose.yml`, so Compose can merge the device mappings into the plugin container.
+
 1. **Start the stack**
 
    ```sh
