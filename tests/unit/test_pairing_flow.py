@@ -152,7 +152,7 @@ class TestPairingCycle:
             assert RELAY_API_KEY in settings.authorized_api_keys
             log_text = caplog.text
             assert PAIRING_MODE_LOG_PREFIX in log_text
-            assert f"PAIRING READY | code={PAIRING_CODE_2} setup=/setup" in log_text
+            assert pairing_mod._format_pairing_ready_banner(PAIRING_CODE_2) in log_text  # noqa: SLF001
             assert f"PAIRING COMPLETE | camera_id={RELAY_CAMERA_ID} relay_starting=true" in log_text
             assert RELAY_API_KEY not in log_text
             assert FINGERPRINT_2 not in log_text
@@ -200,9 +200,9 @@ class TestPairingCycle:
 
         on_paired.assert_awaited_once()
         log_text = caplog.text
-        assert f"PAIRING READY | code={PAIRING_CODE_1} setup=https://camera.example/setup" in log_text
+        assert pairing_mod._format_pairing_ready_banner(PAIRING_CODE_1) in log_text  # noqa: SLF001
         assert f"PAIRING ROTATING | expired_code={PAIRING_CODE_1} reason=expired" in log_text
-        assert f"PAIRING READY | code={PAIRING_CODE_2} setup=https://camera.example/setup" in log_text
+        assert pairing_mod._format_pairing_ready_banner(PAIRING_CODE_2) in log_text  # noqa: SLF001
         assert PAIRING_FAILURE_LOG not in log_text
 
     def test_pairing_mode_prefers_detected_lan_setup_url(self, monkeypatch: pytest.MonkeyPatch) -> None:

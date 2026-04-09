@@ -1,5 +1,6 @@
-"""Tests for setup page and QR code endpoints."""
+"""Tests for setup page endpoints."""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -7,14 +8,14 @@ from httpx import AsyncClient
 
 from app.api.routers import setup as setup_router
 from app.core.config import settings
-from tests.constants import HTML_CONTENT_TYPE, PNG_CONTENT_TYPE
+from tests.constants import HTML_CONTENT_TYPE
 
-SETUP_TITLE = "RPi Camera Setup"
+SETUP_TITLE = "RPi Camera — Setup"
 CAMERA_URL_TEXT = "Camera URL"
 PAIRING_CODE = "ABC123"
 RELAY_CONNECTED_TEXT = 'WebSocket relay: <span class="online">connected</span>'
 PAIRING_FAILED_TEXT = "Pairing failed"
-PAIRED_SUCCESS_TEXT = "Paired successfully"
+PAIRED_SUCCESS_TEXT = "Pairing complete"
 
 
 class TestSetupPage:
@@ -45,7 +46,12 @@ class TestSetupPage:
         monkeypatch.setattr(
             setup_router,
             "get_pairing_state",
-            lambda: SimpleNamespace(status="waiting", code=PAIRING_CODE, error=None),
+            lambda: SimpleNamespace(
+                status="waiting",
+                code=PAIRING_CODE,
+                error=None,
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            ),
         )
         original = (settings.relay_backend_url, settings.relay_camera_id, settings.relay_api_key)
         settings.relay_backend_url = "wss://example.com/ws"
@@ -54,6 +60,8 @@ class TestSetupPage:
         try:
             resp = await unauthed_client.get("/setup")
             assert PAIRING_CODE in resp.text
+            assert "data-pairing-expiry" in resp.text
+            assert "data-ttl-ms=\"600000\"" in resp.text
             assert RELAY_CONNECTED_TEXT in resp.text
         finally:
             settings.relay_backend_url, settings.relay_camera_id, settings.relay_api_key = original
@@ -67,7 +75,7 @@ class TestSetupPage:
         monkeypatch.setattr(
             setup_router,
             "get_pairing_state",
-            lambda: SimpleNamespace(status="error", code=None, error=PAIRING_FAILED_TEXT),
+            lambda: SimpleNamespace(status="error", code=None, error=PAIRING_FAILED_TEXT, expires_at=None),
         )
         resp = await unauthed_client.get("/setup")
         assert PAIRING_FAILED_TEXT in resp.text
@@ -81,32 +89,7 @@ class TestSetupPage:
         monkeypatch.setattr(
             setup_router,
             "get_pairing_state",
-            lambda: SimpleNamespace(status="paired", code=None, error=None),
+            lambda: SimpleNamespace(status="paired", code=None, error=None, expires_at=None),
         )
         resp = await unauthed_client.get("/setup")
         assert PAIRED_SUCCESS_TEXT in resp.text
-
-
-class TestQrEndpoint:
-    """Tests for GET /qr-setup."""
-
-    async def test_qr_returns_png(self, unauthed_client: AsyncClient) -> None:
-        """Test that the QR code endpoint returns a PNG image."""
-        resp = await unauthed_client.get("/qr-setup")
-        assert resp.status_code == 200
-        assert resp.headers["content-type"] == PNG_CONTENT_TYPE
-
-    async def test_qr_encodes_pairing_code(
-        self,
-        unauthed_client: AsyncClient,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Test that the QR code encodes the correct pairing code when in 'registering' state."""
-        monkeypatch.setattr(
-            setup_router,
-            "get_pairing_state",
-            lambda: SimpleNamespace(status="registering", code="PAIR42", error=None),
-        )
-        resp = await unauthed_client.get("/qr-setup")
-        assert resp.status_code == 200
-        assert resp.headers["content-type"] == PNG_CONTENT_TYPE

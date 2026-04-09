@@ -19,6 +19,7 @@ import socket
 import tempfile
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
@@ -48,6 +49,7 @@ def _get_credentials_file() -> Path:
 _CREDENTIALS_FILE = _get_credentials_file()
 _POLL_INTERVAL_S = 3
 _CODE_LENGTH = 3  # token_hex(3) → 6 hex chars
+PAIRING_CODE_TTL_SECONDS = 10 * 60
 
 # Pairing status values
 STATUS_WAITING = "waiting"
@@ -66,6 +68,7 @@ class PairingState:
 
     code: str | None = None
     fingerprint: str | None = None
+    expires_at: datetime | None = None
     status: str = "idle"  # idle | registering | waiting | paired | error
     error: str | None = None
 
@@ -82,8 +85,26 @@ def _clear_transient_pairing_state(*, status: str, error: str | None = None) -> 
     """Reset transient pairing state after a failed cycle or before restart."""
     _state.code = None
     _state.fingerprint = None
+    _state.expires_at = None
     _state.status = status
     _state.error = error
+
+
+def _sanitize_log_value(value: object) -> str:
+    """Normalize a value before logging it."""
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
+def _pairing_code_expires_at() -> datetime:
+    """Return the expiry timestamp for the currently active pairing code."""
+    return datetime.now(UTC) + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
+
+
+def _set_pairing_code_state(code: str, fingerprint: str) -> None:
+    """Store the active pairing code and its expiry on the observable state."""
+    _state.code = code
+    _state.fingerprint = fingerprint
+    _state.expires_at = _pairing_code_expires_at()
 
 
 def _pairing_setup_location() -> str:
@@ -145,14 +166,24 @@ def log_pairing_mode_started() -> None:
     )
 
 
+def _format_pairing_ready_banner(code: str) -> str:
+    """Return a boxed pairing banner that stands out in noisy logs."""
+    lines = [
+        "PAIRING READY",
+        f"code: {_sanitize_log_value(code)}",
+        f"setup: {_pairing_setup_location()}",
+        f"backend: {core_config.settings.pairing_backend_url.rstrip('/')}",
+        "claim in: RELab app > Cameras > Add Camera",
+    ]
+    width = max(len(line) for line in lines)
+    border = f"+{'-' * (width + 2)}+"
+    body = "\n".join(f"| {line.ljust(width)} |" for line in lines)
+    return f"{border}\n{body}\n{border}"
+
+
 def _log_pairing_ready(code: str) -> None:
     """Emit the currently active pairing code for operators over SSH/logs."""
-    logger.info(
-        "PAIRING READY | code=%s setup=%s pairing_backend=%s claim_in='RELab app > Cameras > Add Camera'",
-        code,
-        _pairing_setup_location(),
-        core_config.settings.pairing_backend_url.rstrip("/"),
-    )
+    logger.info("%s", _format_pairing_ready_banner(code))
 
 
 def _log_pairing_connect_error(exc: httpx.ConnectError, base_url: str) -> None:
@@ -234,8 +265,7 @@ async def _pairing_cycle(
 ) -> None:
     """Single pairing attempt: register a code and poll until claimed."""
     code, fingerprint = _generate_code_and_fingerprint()
-    _state.code = code
-    _state.fingerprint = fingerprint
+    _set_pairing_code_state(code, fingerprint)
     _state.status = "registering"
     _state.error = None
 
@@ -250,8 +280,7 @@ async def _pairing_cycle(
         if resp.status_code == 409:
             # Code collision — regenerate
             code, fingerprint = _generate_code_and_fingerprint()
-            _state.code = code
-            _state.fingerprint = fingerprint
+            _set_pairing_code_state(code, fingerprint)
             continue
         resp.raise_for_status()
     else:
@@ -284,6 +313,7 @@ async def _pairing_cycle(
             _state.status = STATUS_PAIRED
             _state.code = None
             _state.fingerprint = None
+            _state.expires_at = None
 
             # Persist credentials to a separate JSON file (not .env)
             _save_relay_credentials(

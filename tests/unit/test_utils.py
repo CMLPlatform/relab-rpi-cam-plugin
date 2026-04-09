@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -10,7 +10,8 @@ import pytest
 
 from app.core.config import settings
 from app.utils.files import cleanup_images, clear_directory, setup_directory
-from app.utils.pairing import PairingState, _generate_code_and_fingerprint, get_pairing_state
+from app.utils import pairing as pairing_mod
+from app.utils.pairing import PAIRING_CODE_TTL_SECONDS, PairingState, _generate_code_and_fingerprint, get_pairing_state
 
 
 def _list_dir(path: Path) -> list[Path]:
@@ -108,3 +109,19 @@ class TestPairingState:
         codes = {_generate_code_and_fingerprint()[0] for _ in range(20)}
         # With 6 hex chars, collisions in 20 samples are astronomically unlikely
         assert len(codes) > 15
+
+    def test_pairing_code_state_tracks_expiry(self) -> None:
+        """Active pairing state should carry a future expiry timestamp for the setup page."""
+        state = get_pairing_state()
+        original = (state.code, state.fingerprint, state.expires_at, state.status, state.error)
+
+        try:
+            before = datetime.now(UTC)
+            pairing_mod._set_pairing_code_state("ABC123", "fingerprint")  # noqa: SLF001
+            state = get_pairing_state()
+            assert state.expires_at is not None
+            lower_bound = before + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
+            upper_bound = datetime.now(UTC) + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
+            assert lower_bound <= state.expires_at <= upper_bound
+        finally:
+            state.code, state.fingerprint, state.expires_at, state.status, state.error = original

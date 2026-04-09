@@ -69,7 +69,7 @@ The simplest approach. No credential exchange required.
    - Headless over SSH/logs: watch for the `PAIRING READY` log line
 
 1. **Pair in RELab app**\
-   Go to Cameras > Add Camera, select WebSocket mode, and enter the pairing code (or scan the QR code).
+   Go to Cameras > Add Camera, select WebSocket mode, and enter the pairing code.
 
 1. **Done**\
    The Pi automatically receives credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
@@ -154,7 +154,13 @@ For cases where automatic pairing isn't available.
    When pairing mode is active, the terminal prints a line like:
 
    ```text
-   PAIRING READY | code=ABC123 setup=/setup pairing_backend=https://api.cml-relab.org claim_in='RELab app > Cameras > Add Camera'
+   +----------------------------------------------+
+   | PAIRING READY                                |
+   | code: ABC123                                 |
+   | setup: /setup                                |
+   | backend: https://api.cml-relab.org          |
+   | claim in: RELab app > Cameras > Add Camera  |
+   +----------------------------------------------+
    ```
 
 ## Testing
@@ -168,7 +174,7 @@ For headless operators, you can also read the pairing code from logs:
 
 - Docker Compose: `docker compose logs app`
 - Systemd/journald: `journalctl -u relab-rpi-cam -f`
-- Direct shell run: read the `PAIRING READY` line in the terminal output
+- Direct shell run: read the boxed `PAIRING READY` banner in the terminal output
 
 ## Troubleshooting
 

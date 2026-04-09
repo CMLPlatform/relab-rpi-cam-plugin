@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}" />
   {% block extra_scripts %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   {% block body %}{% endblock %}
 </body>
 </html>
