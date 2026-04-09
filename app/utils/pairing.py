@@ -15,11 +15,13 @@ import json as json_mod
 import logging
 import os
 import secrets
+import socket
 import tempfile
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -50,6 +52,11 @@ _CODE_LENGTH = 3  # token_hex(3) → 6 hex chars
 # Pairing status values
 STATUS_WAITING = "waiting"
 STATUS_PAIRED = "paired"
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
+
+
+class PairingCodeExpiredError(RuntimeError):
+    """Raised when the active pairing code expires and should be rotated."""
 
 
 @dataclass
@@ -70,6 +77,57 @@ def get_pairing_state() -> PairingState:
     return _state
 
 
+def _clear_transient_pairing_state(*, status: str, error: str | None = None) -> None:
+    """Reset transient pairing state after a failed cycle or before restart."""
+    _state.code = None
+    _state.fingerprint = None
+    _state.status = status
+    _state.error = error
+
+
+def _pairing_setup_location() -> str:
+    """Return the best operator-facing setup location for pairing."""
+    base_url = str(core_config.settings.base_url).rstrip("/")
+    if base_url:
+        parsed = urlparse(base_url)
+        if parsed.hostname not in _LOOPBACK_HOSTS:
+            return f"{base_url}/setup"
+        if lan_url := _lan_setup_url(parsed.port):
+            return lan_url
+    return "/setup"
+
+
+def _lan_setup_url(port: int | None) -> str | None:
+    """Best-effort LAN setup URL when the configured base URL is loopback-only."""
+    setup_port = port or 8018
+    with suppress(OSError):
+        hostname = socket.gethostname()
+        _, _, addresses = socket.gethostbyname_ex(hostname)
+        for address in addresses:
+            if address and address not in _LOOPBACK_HOSTS and not address.startswith("127."):
+                return f"http://{address}:{setup_port}/setup"
+    return None
+
+
+def log_pairing_mode_started() -> None:
+    """Emit a headless-friendly startup message for pairing mode."""
+    logger.info(
+        "PAIRING MODE | state=awaiting_claim setup=%s pairing_backend=%s",
+        _pairing_setup_location(),
+        core_config.settings.pairing_backend_url.rstrip("/"),
+    )
+
+
+def _log_pairing_ready(code: str) -> None:
+    """Emit the currently active pairing code for operators over SSH/logs."""
+    logger.info(
+        "PAIRING READY | code=%s setup=%s pairing_backend=%s claim_in='RELab app > Cameras > Add Camera'",
+        code,
+        _pairing_setup_location(),
+        core_config.settings.pairing_backend_url.rstrip("/"),
+    )
+
+
 async def run_pairing(on_paired: Callable[[], Coroutine[Any, Any, None]]) -> None:
     """Run the pairing flow: register → poll → configure → callback."""
     base = core_config.settings.pairing_backend_url.rstrip("/")
@@ -80,10 +138,11 @@ async def run_pairing(on_paired: Callable[[], Coroutine[Any, Any, None]]) -> Non
         while True:
             try:
                 await _pairing_cycle(client, base, on_paired)
+            except PairingCodeExpiredError:
+                continue
             except Exception:
-                logger.exception("Pairing cycle failed, retrying in 10s")
-                _state.status = "error"
-                _state.error = "Pairing failed — retrying…"
+                logger.exception("Pairing cycle failed | retry_in_s=10")
+                _clear_transient_pairing_state(status="error", error="Pairing failed — retrying…")
                 await asyncio.sleep(10)
             else:
                 return  # Successfully paired
@@ -120,7 +179,7 @@ async def _pairing_cycle(
         msg = "Failed to register pairing code after 3 attempts."
         raise RuntimeError(msg)
 
-    logger.info("Pairing code registered: %s", code)
+    _log_pairing_ready(code)
     _state.status = "waiting"
 
     # Poll
@@ -132,9 +191,8 @@ async def _pairing_cycle(
         )
         if resp.status_code == 404:
             # Code expired — restart cycle
-            logger.warning("Pairing code %s expired, regenerating.", code)
-            msg = "Pairing code expired"
-            raise RuntimeError(msg)
+            logger.warning("PAIRING ROTATING | expired_code=%s reason=expired", code)
+            raise PairingCodeExpiredError
 
         resp.raise_for_status()
         data = resp.json()
@@ -143,8 +201,10 @@ async def _pairing_cycle(
             continue
 
         if data["status"] == STATUS_PAIRED:
-            logger.info("Pairing complete! Camera ID: %s", data["camera_id"])
+            logger.info("PAIRING COMPLETE | camera_id=%s relay_starting=true", data["camera_id"])
             _state.status = STATUS_PAIRED
+            _state.code = None
+            _state.fingerprint = None
 
             # Persist credentials to a separate JSON file (not .env)
             _save_relay_credentials(
@@ -154,9 +214,11 @@ async def _pairing_cycle(
             )
 
             # Update in-memory settings
-            core_config.settings.relay_backend_url = data["ws_url"]
-            core_config.settings.relay_camera_id = data["camera_id"]
-            core_config.settings.relay_api_key = data["api_key"]
+            core_config.set_runtime_relay_credentials(
+                relay_backend_url=data["ws_url"],
+                relay_camera_id=data["camera_id"],
+                relay_api_key=data["api_key"],
+            )
 
             # Start the relay
             await on_paired()

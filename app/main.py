@@ -26,7 +26,7 @@ from app.api.routers.setup import router as setup_router
 from app.core.config import apply_relay_credentials, settings
 from app.utils.files import cleanup_images, setup_directory
 from app.utils.logging import setup_logging
-from app.utils.pairing import run_pairing
+from app.utils.pairing import log_pairing_mode_started, run_pairing
 from app.utils.relay import run_relay
 from app.utils.tasks import repeat_task
 
@@ -52,10 +52,20 @@ class RateLimiter:
     WINDOW_SIZE = 300  # 5 minutes
     # Block duration after exceeding limits (seconds)
     BLOCK_DURATION = 300  # 5 minutes
+    # Maximum tracked IPs to prevent unbounded memory growth
+    MAX_TRACKED_IPS = 1000
 
     def __init__(self) -> None:
         # Track failed attempts: {ip: [(timestamp, is_failed), ...]}
         self._attempts: dict[str, list[tuple[float, bool]]] = defaultdict(list)
+
+    def _sweep_stale_entries(self, now: float) -> None:
+        """Remove entries with no attempts within the time window."""
+        stale_ips = [
+            ip for ip, attempts in self._attempts.items() if all(now - ts >= self.WINDOW_SIZE for ts, _ in attempts)
+        ]
+        for ip in stale_ips:
+            del self._attempts[ip]
 
     async def handle(self, request: Request, call_next: Callable) -> Response:
         """Check rate limits before passing request to the app."""
@@ -71,6 +81,10 @@ class RateLimiter:
             self._attempts[client_ip] = [
                 (ts, failed) for ts, failed in self._attempts[client_ip] if now - ts < self.WINDOW_SIZE
             ]
+
+        # Periodic sweep: evict stale IPs when the dict grows too large
+        if len(self._attempts) > self.MAX_TRACKED_IPS:
+            self._sweep_stale_entries(now)
 
         # Check if client is currently blocked
         attempts = self._attempts[client_ip]
@@ -121,14 +135,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
             logger.info("Pairing complete — WebSocket relay started")
 
         background_tasks.add(asyncio.create_task(run_pairing(_on_paired), name="pairing"))
-        logger.info("No relay credentials — entering pairing mode")
+        log_pairing_mode_started()
 
     # Start recurring cleanup and health check tasks
     recurring_tasks = {
         repeat_task(cleanup_images, settings.cleanup_interval_s, "cleanup_images"),
         repeat_task(camera_to_standby, settings.camera_standby_s, "camera_to_standby"),
         repeat_task(check_stream_duration, settings.check_stream_interval_s, "check_stream_duration"),
-        repeat_task(check_stream_health, 30, "check_stream_health"),  # Check health every 30 seconds
+        repeat_task(check_stream_health, settings.check_stream_health_interval_s, "check_stream_health"),
     }
     logger.info("Recurring cleanup and health check tasks started")
     yield
@@ -178,7 +192,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
     # Only allow necessary headers for security
-    allow_headers=["Content-Type", "Authorization", "Accept"],
+    allow_headers=["Content-Type", "Authorization", "Accept", settings.auth_key_name],
 )
 
 

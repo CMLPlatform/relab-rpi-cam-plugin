@@ -62,8 +62,11 @@ The simplest approach. No credential exchange required.
 
 1. **Start the plugin** (see [Step 3](#step-3-running-the-application)).
 
-1. **Open setup page**\
-   Visit `http://your-pi-ip:8018/setup` to see your 6-character pairing code.
+1. **Read the pairing code**
+   Use either of these supported setup paths:
+
+   - Browser UI: visit `http://your-pi-ip:8018/setup`
+   - Headless over SSH/logs: watch for the `PAIRING READY` log line
 
 1. **Pair in RELab app**\
    Go to Cameras > Add Camera, select WebSocket mode, and enter the pairing code (or scan the QR code).
@@ -110,6 +113,14 @@ For cases where automatic pairing isn't available.
    docker compose up -d
    ```
 
+   To include the optional observability stack for local log browsing, which runs Alloy, Loki, and Grafana:
+
+   ```sh
+   docker compose --profile observability up -d
+   ```
+
+   If you do not enable the observability profile, the app still writes structured log files to the mounted `app_logs` volume. You just won’t have the Alloy/Loki/Grafana UI layer running locally.
+
 ### Direct on Pi
 
 1. **Prepare environment**
@@ -124,12 +135,24 @@ For cases where automatic pairing isn't available.
    uv run fastapi run app/main.py --port 8018
    ```
 
+   When pairing mode is active, the terminal prints a line like:
+
+   ```text
+   PAIRING READY | code=ABC123 setup=/setup pairing_backend=https://api.cml-relab.org claim_in='RELab app > Cameras > Add Camera'
+   ```
+
 ## Testing
 
 Once running, verify at:
 
 - **Setup & Status:** `http://your-pi-ip:8018/setup`
 - **API Docs:** `http://your-pi-ip:8018/docs`
+
+For headless operators, you can also read the pairing code from logs:
+
+- Docker Compose: `docker compose logs app`
+- Systemd/journald: `journalctl -u relab-rpi-cam -f`
+- Direct shell run: read the `PAIRING READY` line in the terminal output
 
 ## Troubleshooting
 
@@ -152,13 +175,14 @@ Verify camera is properly connected to the CSI port.
 - Verify `~/.config/relab/relay_credentials.json` exists with valid credentials
 - Check Pi has outbound internet access
 - Confirm API key matches platform registration (regenerate if unsure)
-- Check plugin logs: `docker compose logs rpi-cam-plugin`
+- Check plugin logs: `docker compose logs app`
+- If observability is enabled, open Grafana at `http://your-pi-ip:3000` and inspect Loki logs there.
 
 ### Pairing code not showing
 
 - Ensure `PAIRING_BACKEND_URL` is set in `.env`
 - Remove `~/.config/relab/relay_credentials.json` if it exists (pairing is skipped when credentials present)
-- Check logs for pairing registration errors
+- Check `/setup` or look for the `PAIRING MODE` and `PAIRING READY` log lines
 
 ### Poor image quality
 
