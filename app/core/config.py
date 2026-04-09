@@ -1,18 +1,20 @@
 """Configuration settings for the Raspberry Pi API app."""
 
+import logging
 import warnings
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Literal, cast
 
 from pydantic import HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.utils.pairing import load_relay_credentials
+from app.utils.pairing import _CREDENTIALS_FILE, load_relay_credentials
 
 # Set the project base directory and .env file
 BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
 _HTTPS_SCHEME = "https"
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -151,6 +153,7 @@ def apply_relay_credentials() -> None:
 
     Should be called once during application startup (lifespan), not at import time.
     """
+    logger.info("Relay credentials path resolved to %s", _CREDENTIALS_FILE)
     creds = load_relay_credentials()
     if creds:
         set_runtime_relay_credentials(

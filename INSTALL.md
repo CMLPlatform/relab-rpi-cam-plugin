@@ -96,6 +96,9 @@ For cases where automatic pairing isn't available.
 
 1. **Restart the plugin**
 
+When you run the plugin via Docker Compose, `compose.yml` persists this directory with a named
+volume at `/home/rpicam/.config/relab`, so paired relay credentials survive container restarts.
+
 ## Step 3: Running the Application
 
 ### Docker (recommended)

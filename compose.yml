@@ -12,6 +12,7 @@ services:
     volumes:
       - /run/udev:/run/udev:ro
       - app_logs:/app/logs
+      - relay_credentials:/home/rpicam/.config/relab
     env_file:
       - .env
     group_add:
@@ -75,6 +76,7 @@ services:
 
 volumes:
   app_logs:
+  relay_credentials:
   alloy_data:
   loki_data:
   grafana_data:
