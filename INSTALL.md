@@ -113,13 +113,26 @@ For cases where automatic pairing isn't available.
    docker compose up -d
    ```
 
-   To include the optional observability stack for local log browsing, which runs Alloy, Loki, and Grafana:
+   To include the optional observability stack for local log browsing on one machine, which runs Alloy, Loki, and Grafana together:
 
    ```sh
-   docker compose --profile observability up -d
+   docker compose --profile observability-ship --profile observability-collect up -d
    ```
 
-   If you do not enable the observability profile, the app still writes structured log files to the mounted `app_logs` volume. You just won’t have the Alloy/Loki/Grafana UI layer running locally.
+   To ship logs from a Pi to a separate central collector:
+
+   ```sh
+   export LOKI_PUSH_URL=http://your-central-host:3100/loki/api/v1/push
+   docker compose --profile observability-ship up -d
+   ```
+
+   On the central collector host, run:
+
+   ```sh
+   docker compose --profile observability-collect up -d
+   ```
+
+   If you do not enable either observability profile, the app still writes structured log files to the mounted `app_logs` volume. You just won’t have the Alloy/Loki/Grafana UI layer or log shipping enabled.
 
 ### Direct on Pi
 
@@ -176,7 +189,7 @@ Verify camera is properly connected to the CSI port.
 - Check Pi has outbound internet access
 - Confirm API key matches platform registration (regenerate if unsure)
 - Check plugin logs: `docker compose logs app`
-- If observability is enabled, open Grafana at `http://your-pi-ip:3000` and inspect Loki logs there.
+- If `observability-collect` is enabled, open Grafana at `http://your-host-ip:3000` and inspect Loki logs there.
 
 ### Pairing code not showing
 

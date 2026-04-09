@@ -41,7 +41,12 @@ Supports **Raspberry Pi 5/4** with **Camera Module 3/v2**, running on Raspberry 
 
 For headless setup, the active 6-character pairing code is also printed to stdout in a stable `PAIRING READY` log line, so you can read it over SSH, `docker compose logs`, or `journalctl` without opening the browser UI.
 
-Optional observability is available via the `observability` compose profile. When it is enabled, Alloy tails the app's existing file logs and forwards them to Loki for viewing in Grafana. Without that profile, logs are still written to the `app_logs` volume on disk; you just lose the local browsing UI.
+Optional observability is split into two compose profiles:
+
+- `observability-ship`: runs Alloy on a Pi and ships the app's file logs to Loki
+- `observability-collect`: runs Loki and Grafana for storage and log browsing
+
+For a single-machine local setup, run both profiles together. For a fleet, run `observability-ship` on each Pi and point `LOKI_PUSH_URL` at a central host running `observability-collect`. Without either profile, logs are still written to the `app_logs` volume on disk; you just lose the browsing UI and shipping layer.
 
 For platform management and operation, see the [RELab camera guide](https://docs.cml-relab.org/user-guides/rpi-cam/).
 

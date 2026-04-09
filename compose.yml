@@ -34,7 +34,7 @@ services:
       - ./docker/loki/config.yml:/etc/loki/config.yml:ro
       - loki_data:/loki
     profiles:
-      - observability
+      - observability-collect
 
   alloy:
     image: grafana/alloy:v1.12.0
@@ -46,14 +46,16 @@ services:
       - /etc/alloy/config.alloy
     ports:
       - "12345:12345"
+    env_file:
+      - .env
+    environment:
+      LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
     volumes:
       - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - alloy_data:/var/lib/alloy/data
       - app_logs:/var/log/app:ro
     profiles:
-      - observability
-    depends_on:
-      - loki
+      - observability-ship
 
   grafana:
     image: grafana/grafana:11.6
@@ -66,7 +68,7 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
     profiles:
-      - observability
+      - observability-collect
 
 volumes:
   app_logs:
