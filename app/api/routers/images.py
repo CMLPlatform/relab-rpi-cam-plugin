@@ -1,5 +1,6 @@
 """Router for image capture and retrieval."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path
@@ -11,6 +12,7 @@ from app.api.exceptions import ActiveStreamError
 from app.core.config import settings
 
 router = APIRouter(prefix="/images", tags=["images"])
+logger = logging.getLogger(__name__)
 
 
 @router.get(
@@ -28,6 +30,7 @@ async def preview_image(camera_manager: CameraManagerDependency) -> Response:
     except ActiveStreamError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     except RuntimeError as e:
+        logger.exception("Preview capture failed")
         raise HTTPException(status_code=500, detail=str(e)) from e
     return Response(content=jpeg_bytes, media_type="image/jpeg")
 
@@ -42,6 +45,7 @@ async def capture_image(
     except ActiveStreamError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     except RuntimeError as e:
+        logger.exception("Image capture failed")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
