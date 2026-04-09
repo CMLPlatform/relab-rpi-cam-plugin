@@ -11,6 +11,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - /run/udev:/run/udev:ro
+      - app_data:/app/data
       - app_logs:/app/logs
       - relay_credentials:/home/rpicam/.config/relab
     env_file:
@@ -75,6 +76,7 @@ services:
       - observability-collect
 
 volumes:
+  app_data:
   app_logs:
   relay_credentials:
   alloy_data:

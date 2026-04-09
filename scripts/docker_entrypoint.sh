@@ -4,6 +4,8 @@ set -euo pipefail
 
 # Ensure the persistent relay credentials volume is writable by the app user.
 mkdir -p /home/rpicam/.config/relab
+mkdir -p /app/data/images /app/logs
+chown -R 1000:44 /app/data /app/logs
 chown -R 1000:44 /home/rpicam/.config
 
 run_as_rpicam() {
