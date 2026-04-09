@@ -22,13 +22,13 @@ def discover_devices(patterns: tuple[str, ...] = DEVICE_PATTERNS) -> list[str]:
     return sorted(found)
 
 
-def write_compose_override(device_paths: list[str], service_name: str = "rpi-cam-plugin") -> str:
+def write_compose_override(device_paths: list[str], service_name: str = "app") -> str:
     """Generate a minimal compose override with devices for the service.
 
     Output format (example):
 
     services:
-      rpi-cam-plugin:
+      app:
         devices:
           - "/dev/video0:/dev/video0"
 
