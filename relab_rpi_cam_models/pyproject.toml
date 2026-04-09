@@ -14,10 +14,10 @@
   maintainers = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
   name = "relab-rpi-cam-models"
   readme = "README.md"
-  version = "0.2.0" # NOTE: Versioning is handled by commitizen
+  version = "0.2.0" # NOTE: Published independently via the models tag workflow
   requires-python = ">=3.13"
 
-  dependencies = ["Pillow>=10.4", "pydantic>=2.9"]
+  dependencies = ["pydantic>=2.9"]
 
   [project.urls]
     Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
