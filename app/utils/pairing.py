@@ -21,7 +21,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -53,6 +53,7 @@ _CODE_LENGTH = 3  # token_hex(3) → 6 hex chars
 STATUS_WAITING = "waiting"
 STATUS_PAIRED = "paired"
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
+_DOCKER_HOST_ALIAS = "host.docker.internal"
 
 
 class PairingCodeExpiredError(RuntimeError):
@@ -97,6 +98,32 @@ def _pairing_setup_location() -> str:
     return "/setup"
 
 
+def _is_running_in_container() -> bool:
+    """Best-effort Docker/container detection for local-dev URL handling."""
+    return Path("/.dockerenv").exists()
+
+
+def _normalize_pairing_backend_base_url(base_url: str) -> str:
+    """Rewrite loopback backends to the Docker host alias when needed.
+
+    Inside a container, http://localhost points back at the container itself.
+    For local development where the RELab backend runs on the host machine,
+    transparently switch to host.docker.internal so the plugin can reach it.
+    """
+    parsed = urlparse(base_url)
+    if parsed.hostname not in _LOOPBACK_HOSTS or not _is_running_in_container():
+        return base_url
+
+    rewritten = parsed._replace(netloc=parsed.netloc.replace(parsed.hostname, _DOCKER_HOST_ALIAS, 1))
+    normalized = urlunparse(rewritten)
+    logger.warning(
+        "PAIRING BACKEND URL uses loopback inside a container; using %s instead of %s",
+        normalized,
+        base_url,
+    )
+    return normalized
+
+
 def _lan_setup_url(port: int | None) -> str | None:
     """Best-effort LAN setup URL when the configured base URL is loopback-only."""
     setup_port = port or 8018
@@ -128,9 +155,51 @@ def _log_pairing_ready(code: str) -> None:
     )
 
 
+def _log_pairing_connect_error(exc: httpx.ConnectError, base_url: str) -> None:
+    """Log actionable guidance for unreachable pairing backends."""
+    parsed = urlparse(base_url)
+    if parsed.hostname in _LOOPBACK_HOSTS and _is_running_in_container():
+        logger.error(
+            "Pairing backend %s is loopback from inside the container. "
+            "Use the host machine via http://%s:%s, a LAN IP, or the real HTTPS backend.",
+            base_url,
+            _DOCKER_HOST_ALIAS,
+            parsed.port or 80,
+        )
+        return
+
+    logger.error("Pairing backend %s could not be reached.", base_url)
+
+
+def _log_pairing_http_status_error(exc: httpx.HTTPStatusError) -> None:
+    """Log actionable guidance for backend rejections during pairing."""
+    response = exc.response
+    request = exc.request
+    body_snippet = response.text.strip().replace("\n", " ")
+    if len(body_snippet) > 160:
+        body_snippet = f"{body_snippet[:157]}..."
+
+    if response.status_code == 403 and request.url.path.endswith("/pairing/register"):
+        logger.error(
+            "Pairing registration was rejected by %s (HTTP 403). "
+            "The backend is reachable, but this environment is refusing anonymous camera registration. "
+            "Response body: %s",
+            request.url,
+            body_snippet or "<empty>",
+        )
+        return
+
+    logger.error(
+        "Pairing request to %s failed with HTTP %s. Response body: %s",
+        request.url,
+        response.status_code,
+        body_snippet or "<empty>",
+    )
+
+
 async def run_pairing(on_paired: Callable[[], Coroutine[Any, Any, None]]) -> None:
     """Run the pairing flow: register → poll → configure → callback."""
-    base = core_config.settings.pairing_backend_url.rstrip("/")
+    base = _normalize_pairing_backend_base_url(core_config.settings.pairing_backend_url.rstrip("/"))
     if not base:
         return
 
@@ -140,6 +209,16 @@ async def run_pairing(on_paired: Callable[[], Coroutine[Any, Any, None]]) -> Non
                 await _pairing_cycle(client, base, on_paired)
             except PairingCodeExpiredError:
                 continue
+            except httpx.HTTPStatusError as exc:
+                _log_pairing_http_status_error(exc)
+                logger.exception("Pairing cycle failed | retry_in_s=10")
+                _clear_transient_pairing_state(status="error", error="Pairing failed — retrying…")
+                await asyncio.sleep(10)
+            except httpx.ConnectError as exc:
+                _log_pairing_connect_error(exc, base)
+                logger.exception("Pairing cycle failed | retry_in_s=10")
+                _clear_transient_pairing_state(status="error", error="Pairing backend unreachable — retrying…")
+                await asyncio.sleep(10)
             except Exception:
                 logger.exception("Pairing cycle failed | retry_in_s=10")
                 _clear_transient_pairing_state(status="error", error="Pairing failed — retrying…")

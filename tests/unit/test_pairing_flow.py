@@ -77,6 +77,30 @@ class TestRunPairing:
         await pairing_mod.run_pairing(on_paired)
         on_paired.assert_not_awaited()
 
+    async def test_rewrites_loopback_backend_to_host_docker_internal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Loopback pairing backends should target the Docker host when containerized."""
+        monkeypatch.setattr(settings, "pairing_backend_url", "http://localhost:8011")
+        monkeypatch.setattr(pairing_mod, "_is_running_in_container", lambda: True)
+        seen: list[str] = []
+
+        async def fake_pairing_cycle(
+            _client: Any,
+            base_url: str,
+            _on_paired: Any,
+        ) -> None:
+            seen.append(base_url)
+            return None
+
+        monkeypatch.setattr(pairing_mod, "_pairing_cycle", fake_pairing_cycle)
+        monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: FakeClient([], []))
+
+        await pairing_mod.run_pairing(AsyncMock())
+
+        assert seen == ["http://host.docker.internal:8011"]
+
 
 class TestPairingCycle:
     """Tests for a single pairing cycle."""
@@ -203,6 +227,14 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_mod.socket, "gethostbyname_ex", lambda _host: ("rpi-cam", [], ["127.0.0.1"]))
 
         assert pairing_mod._pairing_setup_location() == RELATIVE_SETUP_PATH  # noqa: SLF001
+
+    def test_normalize_pairing_backend_base_url_keeps_non_loopback_host(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Real backend hosts should be left untouched."""
+        monkeypatch.setattr(pairing_mod, "_is_running_in_container", lambda: True)
+        assert pairing_mod._normalize_pairing_backend_base_url(EXAMPLE_BACKEND_URL) == EXAMPLE_BACKEND_URL  # noqa: SLF001
 
     async def test_saves_and_loads_credentials(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that credentials are saved to and loaded from disk correctly."""
