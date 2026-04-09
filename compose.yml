@@ -1,5 +1,6 @@
 services:
-  rpi-cam-plugin:
+  app:
+    image: relab-rpi-cam-plugin
     build:
       context: .
       dockerfile: Dockerfile
