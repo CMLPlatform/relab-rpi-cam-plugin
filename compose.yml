@@ -11,13 +11,17 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - /run/udev:/run/udev:ro
-      - app_data:/app/data
       - app_logs:/app/logs
       - relay_credentials:/home/rpicam/.config/relab
     env_file:
       - .env
     group_add:
       - video
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   cloudflared:
     image: cloudflare/cloudflared:2024.11.1
@@ -30,55 +34,24 @@ services:
       - cloudflared
     pull_policy: always
 
-  loki:
-    image: grafana/loki:3.4
-    restart: unless-stopped
-    command: -config.file=/etc/loki/config.yml
-    volumes:
-      - ./docker/loki/config.yml:/etc/loki/config.yml:ro
-      - loki_data:/loki
-    profiles:
-      - observability-collect
-
   alloy:
     image: grafana/alloy:v1.12.0
     restart: unless-stopped
     command:
       - run
-      - --server.http.listen-addr=0.0.0.0:12345
       - --storage.path=/var/lib/alloy/data
       - /etc/alloy/config.alloy
-    ports:
-      - "12345:12345"
-    env_file:
-      - .env
     environment:
-      LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
+      LOKI_PUSH_URL: ${LOKI_PUSH_URL:-}
       OBSERVABILITY_INSTANCE: ${OBSERVABILITY_INSTANCE:-rpi-cam-plugin}
     volumes:
-      - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ./config.alloy:/etc/alloy/config.alloy:ro
       - alloy_data:/var/lib/alloy/data
       - app_logs:/var/log/app:ro
     profiles:
       - observability-ship
 
-  grafana:
-    image: grafana/grafana:11.6
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/rpi-cam-logs.json
-    volumes:
-      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
-      - grafana_data:/var/lib/grafana
-    profiles:
-      - observability-collect
-
 volumes:
-  app_data:
   app_logs:
   relay_credentials:
   alloy_data:
-  loki_data:
-  grafana_data:

@@ -1,14 +1,15 @@
-local.file_match "app_logs" {
-  path_targets = [
+loki.source.file "app_logs" {
+  targets = [
     {
       __path__ = "/var/log/app/*.log",
     },
   ]
-}
-
-loki.source.file "app_logs" {
-  targets    = local.file_match.app_logs.targets
   forward_to = [loki.process.app.receiver]
+
+  file_match {
+    enabled     = true
+    sync_period = "10s"
+  }
 }
 
 loki.process "app" {
