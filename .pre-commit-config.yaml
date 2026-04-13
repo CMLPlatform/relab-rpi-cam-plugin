@@ -1,10 +1,4 @@
-# Configuration of Pre-commit Hooks. For more information, see https://pre-commit.com.
 repos:
--   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update
-    rev: v0.9.0
-    hooks:
-    -   id: pre-commit-update     # Autoupdate pre-commit hooks
-
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -45,11 +39,16 @@ repos:
     hooks:
     -   id: uv-lock
 
+-   repo: https://github.com/rhysd/actionlint
+    rev: v1.7.8
+    hooks:
+    -   id: actionlint
+
 -   repo: local
     hooks:
     -   id: ty
         name: ty-check
-        entry: uv run ty check
-        language: python
+        entry: uv run ty check .
+        language: system
         types: [python]
-        pass_filenames: true
+        pass_filenames: false

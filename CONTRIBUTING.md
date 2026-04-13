@@ -139,7 +139,7 @@ View Docker logs:
 docker compose logs -f app
 ```
 
-If you started both optional observability profiles, Alloy ships logs to Loki and Grafana is available on `http://localhost:3000`; Alloy can be inspected on `http://localhost:12345`. If you start only `observability-ship`, Alloy still runs but Grafana and Loki are expected to live elsewhere.
+If you start the optional `observability-ship` profile, Alloy ships the app's structured file logs to the external Loki-compatible endpoint configured by `LOKI_PUSH_URL`. Local Loki/Grafana is not bundled with this plugin.
 
 View direct server logs:
 

@@ -12,10 +12,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  PYTHON_VERSION: "3.13"
-  ARTIFACT_NAME: "relab-rpi-cam-models-dist"
-
 jobs:
   validate-tag:
     name: Validate package tag
@@ -27,34 +23,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.13"
 
       - name: Verify tag matches package version
-        env:
-          TAG_NAME: ${{ github.ref_name }}
-        run: |
-          python - <<'PY'
-          import os
-          import tomllib
-          from pathlib import Path
-
-          tag_name = os.environ["TAG_NAME"]
-          prefix = "relab-rpi-cam-models-v"
-          if not tag_name.startswith(prefix):
-              raise SystemExit(f"Unexpected tag name: {tag_name}")
-
-          tag_version = tag_name.removeprefix(prefix)
-          package_version = tomllib.loads(
-              Path("relab_rpi_cam_models/pyproject.toml").read_text(encoding="utf-8")
-          )["project"]["version"]
-
-          if tag_version != package_version:
-              raise SystemExit(
-                  f"Tag version {tag_version} does not match relab_rpi_cam_models version {package_version}"
-              )
-
-          print(f"Validated {tag_name} against relab_rpi_cam_models {package_version}")
-          PY
+        run: python scripts/validate_models_package_tag.py "${{ github.ref_name }}"
 
   build:
     needs: validate-tag
@@ -78,7 +50,7 @@ jobs:
       - name: Download package artifacts
         uses: actions/download-artifact@v8
         with:
-          name: ${{ env.ARTIFACT_NAME }}
+          name: relab-rpi-cam-models-dist
           path: dist/relab-rpi-cam-models
 
       - name: Publish distribution

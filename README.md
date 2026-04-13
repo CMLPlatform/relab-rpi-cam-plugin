@@ -43,14 +43,21 @@ If you use Docker Compose on the Pi, generate `compose.override.yml` with `./scr
 
 For headless setup, the active 6-character pairing code is also printed to stdout in a boxed `PAIRING READY` banner, so you can read it over SSH, `docker compose logs`, or `journalctl` without opening the browser UI.
 
-Optional observability is split into two compose profiles:
+By default, Docker Compose runs only the camera plugin. Inspect logs with:
 
-- `observability-ship`: runs Alloy on a Pi and ships the app's file logs to Loki
-- `observability-collect`: runs Loki and Grafana for storage and log browsing
+```sh
+docker compose logs -f app
+```
 
-For a single-machine local setup, run both profiles together. For a fleet, run `observability-ship` on each Pi and point `LOKI_PUSH_URL` at a central host running `observability-collect`. Without either profile, logs are still written to the `app_logs` volume on disk; you just lose the browsing UI and shipping layer.
+Optional remote observability is available with the `observability-ship` profile. It runs Alloy on the Pi and ships the app's structured file logs to an external Loki-compatible endpoint:
 
-For multi-Pi setups, set a unique `OBSERVABILITY_INSTANCE` on each Pi so Grafana can filter logs by device.
+```sh
+export LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
+export OBSERVABILITY_INSTANCE=pi-01
+docker compose --profile observability-ship up -d
+```
+
+Without the profile, logs are still written to Docker logs and the 7-day rotating `app_logs` volume. Local Loki/Grafana is not bundled with this plugin; use your platform's central observability stack when you need fleet log browsing.
 
 For platform management and operation, see the [RELab camera guide](https://docs.cml-relab.org/user-guides/rpi-cam/).
 

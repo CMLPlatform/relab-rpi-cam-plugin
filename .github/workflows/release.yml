@@ -1,10 +1,7 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: [ CI ]
-    types: [ completed ]
-    branches: [ main ]
+  workflow_dispatch:
 
 # Do not cancel in-progress releases
 concurrency:
@@ -17,7 +14,7 @@ permissions:
 jobs:
   release:
     name: Release
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -25,41 +22,18 @@ jobs:
         with:
           fetch-depth: 0 # commitizen needs full history to find the last tag
 
-      - uses: astral-sh/setup-uv@v8
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: uv sync --frozen --all-groups
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
       - name: Bump version
-        id: bump
-        run: |
-          set +e
-          uv run cz bump --yes 2>&1
-          exit_code=$?
-          if [ $exit_code -eq 21 ]; then
-            echo "No commits trigger a version bump, skipping release."
-            echo "bumped=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          [ $exit_code -ne 0 ] && exit $exit_code
-          echo "bumped=true" >> $GITHUB_OUTPUT
-          echo "tag=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+        id: cz
+        uses: commitizen-tools/commitizen-action@0.26.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push version bump and tag
-        if: steps.bump.outputs.bumped == 'true'
+        if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
         run: git push --follow-tags
 
       - name: Create GitHub release
-        if: steps.bump.outputs.bumped == 'true'
+        if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${{ steps.bump.outputs.tag }}" --title "${{ steps.bump.outputs.tag }}" --generate-notes
+        run: gh release create "${{ steps.cz.outputs.next_version }}" --title "${{ steps.cz.outputs.next_version }}" --generate-notes

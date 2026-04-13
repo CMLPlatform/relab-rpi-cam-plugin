@@ -104,10 +104,10 @@ class Settings(BaseSettings):
         meaningful error rather than a cryptic JSONDecodeError.
         """
         if isinstance(v, list):
-            return cast(list[str], v)
+            return cast("list[str]", v)
         if not isinstance(v, str):
             if isinstance(v, Iterable):
-                return cast(list[str], list(v))
+                return cast("list[str]", list(v))
             return []
         stripped = v.strip()
         if not stripped:
