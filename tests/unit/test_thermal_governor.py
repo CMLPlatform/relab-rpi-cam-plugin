@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,9 +11,6 @@ from relab_rpi_cam_models.telemetry import TelemetrySnapshot, ThermalState
 
 from app.utils import thermal_governor as thermal_governor_mod
 from app.utils.thermal_governor import ThermalGovernor
-
-if TYPE_CHECKING:
-    pass
 
 
 def _snapshot(cpu_temp_c: float | None) -> TelemetrySnapshot:
@@ -40,6 +37,7 @@ def _snapshot(cpu_temp_c: float | None) -> TelemetrySnapshot:
 
 @pytest.fixture
 def pipeline() -> MagicMock:
+    """A mock pipeline with an async set_bitrate method."""
     p = MagicMock()
     p.set_bitrate = AsyncMock()
     return p
@@ -47,12 +45,13 @@ def pipeline() -> MagicMock:
 
 @pytest.fixture
 def governor(pipeline: MagicMock) -> ThermalGovernor:
+    """A ThermalGovernor with a mocked pipeline and no sustain time."""
     gov = ThermalGovernor(
         pipeline,
         sustain_drop_s=0.0,
         sustain_restore_s=0.0,
     )
-    gov._camera_getter = lambda: MagicMock()  # noqa: SLF001
+    gov._camera_getter = MagicMock
     return gov
 
 
@@ -68,7 +67,7 @@ class TestTick:
         """Temperatures in the NORMAL band should not toggle anything."""
         monkeypatch.setattr(thermal_governor_mod, "collect_telemetry", AsyncMock(return_value=_snapshot(45.0)))
 
-        await governor._tick()  # noqa: SLF001
+        await governor._tick()
 
         assert governor.is_throttled is False
         pipeline.set_bitrate.assert_not_called()
@@ -83,8 +82,8 @@ class TestTick:
         monkeypatch.setattr(thermal_governor_mod, "collect_telemetry", AsyncMock(return_value=_snapshot(85.0)))
 
         # Need two ticks: first records the timestamp, second passes sustain_drop=0 and fires.
-        await governor._tick()  # noqa: SLF001
-        await governor._tick()  # noqa: SLF001
+        await governor._tick()
+        await governor._tick()
 
         assert governor.is_throttled is True
         pipeline.set_bitrate.assert_awaited_once()
@@ -99,15 +98,15 @@ class TestTick:
         """After throttling, a sustained cool reading should restore the high bitrate."""
         # Throttle first.
         monkeypatch.setattr(thermal_governor_mod, "collect_telemetry", AsyncMock(return_value=_snapshot(85.0)))
-        await governor._tick()  # noqa: SLF001
-        await governor._tick()  # noqa: SLF001
+        await governor._tick()
+        await governor._tick()
         assert governor.is_throttled is True
         pipeline.set_bitrate.reset_mock()
 
         # Then cool below the restore threshold.
         monkeypatch.setattr(thermal_governor_mod, "collect_telemetry", AsyncMock(return_value=_snapshot(65.0)))
-        await governor._tick()  # noqa: SLF001
-        await governor._tick()  # noqa: SLF001
+        await governor._tick()
+        await governor._tick()
 
         assert governor.is_throttled is False
         pipeline.set_bitrate.assert_awaited_once()
@@ -122,8 +121,8 @@ class TestTick:
         """Temperatures between restore and drop should leave the state alone."""
         monkeypatch.setattr(thermal_governor_mod, "collect_telemetry", AsyncMock(return_value=_snapshot(75.0)))
 
-        await governor._tick()  # noqa: SLF001
-        await governor._tick()  # noqa: SLF001
+        await governor._tick()
+        await governor._tick()
 
         assert governor.is_throttled is False
         pipeline.set_bitrate.assert_not_called()
@@ -137,7 +136,7 @@ class TestTick:
         """None cpu_temp_c (e.g. dev host) must not crash the tick."""
         monkeypatch.setattr(thermal_governor_mod, "collect_telemetry", AsyncMock(return_value=_snapshot(None)))
 
-        await governor._tick()  # noqa: SLF001
+        await governor._tick()
 
         assert governor.is_throttled is False
         pipeline.set_bitrate.assert_not_called()
@@ -155,9 +154,7 @@ class TestLifecycle:
         monkeypatch.setattr(thermal_governor_mod, "collect_telemetry", AsyncMock(return_value=_snapshot(50.0)))
 
         gov = ThermalGovernor(pipeline, poll_interval_s=0.01, sustain_drop_s=0.0, sustain_restore_s=0.0)
-        gov.start(camera_getter=lambda: MagicMock())
-
-        import asyncio  # noqa: PLC0415
+        gov.start(camera_getter=MagicMock)
 
         await asyncio.sleep(0.05)
         await gov.stop()

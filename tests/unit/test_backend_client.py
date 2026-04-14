@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -11,6 +12,10 @@ import pytest
 from app.core.config import settings
 from app.utils import backend_client as backend_client_mod
 from app.utils.backend_client import BackendUploadError, upload_image
+from tests.constants import SAMPLE_SERVER_IMAGE_ID, SAMPLE_SERVER_IMAGE_URL
+
+if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
 
 
 @pytest.fixture(autouse=True)
@@ -36,7 +41,7 @@ def _fake_response(status: int, body: object) -> MagicMock:
     return resp
 
 
-def _patch_async_client(response: MagicMock) -> object:
+def _patch_async_client(response: MagicMock) -> AbstractContextManager[MagicMock]:
     client_instance = MagicMock()
     client_instance.post = AsyncMock(return_value=response)
     client_instance.__aenter__ = AsyncMock(return_value=client_instance)
@@ -51,7 +56,7 @@ class TestUploadImage:
         """A 200 JSON response with image_id+image_url should populate UploadedImageInfo."""
         response = _fake_response(
             200,
-            {"image_id": "server-abc", "image_url": "https://backend.example/images/abc.jpg"},
+            {"image_id": SAMPLE_SERVER_IMAGE_ID, "image_url": SAMPLE_SERVER_IMAGE_URL},
         )
         with _patch_async_client(response):
             result = await upload_image(
@@ -61,8 +66,8 @@ class TestUploadImage:
                 upload_metadata={"product_id": 1},
             )
 
-        assert result.image_id == "server-abc"
-        assert str(result.image_url) == "https://backend.example/images/abc.jpg"
+        assert result.image_id == SAMPLE_SERVER_IMAGE_ID
+        assert str(result.image_url) == SAMPLE_SERVER_IMAGE_URL
 
     async def test_http_error_wrapped_in_backend_upload_error(self) -> None:
         """An httpx transport error should surface as BackendUploadError."""

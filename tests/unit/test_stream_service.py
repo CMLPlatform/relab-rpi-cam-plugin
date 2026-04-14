@@ -1,17 +1,26 @@
 """Tests for stream service helpers."""
 
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
 from pydantic import AnyUrl, SecretStr
-
 from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services import stream as stream_service
+from tests.constants import (
+    ANULLSRC_STEREO,
+    FFMPEG_FLAG_FLV,
+    FFMPEG_FLAG_SHORTEST,
+    HLS,
+    HTTP_UPLOAD_HLS,
+    MASTER_M3U8,
+    NULLAUDIO_MONITOR,
+    RTMPS_BASE,
+)
 
 EMBED_URL = "https://www.youtube.com/embed/broadcast-key"
-RTMPS_BASE = "rtmps://a.rtmps.youtube.com:443/live2"
 
 
 class TestStreamUrls:
@@ -46,7 +55,7 @@ class TestFfmpegOutput:
         with pytest.raises(YoutubeConfigRequiredError):
             stream_service.get_ffmpeg_output(StreamMode.YOUTUBE)
 
-    def test_youtube_output_builds_rtmps_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_youtube_output_builds_rtmps_command(self) -> None:
         """The ffmpeg output string should target YouTube RTMPS with FLV muxing and AAC audio."""
         pytest.importorskip("picamera2.outputs")
         config = YoutubeStreamConfig(
@@ -57,8 +66,8 @@ class TestFfmpegOutput:
         output = stream_service.get_ffmpeg_output(StreamMode.YOUTUBE, config)
 
         assert isinstance(output, stream_service.SilentAudioFfmpegOutput)
-        assert "-f flv" in output.output_filename
-        assert "-shortest" in output.output_filename
+        assert FFMPEG_FLAG_FLV in output.output_filename
+        assert FFMPEG_FLAG_SHORTEST in output.output_filename
         assert f"{RTMPS_BASE}/stream-key" in output.output_filename
 
     def test_silent_audio_output_orders_inputs_before_codecs(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -72,15 +81,15 @@ class TestFfmpegOutput:
         output.start()
 
         command = popen.call_args.args[0]
-        anullsrc_index = command.index("anullsrc=channel_layout=stereo:sample_rate=44100")
+        anullsrc_index = command.index(ANULLSRC_STEREO)
         video_codec_index = command.index("-c:v")
         audio_codec_index = command.index("-c:a")
         assert anullsrc_index < audio_codec_index < video_codec_index
-        assert "nullaudio.monitor" not in command
+        assert NULLAUDIO_MONITOR not in command
         # HLS-era leftovers must stay gone.
-        assert "hls" not in command
-        assert "master.m3u8" not in command
-        assert "http_upload_hls" not in command
+        assert HLS not in command
+        assert MASTER_M3U8 not in command
+        assert HTTP_UPLOAD_HLS not in command
 
     def test_unsupported_mode_raises(self) -> None:
         """Unsupported stream modes should fail fast."""
@@ -90,4 +99,4 @@ class TestFfmpegOutput:
                 return "fake"
 
         with pytest.raises(ValueError, match="Unsupported"):
-            stream_service.get_ffmpeg_output(_FakeMode())  # type: ignore[arg-type]
+            stream_service.get_ffmpeg_output(cast("StreamMode", _FakeMode()))

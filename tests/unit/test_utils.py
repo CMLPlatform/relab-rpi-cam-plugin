@@ -117,7 +117,7 @@ class TestPairingState:
 
         try:
             before = datetime.now(UTC)
-            pairing_mod._set_pairing_code_state("ABC123", "fingerprint")  # noqa: SLF001
+            pairing_mod._set_pairing_code_state("ABC123", "fingerprint")
             state = get_pairing_state()
             assert state.expires_at is not None
             lower_bound = before + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)

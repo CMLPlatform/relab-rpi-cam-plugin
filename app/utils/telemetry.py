@@ -7,6 +7,7 @@ import logging
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import psutil
 from relab_rpi_cam_models.telemetry import TelemetrySnapshot, ThermalState
@@ -49,7 +50,8 @@ def _classify_thermal(cpu_temp_c: float | None) -> ThermalState:
 async def collect_telemetry() -> TelemetrySnapshot:
     """Capture a point-in-time device health snapshot."""
     cpu_temp_c = await asyncio.to_thread(_read_cpu_temp_c)
-    cpu_percent = await asyncio.to_thread(psutil.cpu_percent, None)
+    # Request a non-per-CPU percent to ensure a single float is returned
+    cpu_percent = cast("float", await asyncio.to_thread(psutil.cpu_percent, interval=None, percpu=False))
     mem = await asyncio.to_thread(psutil.virtual_memory)
     disk_usage = await asyncio.to_thread(shutil.disk_usage, settings.image_path)
 

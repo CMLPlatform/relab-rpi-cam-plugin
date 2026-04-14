@@ -30,25 +30,26 @@ def _hash_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-def _get_authorized_hashes() -> list[str]:
-    """Pre-hash all authorized keys for efficient comparison."""
-    return [_hash_key(k) for k in settings.authorized_api_keys]
-
-
-# Pre-compute hashes at import time; refreshed when keys change via reload_authorized_hashes().
-_authorized_hashes: list[str] = _get_authorized_hashes()
-
-
 def reload_authorized_hashes() -> None:
-    """Recompute the cached key hashes (call after modifying authorized_api_keys)."""
-    global _authorized_hashes  # noqa: PLW0603
-    _authorized_hashes = _get_authorized_hashes()
+    """No-op kept for backward compatibility.
+
+    Historically this module cached pre-hashed API keys and exposed
+    `reload_authorized_hashes()` to refresh that cache after changing
+    `settings.authorized_api_keys`. The implementation now reads
+    `settings.authorized_api_keys` dynamically, so this function is a
+    no-op retained for tests and callers that expect it to exist.
+    """
+    return
 
 
 def _is_authorized(api_key: str) -> bool:
-    """Check if an API key matches any authorized key using timing-safe comparison."""
-    incoming_hash = _hash_key(api_key)
-    return any(hmac.compare_digest(incoming_hash, stored_hash) for stored_hash in _authorized_hashes)
+    """Check if an API key matches any authorized key using timing-safe comparison.
+
+    This performs a timing-safe comparison against the live `settings.`
+    `authorized_api_keys` list to avoid storing module-level mutable state.
+    """
+    # Compare against each configured key using timing-safe compare.
+    return any(hmac.compare_digest(api_key, candidate) for candidate in settings.authorized_api_keys)
 
 
 def _now_utc() -> datetime:

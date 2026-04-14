@@ -12,6 +12,7 @@ import pytest
 from app.api.dependencies.auth import reload_authorized_hashes
 from app.core.config import settings
 from app.utils import pairing as pairing_mod
+from tests.constants import PAIRING_POLL_TIMEOUT_LOG, PAIRING_REGISTER_TIMEOUT_LOG, TRACEBACK_TEXT
 
 EXAMPLE_BACKEND_URL = "https://example.com"
 RELAY_BACKEND_URL = "wss://example.com/ws"
@@ -47,6 +48,10 @@ class FakeResponse:
 
 class FakeClient:
     """Async client stub for pairing register/poll requests."""
+
+    # Instance-level callables -- allow replacement with `AsyncMock` in tests.
+    post: Any
+    get: Any
 
     def __init__(self, post_responses: list[FakeResponse], get_responses: list[FakeResponse]) -> None:
         self._posts = post_responses
@@ -125,7 +130,7 @@ class TestPairingCycle:
         monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
         monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
-        client = FakeClient(
+        client: Any = FakeClient(
             post_responses=[FakeResponse(409), FakeResponse(201)],
             get_responses=[
                 FakeResponse(200, {"status": pairing_mod.STATUS_WAITING}),
@@ -148,7 +153,7 @@ class TestPairingCycle:
         try:
             with caplog.at_level(logging.INFO):
                 pairing_mod.log_pairing_mode_started()
-            await pairing_mod._pairing_cycle(cast("Any", client), EXAMPLE_BACKEND_URL, on_paired)  # noqa: SLF001
+            await pairing_mod._pairing_cycle(cast("Any", client), EXAMPLE_BACKEND_URL, on_paired)
 
             on_paired.assert_awaited_once()
             assert settings.relay_backend_url == RELAY_BACKEND_URL
@@ -160,7 +165,7 @@ class TestPairingCycle:
             assert settings.local_relay_api_key in settings.authorized_api_keys
             log_text = caplog.text
             assert PAIRING_MODE_LOG_PREFIX in log_text
-            assert pairing_mod._format_pairing_ready_message(PAIRING_CODE_2) in log_text  # noqa: SLF001
+            assert pairing_mod._format_pairing_ready_message(PAIRING_CODE_2) in log_text
             assert f"PAIRING COMPLETE | camera_id={RELAY_CAMERA_ID} relay_starting=true" in log_text
             assert settings.relay_private_key_pem not in log_text
             assert FINGERPRINT_2 not in log_text
@@ -186,7 +191,7 @@ class TestPairingCycle:
         monkeypatch.setattr(settings, "base_url", "https://camera.example/")
         monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
-        client = FakeClient(
+        client: Any = FakeClient(
             post_responses=[FakeResponse(201), FakeResponse(201)],
             get_responses=[
                 FakeResponse(404),
@@ -212,9 +217,9 @@ class TestPairingCycle:
 
         on_paired.assert_awaited_once()
         log_text = caplog.text
-        assert pairing_mod._format_pairing_ready_message(PAIRING_CODE_1) in log_text  # noqa: SLF001
+        assert pairing_mod._format_pairing_ready_message(PAIRING_CODE_1) in log_text
         assert f"PAIRING ROTATING | expired_code={PAIRING_CODE_1} reason=expired" in log_text
-        assert pairing_mod._format_pairing_ready_message(PAIRING_CODE_2) in log_text  # noqa: SLF001
+        assert pairing_mod._format_pairing_ready_message(PAIRING_CODE_2) in log_text
         assert PAIRING_FAILURE_LOG not in log_text
 
     async def test_register_timeout_retries_same_cycle_without_traceback(
@@ -227,7 +232,7 @@ class TestPairingCycle:
         monkeypatch.setattr(settings, "base_url", "https://camera.example/")
         monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
-        client = FakeClient(
+        client: Any = FakeClient(
             post_responses=[FakeResponse(201)],
             get_responses=[
                 FakeResponse(200, {"status": pairing_mod.STATUS_WAITING}),
@@ -244,11 +249,8 @@ class TestPairingCycle:
             ],
         )
         timeout_request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/register")
-        client.post = AsyncMock(  # type: ignore[method-assign]
-            side_effect=[
-                httpx.ReadTimeout("register timed out", request=timeout_request),
-                FakeResponse(201),
-            ]
+        cast("Any", client).post = AsyncMock(
+            side_effect=[httpx.ReadTimeout("register timed out", request=timeout_request), FakeResponse(201)]
         )
         monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: client)
         monkeypatch.setattr(pairing_mod, "_generate_code_and_fingerprint", lambda: (PAIRING_CODE_1, "FP1"))
@@ -258,8 +260,8 @@ class TestPairingCycle:
             await pairing_mod.run_pairing(on_paired)
 
         on_paired.assert_awaited_once()
-        assert "PAIRING REGISTER TIMEOUT | code=CODE1 retry_in_s=1" in caplog.text
-        assert "Traceback" not in caplog.text
+        assert PAIRING_REGISTER_TIMEOUT_LOG in caplog.text
+        assert TRACEBACK_TEXT not in caplog.text
 
     async def test_poll_timeout_retries_same_cycle_without_traceback(
         self,
@@ -271,7 +273,7 @@ class TestPairingCycle:
         monkeypatch.setattr(settings, "base_url", "https://camera.example/")
         monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
-        client = FakeClient(
+        client: Any = FakeClient(
             post_responses=[FakeResponse(201)],
             get_responses=[
                 FakeResponse(200, {"status": pairing_mod.STATUS_WAITING}),
@@ -299,7 +301,7 @@ class TestPairingCycle:
             },
         )
         timeout_request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/poll")
-        client.get = AsyncMock(  # type: ignore[method-assign]
+        cast("Any", client).get = AsyncMock(
             side_effect=[
                 httpx.ReadTimeout("poll timed out", request=timeout_request),
                 waiting_response,
@@ -314,8 +316,8 @@ class TestPairingCycle:
             await pairing_mod.run_pairing(on_paired)
 
         on_paired.assert_awaited_once()
-        assert "PAIRING POLL TIMEOUT | code=CODE1 retry_in_s=3" in caplog.text
-        assert "Traceback" not in caplog.text
+        assert PAIRING_POLL_TIMEOUT_LOG in caplog.text
+        assert TRACEBACK_TEXT not in caplog.text
 
     def test_pairing_mode_prefers_detected_lan_setup_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Loopback base URLs should prefer a best-effort LAN setup URL in logs."""
@@ -327,7 +329,7 @@ class TestPairingCycle:
             lambda _host: ("rpi-cam", [], ["127.0.0.1", "192.168.1.42"]),
         )
 
-        assert pairing_mod._pairing_setup_location() == LAN_SETUP_URL  # noqa: SLF001
+        assert pairing_mod._pairing_setup_location() == LAN_SETUP_URL
 
     def test_pairing_mode_falls_back_to_relative_setup_path_without_lan_address(
         self,
@@ -338,7 +340,7 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_mod.socket, "gethostname", lambda: "rpi-cam")
         monkeypatch.setattr(pairing_mod.socket, "gethostbyname_ex", lambda _host: ("rpi-cam", [], ["127.0.0.1"]))
 
-        assert pairing_mod._pairing_setup_location() == RELATIVE_SETUP_PATH  # noqa: SLF001
+        assert pairing_mod._pairing_setup_location() == RELATIVE_SETUP_PATH
 
     def test_normalize_pairing_backend_base_url_keeps_non_loopback_host(
         self,
@@ -346,15 +348,15 @@ class TestPairingCycle:
     ) -> None:
         """Real backend hosts should be left untouched."""
         monkeypatch.setattr(pairing_mod, "_is_running_in_container", lambda: True)
-        assert pairing_mod._normalize_pairing_backend_base_url(EXAMPLE_BACKEND_URL) == EXAMPLE_BACKEND_URL  # noqa: SLF001
+        assert pairing_mod._normalize_pairing_backend_base_url(EXAMPLE_BACKEND_URL) == EXAMPLE_BACKEND_URL
 
     async def test_saves_and_loads_credentials(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that credentials are saved to and loaded from disk correctly."""
         creds_file = tmp_path / "relay_credentials.json"
         monkeypatch.setattr(pairing_mod, "_CREDENTIALS_FILE", creds_file)
-        private_key = pairing_mod._private_key_pem(pairing_mod._generate_private_key())  # noqa: SLF001
+        private_key = pairing_mod._private_key_pem(pairing_mod._generate_private_key())
 
-        pairing_mod._save_relay_credentials(  # noqa: SLF001
+        pairing_mod._save_relay_credentials(
             RELAY_BACKEND_URL,
             RELAY_CAMERA_ID,
             RELAY_AUTH_SCHEME,

@@ -14,17 +14,16 @@ test:
 
 lint:
     uv run ruff check --no-fix .
-    uv run ruff format --check .
     uv run ty check .
-
-workflow-lint:
-    uv run pre-commit run actionlint --all-files
 
 format:
     uv run ruff check --fix .
     uv run ruff format .
 
-check: lint workflow-lint test
+pre-commit:
+    uv run pre-commit run --all-files
+
+check: format lint pre-commit test
 
 audit:
     uv audit --preview-features audit --locked --no-dev

@@ -8,16 +8,33 @@ and refcount management on failure paths.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 from fastapi import HTTPException
-
 from relab_rpi_cam_models.whep import WhepOfferRequest
 
+from app.api.exceptions import CameraInitializationError
 from app.api.routers import whep as whep_mod
 from app.api.routers.whep import _post_offer_to_mediamtx
+from tests.constants import (
+    ANSWER_SDP,
+    EXTERNAL_LOCATION,
+    HTTP_400_TEXT,
+    LOCATION_FULL,
+    LOCATION_HEADER_TEXT,
+    MEDIA_UNREACHABLE,
+    SDP_FINGERPRINT,
+    SDP_ICE_LABEL,
+    SDP_ICE_UFRAG,
+    SDP_MID,
+    SDP_RTPMAP,
+)
+
+if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
 
 
 class _Response:
@@ -29,11 +46,9 @@ class _Response:
         self.headers = headers or {}
 
 
-def _patch_httpx(response: _Response | Exception | list[_Response]) -> object:
+def _patch_httpx(response: _Response | Exception | list[_Response]) -> AbstractContextManager[object]:
     client = MagicMock()
-    if isinstance(response, Exception):
-        client.post = AsyncMock(side_effect=response)
-    elif isinstance(response, list):
+    if isinstance(response, (Exception, list)):
         client.post = AsyncMock(side_effect=response)
     else:
         client.post = AsyncMock(return_value=response)
@@ -48,12 +63,11 @@ class TestPostOfferToMediamtx:
     def test_request_schema_example_has_required_webrtc_lines(self) -> None:
         """The OpenAPI example should look like a real browser WHEP offer."""
         example = WhepOfferRequest.model_json_schema()["examples"][0]["sdp"]
-
-        assert "a=mid:0" in example
-        assert "a=ice-ufrag:" in example
-        assert "a=ice-pwd:" in example
-        assert "a=fingerprint:sha-256" in example
-        assert "a=rtpmap:96 H264/90000" in example
+        assert SDP_MID in example
+        assert SDP_ICE_UFRAG in example
+        assert SDP_ICE_LABEL in example
+        assert SDP_FINGERPRINT in example
+        assert SDP_RTPMAP in example
 
     async def test_happy_path_returns_answer_and_absolute_location(self) -> None:
         """MediaMTX returns a 201 with answer SDP and a relative Location."""
@@ -66,7 +80,7 @@ class TestPostOfferToMediamtx:
             answer, location = await _post_offer_to_mediamtx("v=0\no=- offer")
 
         assert answer.startswith("v=0")
-        assert location == "http://host.docker.internal:8889/cam-preview/whep/abc"
+        assert location == LOCATION_FULL
 
     async def test_absolute_location_passes_through(self) -> None:
         """An absolute Location header should be returned verbatim."""
@@ -77,7 +91,7 @@ class TestPostOfferToMediamtx:
         )
         with _patch_httpx(response):
             _, location = await _post_offer_to_mediamtx("v=0\no=- offer")
-        assert location == "http://external.example/cam-preview/whep/xyz"
+        assert location == EXTERNAL_LOCATION
 
     async def test_missing_location_raises_502(self) -> None:
         """A 2xx without a Location header is a protocol error from MediaMTX."""
@@ -85,7 +99,7 @@ class TestPostOfferToMediamtx:
         with _patch_httpx(response), pytest.raises(HTTPException) as excinfo:
             await _post_offer_to_mediamtx("v=0\no=- offer")
         assert excinfo.value.status_code == 502
-        assert "Location header" in str(excinfo.value.detail)
+        assert LOCATION_HEADER_TEXT in str(excinfo.value.detail)
 
     async def test_mediamtx_4xx_raises_502(self) -> None:
         """A 4xx from MediaMTX surfaces as a 502 to the relay caller."""
@@ -93,39 +107,40 @@ class TestPostOfferToMediamtx:
         with _patch_httpx(response), pytest.raises(HTTPException) as excinfo:
             await _post_offer_to_mediamtx("v=0\no=- offer")
         assert excinfo.value.status_code == 502
-        assert "HTTP 400" in str(excinfo.value.detail)
+        assert HTTP_400_TEXT in str(excinfo.value.detail)
 
     async def test_mediamtx_no_stream_404_retries(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A just-started RTSP publisher can appear shortly after the first WHEP offer."""
-        monkeypatch.setattr(whep_mod.asyncio, "sleep", AsyncMock())
+        sleep_mock = AsyncMock()
+        monkeypatch.setattr(whep_mod.asyncio, "sleep", sleep_mock)
         responses = [
-            _Response(404, body="{\"error\":\"no stream is available on path 'cam-preview'\"}"),
+            _Response(404, body='{"error":"no stream is available on path \'cam-preview\'"}'),
             _Response(201, body="v=0\nanswer", headers={"Location": "/cam-preview/whep/abc"}),
         ]
 
         with _patch_httpx(responses):
             answer, location = await _post_offer_to_mediamtx("v=0\no=- offer")
 
-        assert answer == "v=0\nanswer"
-        assert location == "http://host.docker.internal:8889/cam-preview/whep/abc"
-        whep_mod.asyncio.sleep.assert_awaited_once_with(0.25)
+        assert answer == ANSWER_SDP
+        assert location == LOCATION_FULL
+        sleep_mock.assert_awaited_once_with(0.25)
 
     async def test_network_error_raises_503(self) -> None:
         """A connection failure should surface as 503."""
         with _patch_httpx(httpx.ConnectError("refused")), pytest.raises(HTTPException) as excinfo:
             await _post_offer_to_mediamtx("v=0\no=- offer")
         assert excinfo.value.status_code == 503
-        assert "MediaMTX unreachable" in str(excinfo.value.detail)
+        assert MEDIA_UNREACHABLE in str(excinfo.value.detail)
 
 
 def _make_camera_manager(*, primed: bool = True) -> MagicMock:
-    """Build a camera_manager mock whose setup_camera primes backend._camera."""
+    """Build a camera_manager mock whose setup_camera primes backend.camera."""
     camera_manager = MagicMock()
     camera = MagicMock() if primed else None
-    camera_manager.backend._camera = camera  # noqa: SLF001
+    camera_manager.backend.camera = camera
 
     async def _setup(_mode: object) -> None:
-        camera_manager.backend._camera = camera  # noqa: SLF001
+        camera_manager.backend.camera = camera
 
     camera_manager.setup_camera = AsyncMock(side_effect=_setup)
     return camera_manager
@@ -147,7 +162,7 @@ class TestOpenCloseSession:
         monkeypatch.setattr(whep_mod, "get_preview_pipeline_manager", lambda: pipeline)
 
         async def _fake_post(_offer_sdp: str) -> tuple[str, str]:
-            return ("v=0\nanswer", "http://host.docker.internal:8889/cam-preview/whep/abc")
+            return (ANSWER_SDP, LOCATION_FULL)
 
         monkeypatch.setattr(whep_mod, "_post_offer_to_mediamtx", _fake_post)
 
@@ -158,9 +173,9 @@ class TestOpenCloseSession:
             offer=WhepOfferRequest(sdp="v=0\noffer"),
         )
 
-        assert response.sdp == "v=0\nanswer"
+        assert response.sdp == ANSWER_SDP
         assert len(response.session_id) == 32
-        assert response.session_id in whep_mod._sessions  # noqa: SLF001
+        assert response.session_id in whep_mod._sessions
         pipeline.acquire.assert_awaited_once()
         pipeline.release.assert_not_called()
 
@@ -202,8 +217,6 @@ class TestOpenCloseSession:
 
     async def test_open_returns_503_when_camera_init_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """If priming the persistent pipeline fails, WHEP should surface a 503."""
-        from app.api.exceptions import CameraInitializationError  # noqa: PLC0415
-
         pipeline = MagicMock()
         pipeline.acquire = AsyncMock()
         monkeypatch.setattr(whep_mod, "get_preview_pipeline_manager", lambda: pipeline)
@@ -230,7 +243,7 @@ class TestOpenCloseSession:
         monkeypatch.setattr(whep_mod, "_delete_mediamtx_session", delete_mock)
 
         session_id = "a" * 32
-        whep_mod._sessions[session_id] = "http://host.docker.internal:8889/cam-preview/whep/abc"  # noqa: SLF001
+        whep_mod._sessions[session_id] = LOCATION_FULL
 
         camera_manager = _make_camera_manager()
 
@@ -239,9 +252,9 @@ class TestOpenCloseSession:
             session_id=session_id,
         )
 
-        delete_mock.assert_awaited_once_with("http://host.docker.internal:8889/cam-preview/whep/abc")
+        delete_mock.assert_awaited_once_with(LOCATION_FULL)
         pipeline.release.assert_awaited_once()
-        assert session_id not in whep_mod._sessions  # noqa: SLF001
+        assert session_id not in whep_mod._sessions
 
     async def test_close_unknown_session_returns_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """DELETE on an unknown session id must not touch the pipeline."""
@@ -269,12 +282,13 @@ class TestOpenCloseSession:
         monkeypatch.setattr(whep_mod, "get_preview_pipeline_manager", lambda: pipeline)
 
         async def _raise(_location: str) -> None:
-            raise RuntimeError("network went away")
+            msg = "network went away"
+            raise RuntimeError(msg)
 
         monkeypatch.setattr(whep_mod, "_delete_mediamtx_session", _raise)
 
         session_id = "c" * 32
-        whep_mod._sessions[session_id] = "http://host.docker.internal:8889/cam-preview/whep/xyz"  # noqa: SLF001
+        whep_mod._sessions[session_id] = EXTERNAL_LOCATION
 
         camera_manager = _make_camera_manager()
 

@@ -30,7 +30,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated
 
 import httpx
 from fastapi import APIRouter, Body, HTTPException, Path
@@ -42,6 +42,9 @@ from app.api.exceptions import CameraInitializationError
 from app.api.services.preview_pipeline import (
     get_preview_pipeline_manager,
 )
+
+if TYPE_CHECKING:
+    from app.api.services.hardware_protocols import Picamera2Like
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +131,7 @@ async def close_whep_session(
     logger.info("Closed WHEP session %s (subscribers=%d)", session_id, pipeline.active_subscribers)
 
 
-async def _ensure_camera(camera_manager: Any) -> Any:
+async def _ensure_camera(camera_manager: CameraManagerDependency) -> Picamera2Like:
     """Lazily prime the persistent pipeline and return the Picamera2 handle.
 
     WHEP sessions are usually the first thing the browser hits after page load,
@@ -142,7 +145,7 @@ async def _ensure_camera(camera_manager: Any) -> Any:
     except CameraInitializationError as exc:
         raise HTTPException(status_code=503, detail=f"Camera backend unavailable: {exc}") from exc
     backend = camera_manager.backend
-    camera = backend._camera  # noqa: SLF001
+    camera = backend.camera
     if camera is None:
         raise HTTPException(status_code=503, detail="Camera backend failed to initialise")
     return camera

@@ -22,13 +22,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from relab_rpi_cam_models.telemetry import ThermalState
 
-from app.api.services.preview_pipeline import PreviewPipelineManager
+from app.api.services.hardware_protocols import Picamera2Like
+from app.api.services.preview_pipeline import PreviewPipelineManager, get_preview_pipeline_manager
 from app.utils.telemetry import collect_telemetry
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -78,14 +84,14 @@ class ThermalGovernor:
         self._state = GovernorState()
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
-        self._camera_getter: "callable[[], object] | None" = None  # type: ignore[name-defined]
+        self._camera_getter: Callable[[], Picamera2Like | None] | None = None
 
     @property
     def is_throttled(self) -> bool:
         """Whether the governor currently holds the encoder at the low bitrate."""
         return self._state.throttled
 
-    def start(self, camera_getter: "callable[[], object]") -> None:  # type: ignore[name-defined]
+    def start(self, camera_getter: Callable[[], Picamera2Like | None]) -> None:
         """Start the governor's background polling task.
 
         ``camera_getter`` is a zero-arg callable returning the live Picamera2
@@ -136,10 +142,7 @@ class ThermalGovernor:
             self._state.below_threshold_since = None
             if self._state.over_threshold_since is None:
                 self._state.over_threshold_since = now
-            if (
-                not self._state.throttled
-                and now - self._state.over_threshold_since >= self._sustain_drop_s
-            ):
+            if not self._state.throttled and now - self._state.over_threshold_since >= self._sustain_drop_s:
                 await self._apply_bitrate(self._low_bitrate)
                 self._state.throttled = True
                 logger.warning(
@@ -153,10 +156,7 @@ class ThermalGovernor:
             self._state.over_threshold_since = None
             if self._state.below_threshold_since is None:
                 self._state.below_threshold_since = now
-            if (
-                self._state.throttled
-                and now - self._state.below_threshold_since >= self._sustain_restore_s
-            ):
+            if self._state.throttled and now - self._state.below_threshold_since >= self._sustain_restore_s:
                 await self._apply_bitrate(self._high_bitrate)
                 self._state.throttled = False
                 logger.info(
@@ -177,23 +177,15 @@ class ThermalGovernor:
         camera = self._camera_getter()
         if camera is None:
             return
-        await self._pipeline.set_bitrate(camera, bitrate)  # type: ignore[arg-type]
+        await self._pipeline.set_bitrate(camera, bitrate)
 
 
-_singleton: ThermalGovernor | None = None
-
-
+@functools.lru_cache(maxsize=1)
 def get_thermal_governor() -> ThermalGovernor:
     """Return the process-wide thermal governor, creating it on first call."""
-    global _singleton  # noqa: PLW0603
-    if _singleton is None:
-        from app.api.services.preview_pipeline import get_preview_pipeline_manager  # noqa: PLC0415
-
-        _singleton = ThermalGovernor(get_preview_pipeline_manager())
-    return _singleton
+    return ThermalGovernor(get_preview_pipeline_manager())
 
 
 def reset_thermal_governor() -> None:
     """Reset the singleton (tests only)."""
-    global _singleton  # noqa: PLW0603
-    _singleton = None
+    get_thermal_governor.cache_clear()

@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -27,6 +27,9 @@ from app.api.services.camera_manager import CameraControlsNotSupportedError, Cam
 from app.api.services.stream_service import StreamService
 from app.core.config import settings
 
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
 YOUTUBE_PROVIDER = "youtube"
 MOCK_CAMERA = "mock-camera"
 
@@ -36,12 +39,26 @@ class FakeBackend:
 
     def __init__(self) -> None:
         self.current_mode: CameraMode | None = None
-        self.cleanup = AsyncMock()
-        self.stop_stream = AsyncMock()
-        self.open = AsyncMock(side_effect=self._open)
-        self.capture_image = AsyncMock()
-        self.start_stream = AsyncMock()
-        self.get_stream_metadata = AsyncMock(return_value=({"Model": "mock-camera"}, {"FrameDuration": 33_333}))
+        self.cleanup: Any = AsyncMock()
+        self.stop_stream: Any = AsyncMock()
+        self.open: Any = AsyncMock(side_effect=self._open)
+        self.capture_image: Any = AsyncMock()
+        self.start_stream: Any = AsyncMock()
+        self.get_stream_metadata: Any = AsyncMock(return_value=({"Model": "mock-camera"}, {"FrameDuration": 33_333}))
+        # Optional controllable-backend hooks. Declare them as attributes so
+        # tests can dynamically attach AsyncMock instances without causing
+        # static analysis unresolved-attribute errors. They default to None
+        # which preserves runtime behaviour for tests that expect a
+        # non-controllable backend.
+        self.get_controls: Callable[[], Awaitable[CameraControlsView]] | None = None
+        self.get_controls_capabilities: Callable[[], Awaitable[CameraControlsCapabilities]] | None = None
+        self.set_controls: Callable[[dict[str, Any]], Awaitable[CameraControlsView]] | None = None
+        self.set_focus: Callable[[FocusControlRequest], Awaitable[CameraControlsView]] | None = None
+
+    @property
+    def camera(self) -> None:
+        """Return None for fake backend (no hardware camera)."""
+        return None
 
     async def _open(self, mode: CameraMode) -> None:
         self.current_mode = mode
@@ -129,7 +146,7 @@ class TestCameraManagerCleanup:
         mock_clear_directory = AsyncMock()
         monkeypatch.setattr("app.api.services.camera_manager.clear_directory", mock_clear_directory)
 
-        manager = CameraManager(backend=cast("StreamingCameraBackend",FakeBackend()))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
 
         await manager.cleanup()
 
@@ -143,7 +160,7 @@ class TestCameraManagerStartStreaming:
 
     async def test_raises_when_stream_already_active(self) -> None:
         """Should raise ActiveStreamError if a stream is already active."""
-        manager = CameraManager(backend=cast("StreamingCameraBackend",FakeBackend()))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
         manager.stream.mode = StreamMode.YOUTUBE
         manager.stream.started_at = datetime.now(UTC)
 
@@ -157,7 +174,7 @@ class TestCameraManagerStartStreaming:
             mode=StreamMode.YOUTUBE,
             url=AnyUrl("https://youtube.com/watch?v=valid-broadcast"),
         )
-        manager = CameraManager(backend=cast("StreamingCameraBackend",backend))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
 
         youtube_config = YoutubeStreamConfig(
             stream_key=SecretStr("valid-key"),
@@ -175,7 +192,7 @@ class TestCameraManagerStartStreaming:
         """Should reset stream state if the backend fails to start the stream."""
         backend = FakeBackend()
         backend.start_stream.side_effect = RuntimeError("camera disconnected")
-        manager = CameraManager(backend=cast("StreamingCameraBackend",backend))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
 
         youtube_config = YoutubeStreamConfig(
             stream_key=SecretStr("key"),
@@ -191,7 +208,7 @@ class TestCameraManagerStartStreaming:
         """Should bubble up provider-specific validation errors from the backend."""
         backend = FakeBackend()
         backend.start_stream.side_effect = YoutubeConfigRequiredError
-        manager = CameraManager(backend=cast("StreamingCameraBackend",backend))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
 
         with pytest.raises(YoutubeConfigRequiredError):
             await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=None)
@@ -209,7 +226,7 @@ class TestCameraManagerCapture:
             camera_properties={"Model": "mock-camera"},
             capture_metadata={"FrameDuration": 33_333},
         )
-        manager = CameraManager(backend=cast("StreamingCameraBackend",backend))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
         original = settings.image_path
         settings.image_path = tmp_path / "images"
         settings.image_path.mkdir()
@@ -228,7 +245,7 @@ class TestCameraManagerStopStreaming:
 
     async def test_raises_when_no_stream_active(self) -> None:
         """Should raise RuntimeError if no stream is active."""
-        manager = CameraManager(backend=cast("StreamingCameraBackend",FakeBackend()))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
 
         with pytest.raises(RuntimeError, match="No stream active"):
             await manager.stop_streaming()
@@ -236,7 +253,7 @@ class TestCameraManagerStopStreaming:
     async def test_stops_active_stream(self) -> None:
         """Should stop the stream through the backend."""
         backend = FakeBackend()
-        manager = CameraManager(backend=cast("StreamingCameraBackend",backend))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
         manager.stream.mode = StreamMode.YOUTUBE
         manager.stream.url = AnyUrl("https://youtube.com/watch?v=valid-broadcast")
         manager.stream.started_at = datetime.now(UTC)
@@ -252,7 +269,7 @@ class TestCameraManagerGetStatus:
 
     async def test_returns_status_without_stream(self) -> None:
         """Should return status with no stream info when stream is inactive."""
-        manager = CameraManager(backend=cast("StreamingCameraBackend",FakeBackend()))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
 
         status = await manager.get_status()
 
@@ -273,13 +290,11 @@ class TestCameraManagerControls:
     async def test_get_controls_dispatches_to_backend(self) -> None:
         """Should return control capabilities from a controllable backend."""
         backend = FakeBackend()
-        backend.get_controls = AsyncMock(return_value=CameraControlsView(supported=True))  # type: ignore[attr-defined]
-        backend.get_controls_capabilities = AsyncMock(  # type: ignore[attr-defined]
-            return_value=CameraControlsCapabilities(supported=True)
-        )
-        backend.set_controls = AsyncMock()  # type: ignore[attr-defined]
-        backend.set_focus = AsyncMock()  # type: ignore[attr-defined]
-        manager = CameraManager(backend=backend)
+        backend.get_controls = AsyncMock(return_value=CameraControlsView(supported=True))
+        backend.get_controls_capabilities = AsyncMock(return_value=CameraControlsCapabilities(supported=True))
+        backend.set_controls = AsyncMock()
+        backend.set_focus = AsyncMock()
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
 
         result = await manager.get_controls()
 
@@ -289,13 +304,11 @@ class TestCameraManagerControls:
     async def test_set_controls_dispatches_to_backend(self) -> None:
         """Should apply generic controls through a controllable backend."""
         backend = FakeBackend()
-        backend.get_controls = AsyncMock()  # type: ignore[attr-defined]
-        backend.get_controls_capabilities = AsyncMock(  # type: ignore[attr-defined]
-            return_value=CameraControlsCapabilities(supported=True)
-        )
-        backend.set_controls = AsyncMock(return_value=CameraControlsView(supported=True))  # type: ignore[attr-defined]
-        backend.set_focus = AsyncMock()  # type: ignore[attr-defined]
-        manager = CameraManager(backend=backend)
+        backend.get_controls = AsyncMock()
+        backend.get_controls_capabilities = AsyncMock(return_value=CameraControlsCapabilities(supported=True))
+        backend.set_controls = AsyncMock(return_value=CameraControlsView(supported=True))
+        backend.set_focus = AsyncMock()
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
         patch = CameraControlsPatch(controls={"ExposureTime": 10000})
 
         result = await manager.set_controls(patch)
@@ -306,13 +319,11 @@ class TestCameraManagerControls:
     async def test_set_focus_dispatches_to_backend(self) -> None:
         """Should apply friendly focus controls through a controllable backend."""
         backend = FakeBackend()
-        backend.get_controls = AsyncMock()  # type: ignore[attr-defined]
-        backend.get_controls_capabilities = AsyncMock(  # type: ignore[attr-defined]
-            return_value=CameraControlsCapabilities(supported=True)
-        )
-        backend.set_controls = AsyncMock()  # type: ignore[attr-defined]
-        backend.set_focus = AsyncMock(return_value=CameraControlsView(supported=True))  # type: ignore[attr-defined]
-        manager = CameraManager(backend=backend)
+        backend.get_controls = AsyncMock()
+        backend.get_controls_capabilities = AsyncMock(return_value=CameraControlsCapabilities(supported=True))
+        backend.set_controls = AsyncMock()
+        backend.set_focus = AsyncMock(return_value=CameraControlsView(supported=True))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
         request = FocusControlRequest(mode=FocusMode.CONTINUOUS)
 
         result = await manager.set_focus(request)
@@ -323,13 +334,11 @@ class TestCameraManagerControls:
     async def test_get_controls_capabilities_dispatches_to_backend(self) -> None:
         """Should return UI-friendly capabilities from a controllable backend."""
         backend = FakeBackend()
-        backend.get_controls = AsyncMock()  # type: ignore[attr-defined]
-        backend.set_controls = AsyncMock()  # type: ignore[attr-defined]
-        backend.set_focus = AsyncMock()  # type: ignore[attr-defined]
-        backend.get_controls_capabilities = AsyncMock(  # type: ignore[attr-defined]
-            return_value=CameraControlsCapabilities(supported=True)
-        )
-        manager = CameraManager(backend=backend)
+        backend.get_controls = AsyncMock()
+        backend.set_controls = AsyncMock()
+        backend.set_focus = AsyncMock()
+        backend.get_controls_capabilities = AsyncMock(return_value=CameraControlsCapabilities(supported=True))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
 
         result = await manager.get_controls_capabilities()
 

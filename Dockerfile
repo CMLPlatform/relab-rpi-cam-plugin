@@ -48,7 +48,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     > /etc/apt/sources.list.d/raspi.sources && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    dbus ffmpeg python3-picamera2 && \
+    ffmpeg python3-picamera2 && \
     rm -rf /var/lib/apt/lists/* && \
     useradd --create-home --uid 1000 --groups video rpicam
 

@@ -22,13 +22,13 @@ import logging
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.utils.backend_client import BackendUploadError, UploadedImageInfo, upload_image
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +168,8 @@ class UploadQueue:
                 logger.debug("Queue drain: %s still failing: %s", entry.image_id, exc)
                 await self.mark_attempt_failed(entry)
                 continue
-            except OSError as exc:
-                logger.exception("Queue drain: %s file unreadable: %s", entry.image_id, exc)
+            except OSError:
+                logger.exception("Queue drain: %s file unreadable", entry.image_id)
                 await self.mark_attempt_failed(entry)
                 continue
 
@@ -181,6 +181,7 @@ class UploadQueue:
     # ── Internal ──────────────────────────────────────────────────────────
 
     def _load_entry(self, metadata_path: Path) -> QueuedCapture | None:
+        """Load an entry from a metadata path, validating the presence of the image and parsing the fields."""
         try:
             payload = json.loads(metadata_path.read_text())
         except (OSError, json.JSONDecodeError):
@@ -218,6 +219,7 @@ class UploadQueue:
         attempts: int,
         next_attempt_at: datetime,
     ) -> None:
+        """Persist updated metadata for an entry, e.g. after a failed attempt."""
         payload = {
             "image_id": image_id,
             "filename": filename,
@@ -229,6 +231,7 @@ class UploadQueue:
         await asyncio.to_thread(metadata_path.write_text, json.dumps(payload, indent=2))
 
     async def _dead_letter(self, entry: QueuedCapture) -> None:
+        """Move an entry to the dead-letter area, removing it from the active queue."""
         dead_image = self._dead_root / entry.image_path.name
         dead_metadata = self._dead_root / entry.metadata_path.name
         await asyncio.to_thread(shutil.move, str(entry.image_path), str(dead_image))
@@ -236,6 +239,7 @@ class UploadQueue:
 
 
 def _unlink_quiet(path: Path) -> None:
+    """Unlink a file, ignoring if it's already gone."""
     with contextlib.suppress(FileNotFoundError):
         path.unlink()
 
@@ -250,12 +254,14 @@ class UploadQueueWorker:
         self._stop_event = asyncio.Event()
 
     def start(self) -> None:
+        """Start the background worker if it's not already running."""
         if self._task is not None and not self._task.done():
             return
         self._stop_event.clear()
         self._task = asyncio.create_task(self._run(), name="upload-queue-worker")
 
     async def stop(self) -> None:
+        """Stop the background worker if it's running, waiting for it to finish."""
         if self._task is None:
             return
         self._stop_event.set()
@@ -265,6 +271,7 @@ class UploadQueueWorker:
         self._task = None
 
     async def _run(self) -> None:
+        """Run the background worker loop, draining the queue at intervals."""
         while not self._stop_event.is_set():
             try:
                 await self._queue.drain_once()

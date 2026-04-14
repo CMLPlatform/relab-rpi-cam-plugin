@@ -1,5 +1,6 @@
 """Configuration settings for the Raspberry Pi API app."""
 
+import json
 import logging
 import secrets
 import warnings
@@ -109,7 +110,7 @@ class Settings(BaseSettings):
 
     @field_validator("authorized_api_keys", mode="before")
     @classmethod
-    def _parse_api_keys(cls, v: object) -> list[str]:  # noqa: PLR0911
+    def _parse_api_keys(cls, v: object) -> list[str]:
         """Accept a JSON array, a comma-separated string, or an empty value.
 
         Handles common .env mistakes such as ``[KEY]`` (unquoted JSON string)
@@ -119,23 +120,16 @@ class Settings(BaseSettings):
         if isinstance(v, list):
             return cast("list[str]", v)
         if not isinstance(v, str):
-            if isinstance(v, Iterable):
-                return cast("list[str]", list(v))
-            return []
+            return cast("list[str]", list(v)) if isinstance(v, Iterable) else []
         stripped = v.strip()
         if not stripped:
             return []
-        import json  # noqa: PLC0415
-
         try:
             parsed = json.loads(stripped)
         except json.JSONDecodeError:
             # Fall back to comma-separated: "key1, key2" or "[key1, key2]"
-            stripped = stripped.strip("[]")
-            return [k.strip().strip("\"'") for k in stripped.split(",") if k.strip()]
-        if not isinstance(parsed, list):
-            return [parsed]
-        return parsed
+            return [k.strip().strip("\"'") for k in stripped.strip("[]").split(",") if k.strip()]
+        return cast("list[str]", [parsed] if not isinstance(parsed, list) else parsed)
 
     @field_validator("debug", mode="before")
     @classmethod
@@ -199,7 +193,5 @@ def set_runtime_relay_credentials(
     if settings.local_relay_api_key not in settings.authorized_api_keys:
         settings.authorized_api_keys.append(settings.local_relay_api_key)
 
-    # Refresh the pre-computed auth key hashes after modifying the key list.
-    from app.api.dependencies.auth import reload_authorized_hashes  # noqa: PLC0415 — deferred to avoid circular import
-
-    reload_authorized_hashes()
+    # No longer refresh a module-level auth cache here; the auth
+    # dependency reads `settings.authorized_api_keys` dynamically.

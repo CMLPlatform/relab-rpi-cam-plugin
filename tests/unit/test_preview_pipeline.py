@@ -19,7 +19,7 @@ def _reset_singleton() -> None:
     reset_preview_pipeline_manager()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def stub_encoder_and_output(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Replace H264Encoder + FfmpegOutput with MagicMocks so start_encoder is safe."""
     encoder_cls = MagicMock(return_value=MagicMock(name="H264Encoder-instance"))
@@ -62,7 +62,7 @@ class TestAcquireRelease:
         assert camera.start_encoder.call_args.kwargs == {"name": "lores"}
         stub_encoder_and_output.assert_called_once()
 
-    async def test_second_acquire_only_increments_refcount(self, stub_encoder_and_output: MagicMock) -> None:
+    async def test_second_acquire_only_increments_refcount(self) -> None:
         """Subsequent subscribers must not restart the encoder."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
@@ -73,18 +73,17 @@ class TestAcquireRelease:
         assert manager.active_subscribers == 2
         camera.start_encoder.assert_called_once()
 
-    async def test_release_below_zero_is_noop(self, stub_encoder_and_output: MagicMock) -> None:
+    async def test_release_below_zero_is_noop(self) -> None:
         """Releasing with zero subscribers must not error or go negative."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
-        assert stub_encoder_and_output.called is False
 
         await manager.release(camera)
 
         assert manager.active_subscribers == 0
         camera.stop_encoder.assert_not_called()
 
-    async def test_last_release_stops_encoder(self, stub_encoder_and_output: MagicMock) -> None:
+    async def test_last_release_stops_encoder(self) -> None:
         """Releasing the last subscriber detaches the encoder."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
@@ -97,10 +96,7 @@ class TestAcquireRelease:
         encoder = camera.start_encoder.call_args.args[0]
         camera.stop_encoder.assert_called_once_with(encoder)
 
-    async def test_release_does_not_stop_while_other_subscribers_remain(
-        self,
-        stub_encoder_and_output: MagicMock,
-    ) -> None:
+    async def test_release_does_not_stop_while_other_subscribers_remain(self) -> None:
         """Releasing one of many must keep the encoder running."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
@@ -117,7 +113,7 @@ class TestAcquireRelease:
 class TestForceStop:
     """force_stop shuts down regardless of the refcount."""
 
-    async def test_force_stop_clears_refcount(self, stub_encoder_and_output: MagicMock) -> None:
+    async def test_force_stop_clears_refcount(self) -> None:
         """force_stop should zero the refcount and tear down the encoder."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
@@ -135,14 +131,14 @@ class TestForceStop:
 class TestSetBitrate:
     """Thermal governor support: set_bitrate reconfigures the live encoder."""
 
-    async def test_set_bitrate_while_idle_is_noop(self, stub_encoder_and_output: MagicMock) -> None:
+    async def test_set_bitrate_while_idle_is_noop(self) -> None:
         """Setting a bitrate with no active encoder just stores the new value."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
 
         await manager.set_bitrate(camera, 200_000)
 
-        assert manager._bitrate == 200_000  # noqa: SLF001
+        assert manager._bitrate == 200_000
         camera.stop_encoder.assert_not_called()
         camera.start_encoder.assert_not_called()
 
@@ -161,8 +157,9 @@ class TestSetBitrate:
 
         await manager.set_bitrate(camera, 200_000)
 
-        assert manager._bitrate == 200_000  # noqa: SLF001
+        assert manager._bitrate == 200_000
         camera.stop_encoder.assert_called_once_with(old_encoder)
         camera.start_encoder.assert_called_once()
-        # H264Encoder should have been instantiated with the new bitrate.
-        assert stub_encoder_and_output.call_args.kwargs.get("bitrate") == 200_000
+        # H264Encoder instance should have its bitrate attribute set.
+        new_encoder = stub_encoder_and_output.return_value
+        assert new_encoder.bitrate == 200_000

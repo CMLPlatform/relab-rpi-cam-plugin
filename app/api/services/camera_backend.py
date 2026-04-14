@@ -21,6 +21,7 @@ from app.api.schemas.camera_controls import (
     JsonValue,
 )
 from app.api.schemas.streaming import YoutubeStreamConfig
+from app.api.services.hardware_protocols import Picamera2Like
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PilImage
@@ -52,6 +53,10 @@ class CameraBackend(Protocol):
     """Core behaviour required from every camera backend."""
 
     current_mode: CameraMode | None
+
+    @property
+    def camera(self) -> Picamera2Like | None:
+        """The live hardware camera handle, or ``None`` if not yet opened."""
 
     async def open(self, mode: CameraMode) -> None:
         """Prepare the backend for the requested camera mode."""

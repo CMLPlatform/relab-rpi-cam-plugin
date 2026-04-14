@@ -6,6 +6,20 @@ import pytest
 from relab_rpi_cam_models.telemetry import TelemetrySnapshot, ThermalState
 
 from app.api.routers.metrics import render_snapshot
+from tests.constants import (
+    MET_CPU_10_0,
+    MET_CPU_NAME,
+    MET_CPU_TEMP_55_5,
+    MET_CPU_TEMP_NAME,
+    MET_DISK_30_0,
+    MET_DISK_NAME,
+    MET_MEM_20_0,
+    MET_MEM_NAME,
+    MET_PREVIEW_FPS_24_5,
+    MET_PREVIEW_FPS_NAME,
+    MET_PREVIEW_SESSIONS_0_0,
+    MET_PREVIEW_SESSIONS_NAME,
+)
 
 
 def _snapshot(**overrides: object) -> TelemetrySnapshot:
@@ -21,7 +35,7 @@ def _snapshot(**overrides: object) -> TelemetrySnapshot:
         "current_preview_size": None,
     }
     defaults.update(overrides)
-    return TelemetrySnapshot(**defaults)  # type: ignore[arg-type]
+    return TelemetrySnapshot(**defaults)
 
 
 class TestRenderSnapshot:
@@ -30,21 +44,21 @@ class TestRenderSnapshot:
     def test_core_gauges_present(self) -> None:
         """Baseline gauges should always appear."""
         text = render_snapshot(_snapshot())
-        assert "rpi_cam_cpu_percent 10.0" in text
-        assert "rpi_cam_mem_percent 20.0" in text
-        assert "rpi_cam_disk_percent 30.0" in text
-        assert "rpi_cam_preview_sessions 0.0" in text
-        assert "rpi_cam_cpu_temp_celsius 55.5" in text
+        assert MET_CPU_10_0 in text
+        assert MET_MEM_20_0 in text
+        assert MET_DISK_30_0 in text
+        assert MET_PREVIEW_SESSIONS_0_0 in text
+        assert MET_CPU_TEMP_55_5 in text
 
     def test_help_and_type_lines_emitted(self) -> None:
         """Each gauge must come with HELP and TYPE metadata lines."""
         text = render_snapshot(_snapshot())
         for metric in (
-            "rpi_cam_cpu_percent",
-            "rpi_cam_mem_percent",
-            "rpi_cam_disk_percent",
-            "rpi_cam_preview_sessions",
-            "rpi_cam_cpu_temp_celsius",
+            MET_CPU_NAME,
+            MET_MEM_NAME,
+            MET_DISK_NAME,
+            MET_PREVIEW_SESSIONS_NAME,
+            MET_CPU_TEMP_NAME,
             "rpi_cam_thermal_state",
         ):
             assert f"# HELP {metric} " in text
@@ -53,17 +67,18 @@ class TestRenderSnapshot:
     def test_missing_cpu_temp_omits_metric(self) -> None:
         """cpu_temp_c=None must drop the gauge cleanly."""
         text = render_snapshot(_snapshot(cpu_temp_c=None))
-        assert "rpi_cam_cpu_temp_celsius" not in text
+
+        assert MET_CPU_TEMP_NAME not in text
 
     def test_missing_preview_fps_omits_metric(self) -> None:
         """preview_fps=None must drop the gauge cleanly."""
         text = render_snapshot(_snapshot(preview_fps=None))
-        assert "rpi_cam_preview_fps" not in text
+        assert MET_PREVIEW_FPS_NAME not in text
 
     def test_preview_fps_included_when_present(self) -> None:
         """When preview_fps is set, it should appear as a gauge."""
         text = render_snapshot(_snapshot(preview_fps=24.5))
-        assert "rpi_cam_preview_fps 24.5" in text
+        assert MET_PREVIEW_FPS_24_5 in text
 
     @pytest.mark.parametrize(
         ("state", "active_line"),

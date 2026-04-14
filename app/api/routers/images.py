@@ -7,7 +7,7 @@ retrieval endpoint has been removed — bytes live in exactly one place.
 """
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import Response
@@ -42,14 +42,16 @@ async def preview_image(camera_manager: CameraManagerDependency) -> Response:
 @router.post("", status_code=201, summary="Capture image")
 async def capture_image(
     camera_manager: CameraManagerDependency,
-    upload_metadata: dict[str, Any] | None = Body(
-        default=None,
-        description=(
-            "Opaque metadata forwarded to the backend upload endpoint. Typically includes "
-            "`product_id` and `description` for the parent association, but the Pi treats "
-            "this dict as a pass-through so non-standard backends can add their own fields."
+    upload_metadata: Annotated[
+        dict[str, Any] | None,
+        Body(
+            description=(
+                "Opaque metadata forwarded to the backend upload endpoint. Typically includes "
+                "`product_id` and `description` for the parent association, but the Pi treats "
+                "this dict as a pass-through so non-standard backends can add their own fields."
+            )
         ),
-    ),
+    ] = None,
 ) -> ImageCaptureResponse:
     """Capture a full-resolution image, push it to the backend, and return the result."""
     try:

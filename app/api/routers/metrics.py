@@ -50,7 +50,10 @@ def render_snapshot(snapshot: TelemetrySnapshot) -> str:
         )
 
     # Thermal state as a labelled enum series (standard Prometheus idiom for enums).
-    lines += ["# HELP rpi_cam_thermal_state Thermal governor state (1 for the active band).", "# TYPE rpi_cam_thermal_state gauge"]
+    lines += [
+        "# HELP rpi_cam_thermal_state Thermal governor state (1 for the active band).",
+        "# TYPE rpi_cam_thermal_state gauge",
+    ]
     for state in ThermalState:
         active = 1 if snapshot.thermal_state == state else 0
         lines.append(f'rpi_cam_thermal_state{{state="{state.value}"}} {active}')

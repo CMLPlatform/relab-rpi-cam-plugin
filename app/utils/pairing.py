@@ -79,6 +79,17 @@ class PairingState:
 _state = PairingState()
 
 
+@dataclass(frozen=True)
+class PairingRegistration:
+    """Material needed for one pairing registration attempt."""
+
+    code: str
+    fingerprint: str
+    private_key: ec.EllipticCurvePrivateKey
+    key_id: str
+    public_key_jwk: dict[str, str]
+
+
 def get_pairing_state() -> PairingState:
     """Return the current pairing state (read by the setup page)."""
     return _state
@@ -267,50 +278,76 @@ async def _pairing_cycle(
     on_paired: Callable[[], Coroutine[Any, Any, None]],
 ) -> None:
     """Single pairing attempt: register a code and poll until claimed."""
+    registration = await _register_pairing_code(client, base_url)
+    _log_pairing_ready(registration.code)
+    _state.status = "waiting"
+    data = await _poll_pairing_status(client, base_url, registration.code, registration.fingerprint)
+    await _complete_pairing(data, registration.private_key, on_paired)
+
+
+def _new_pairing_registration() -> PairingRegistration:
     code, fingerprint = _generate_code_and_fingerprint()
     private_key = _generate_private_key()
     key_id = secrets.token_urlsafe(16)
-    public_key_jwk = _public_jwk(private_key, key_id)
-    _set_pairing_code_state(code, fingerprint)
+    return PairingRegistration(
+        code=code,
+        fingerprint=fingerprint,
+        private_key=private_key,
+        key_id=key_id,
+        public_key_jwk=_public_jwk(private_key, key_id),
+    )
+
+
+def _prepare_registration_state(registration: PairingRegistration) -> None:
+    _set_pairing_code_state(registration.code, registration.fingerprint)
     _state.status = "registering"
     _state.error = None
 
-    # Register
+
+def _registration_payload(registration: PairingRegistration) -> dict[str, object]:
+    return {
+        "code": registration.code,
+        "rpi_fingerprint": registration.fingerprint,
+        "public_key_jwk": registration.public_key_jwk,
+        "key_id": registration.key_id,
+    }
+
+
+async def _register_pairing_code(client: httpx.AsyncClient, base_url: str) -> PairingRegistration:
+    registration = _new_pairing_registration()
+    _prepare_registration_state(registration)
+
     for _attempt in range(3):
         try:
             resp = await client.post(
                 f"{base_url}/plugins/rpi-cam/pairing/register",
-                json={
-                    "code": code,
-                    "rpi_fingerprint": fingerprint,
-                    "public_key_jwk": public_key_jwk,
-                    "key_id": key_id,
-                },
+                json=_registration_payload(registration),
             )
         except httpx.TimeoutException:
             retry_delay_s = core_config.settings.pairing_register_timeout_retry_s
-            _log_pairing_timeout("REGISTER", code, retry_delay_s)
+            _log_pairing_timeout("REGISTER", registration.code, retry_delay_s)
             await asyncio.sleep(retry_delay_s)
             continue
+
         if resp.status_code == 201:
-            break
+            return registration
         if resp.status_code == 409:
-            # Code collision — regenerate
-            code, fingerprint = _generate_code_and_fingerprint()
-            private_key = _generate_private_key()
-            key_id = secrets.token_urlsafe(16)
-            public_key_jwk = _public_jwk(private_key, key_id)
-            _set_pairing_code_state(code, fingerprint)
+            registration = _new_pairing_registration()
+            _prepare_registration_state(registration)
             continue
+
         resp.raise_for_status()
-    else:
-        msg = "Failed to register pairing code after 3 attempts."
-        raise RuntimeError(msg)
 
-    _log_pairing_ready(code)
-    _state.status = "waiting"
+    msg = "Failed to register pairing code after 3 attempts."
+    raise RuntimeError(msg)
 
-    # Poll
+
+async def _poll_pairing_status(
+    client: httpx.AsyncClient,
+    base_url: str,
+    code: str,
+    fingerprint: str,
+) -> dict[str, object]:
     while True:
         poll_interval_s = core_config.settings.pairing_poll_interval_s
         await asyncio.sleep(poll_interval_s)
@@ -322,45 +359,54 @@ async def _pairing_cycle(
         except httpx.TimeoutException:
             _log_pairing_timeout("POLL", code, poll_interval_s)
             continue
+
         if resp.status_code == 404:
-            # Code expired — restart cycle
             logger.warning("PAIRING ROTATING | expired_code=%s reason=expired", code)
             raise PairingCodeExpiredError
 
         resp.raise_for_status()
         data = resp.json()
-
         if data["status"] == STATUS_WAITING:
             continue
+        return data
 
-        if data["status"] == STATUS_PAIRED:
-            logger.info("PAIRING COMPLETE | camera_id=%s relay_starting=true", data["camera_id"])
-            _state.status = STATUS_PAIRED
-            _state.code = None
-            _state.fingerprint = None
-            _state.expires_at = None
 
-            # Persist credentials to a separate JSON file (not .env)
-            _save_relay_credentials(
-                relay_backend_url=data["ws_url"],
-                camera_id=data["camera_id"],
-                relay_auth_scheme=data["auth_scheme"],
-                key_id=data["key_id"],
-                private_key_pem=_private_key_pem(private_key),
-            )
+def _clear_active_pairing_code() -> None:
+    _state.code = None
+    _state.fingerprint = None
+    _state.expires_at = None
 
-            # Update in-memory settings
-            core_config.set_runtime_relay_credentials(
-                relay_backend_url=data["ws_url"],
-                relay_camera_id=data["camera_id"],
-                relay_auth_scheme=data["auth_scheme"],
-                relay_key_id=data["key_id"],
-                relay_private_key_pem=_private_key_pem(private_key),
-            )
 
-            # Start the relay
-            await on_paired()
-            return
+async def _complete_pairing(
+    data: dict[str, object],
+    private_key: ec.EllipticCurvePrivateKey,
+    on_paired: Callable[[], Coroutine[Any, Any, None]],
+) -> None:
+    camera_id = str(data["camera_id"])
+    relay_backend_url = str(data["ws_url"])
+    relay_auth_scheme = str(data["auth_scheme"])
+    key_id = str(data["key_id"])
+    private_key_pem = _private_key_pem(private_key)
+
+    logger.info("PAIRING COMPLETE | camera_id=%s relay_starting=true", camera_id)
+    _state.status = STATUS_PAIRED
+    _clear_active_pairing_code()
+
+    _save_relay_credentials(
+        relay_backend_url=relay_backend_url,
+        camera_id=camera_id,
+        relay_auth_scheme=relay_auth_scheme,
+        key_id=key_id,
+        private_key_pem=private_key_pem,
+    )
+    core_config.set_runtime_relay_credentials(
+        relay_backend_url=relay_backend_url,
+        relay_camera_id=camera_id,
+        relay_auth_scheme=relay_auth_scheme,
+        relay_key_id=key_id,
+        relay_private_key_pem=private_key_pem,
+    )
+    await on_paired()
 
 
 def _generate_code_and_fingerprint() -> tuple[str, str]:

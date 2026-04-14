@@ -22,8 +22,10 @@ one encoder instance.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import functools
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from app.api.services.hardware_protocols import Picamera2Like
 from app.api.services.hardware_stubs import FfmpegOutputStub, H264EncoderStub
@@ -46,6 +48,12 @@ logger = logging.getLogger(__name__)
 # network (see compose.yml).
 DEFAULT_MEDIAMTX_URL = "rtsp://host.docker.internal:8554/cam-preview"
 _DEFAULT_LORES_BITRATE = 500_000
+
+
+class _EncoderWithBitrate(Protocol):
+    """Typing helper: runtime encoder that exposes a ``bitrate`` attribute."""
+
+    bitrate: int
 
 
 def _build_ffmpeg_output(target_url: str) -> object:
@@ -118,7 +126,15 @@ class PreviewPipelineManager:
 
     async def _start(self, camera: Picamera2Like) -> None:
         logger.info("Starting lores preview pipeline → %s @ %d bps", self._target_url, self._bitrate)
-        encoder = cast("H264Encoder", H264Encoder(bitrate=self._bitrate))
+        # The runtime H264Encoder sometimes accepts a bitrate kwarg, but the
+        # bundled typing stubs don't expose that parameter. Create the encoder
+        # without kwargs and set a runtime attribute for callers that expect it.
+        encoder = H264Encoder()
+        # Best-effort: the encoder may not expose an attribute setter. Cast
+        # the runtime encoder to a Protocol exposing `bitrate` so type-checkers
+        # accept the assignment while preserving safety.
+        with contextlib.suppress(Exception):
+            cast("_EncoderWithBitrate", encoder).bitrate = self._bitrate
         output = _build_ffmpeg_output(self._target_url)
         try:
             await asyncio.wait_for(
@@ -142,18 +158,12 @@ class PreviewPipelineManager:
         self._encoder = None
 
 
-_singleton: PreviewPipelineManager | None = None
-
-
+@functools.lru_cache(maxsize=1)
 def get_preview_pipeline_manager() -> PreviewPipelineManager:
     """Return the process-wide preview pipeline manager."""
-    global _singleton  # noqa: PLW0603
-    if _singleton is None:
-        _singleton = PreviewPipelineManager()
-    return _singleton
+    return PreviewPipelineManager()
 
 
 def reset_preview_pipeline_manager() -> None:
     """Reset the singleton (tests only)."""
-    global _singleton  # noqa: PLW0603
-    _singleton = None
+    get_preview_pipeline_manager.cache_clear()

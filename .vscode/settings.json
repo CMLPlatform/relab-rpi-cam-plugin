@@ -12,6 +12,6 @@
 			"python": ".venv/"
 		}
 	},
-	"ty.interpreter": [".venv/bin/python"],
+
 }
 

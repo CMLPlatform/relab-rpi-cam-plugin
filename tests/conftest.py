@@ -43,9 +43,17 @@ class FakeBackend:
         self.stream_url = AnyUrl("https://youtube.com/watch?v=TEST_BROADCAST_KEY_123")
         self.image = Image.new("RGB", (100, 100), color="red")
         self.camera_properties = {"Model": "mock-camera"}
-        self.capture_metadata = {"FrameDuration": 33333}
+
+        # Explicitly type capture metadata as JsonValue so it is compatible
+        # with schema fields that accept generic JSON-like data.
+        self.capture_metadata: dict[str, JsonValue] = {"FrameDuration": 33333}
         self.last_youtube_config: YoutubeStreamConfig | None = None
         self.controls: dict[str, JsonValue] = {}
+
+    @property
+    def camera(self) -> None:
+        """Return None for fake backend (no hardware camera)."""
+        return None
 
     async def open(self, mode: CameraMode) -> None:
         """Open the fake backend."""
@@ -76,7 +84,7 @@ class FakeBackend:
         """Stop a fake stream."""
         self.stream_active = False
 
-    async def get_stream_metadata(self) -> tuple[dict[str, str], dict[str, int]]:
+    async def get_stream_metadata(self) -> tuple[dict[str, str], dict[str, JsonValue]]:
         """Return mock camera metadata."""
         return self.camera_properties, self.capture_metadata
 

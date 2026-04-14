@@ -63,7 +63,8 @@ async def upload_image(
     try:
         assertion = build_device_assertion()
     except (ValueError, TypeError) as exc:
-        raise BackendUploadError(f"Failed to mint device assertion: {exc}") from exc
+        msg = f"Failed to mint device assertion: {exc}"
+        raise BackendUploadError(msg) from exc
 
     files = {"file": (filename, image_bytes, "image/jpeg")}
     data = {
@@ -76,23 +77,27 @@ async def upload_image(
         async with httpx.AsyncClient(timeout=_UPLOAD_TIMEOUT) as client:
             response = await client.post(url, files=files, data=data, headers=headers)
     except httpx.HTTPError as exc:
-        raise BackendUploadError(f"Network error during image upload: {exc}") from exc
+        msg_0 = f"Network error during image upload: {exc}"
+        raise BackendUploadError(msg_0) from exc
 
     if response.status_code >= 400:
         body_preview = response.text[:200]
+        msg_0 = f"Backend rejected upload: HTTP {response.status_code} — {body_preview}"
         raise BackendUploadError(
-            f"Backend rejected upload: HTTP {response.status_code} — {body_preview}",
+            msg_0,
         )
 
     try:
         payload = response.json()
     except ValueError as exc:
-        raise BackendUploadError(f"Backend upload response was not JSON: {response.text[:200]!r}") from exc
+        msg_1 = f"Backend upload response was not JSON: {response.text[:200]!r}"
+        raise BackendUploadError(msg_1) from exc
 
     try:
         image_id = str(payload["image_id"])
         image_url = AnyUrl(str(payload["image_url"]))
     except (KeyError, TypeError, ValueError) as exc:
-        raise BackendUploadError(f"Backend upload response missing fields: {payload!r}") from exc
+        msg_2 = f"Backend upload response missing fields: {payload!r}"
+        raise BackendUploadError(msg_2) from exc
 
     return UploadedImageInfo(image_id=image_id, image_url=image_url)

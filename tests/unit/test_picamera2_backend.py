@@ -3,17 +3,18 @@
 from unittest.mock import MagicMock
 
 import pytest
-
-# ``libcamera`` is only installable on Raspberry Pi OS (ships via apt, not pip).
-# Skip this module entirely on dev hosts so the rest of the suite can run.
-controls = pytest.importorskip("libcamera").controls
-from pydantic import AnyUrl, SecretStr  # noqa: E402
+from pydantic import AnyUrl, SecretStr
 from relab_rpi_cam_models.camera import CameraMode
 from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.schemas.camera_controls import FocusControlRequest, FocusMode
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services.picamera2_backend import Picamera2Backend
+
+# ``libcamera`` is only installable on Raspberry Pi OS (ships via apt, not pip).
+# Skip this module entirely on dev hosts so the rest of the suite can run.
+libcamera = pytest.importorskip("libcamera")
+controls = libcamera.controls
 
 
 class TestPicamera2Backend:
@@ -27,7 +28,7 @@ class TestPicamera2Backend:
         """Opening again after the pipeline is running should not reconfigure."""
         backend = Picamera2Backend()
         camera = MagicMock()
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.PHOTO
 
         await backend.open(CameraMode.VIDEO)
@@ -67,7 +68,7 @@ class TestPicamera2Backend:
         camera.camera_properties = {"Model": "mock"}
         camera.capture_metadata.return_value = {"FrameDuration": 33_333}
         camera.capture_image.return_value = MagicMock()
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.PHOTO
 
         await backend.capture_image()
@@ -85,7 +86,7 @@ class TestPicamera2Backend:
         """start_stream should attach an encoder to the persistent main stream by name."""
         backend = Picamera2Backend()
         camera = MagicMock()
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         monkeypatch.setattr("app.api.services.picamera2_backend.H264Encoder", MagicMock)
@@ -98,7 +99,7 @@ class TestPicamera2Backend:
         assert result.url == AnyUrl("https://youtube.com/watch?v=public-id")
         camera.start_encoder.assert_called_once()
         assert camera.start_encoder.call_args.kwargs == {"name": "main"}
-        assert backend._main_encoder is camera.start_encoder.call_args.args[0]  # noqa: SLF001
+        assert backend._main_encoder is camera.start_encoder.call_args.args[0]
         camera.start_recording.assert_not_called()
 
     async def test_stop_stream_keeps_camera_running(self) -> None:
@@ -106,13 +107,13 @@ class TestPicamera2Backend:
         backend = Picamera2Backend()
         camera = MagicMock()
         encoder = MagicMock()
-        backend._camera = camera  # noqa: SLF001
-        backend._main_encoder = encoder  # noqa: SLF001
+        backend._camera = camera
+        backend._main_encoder = encoder
 
         await backend.stop_stream()
 
         camera.stop_encoder.assert_called_once_with(encoder)
-        assert backend._main_encoder is None  # noqa: SLF001
+        assert backend._main_encoder is None
         camera.stop.assert_not_called()
         camera.start.assert_not_called()
 
@@ -125,7 +126,7 @@ class TestPicamera2Backend:
             "ExposureTime": (1, 1_000_000, 10_000),
         }
         camera.capture_metadata.return_value = {"AfState": controls.AfStateEnum.Focused, "ExposureTime": 10_000}
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         view = await backend.get_controls()
@@ -142,7 +143,7 @@ class TestPicamera2Backend:
         backend = Picamera2Backend()
         camera = MagicMock()
         camera.camera_controls = {"ExposureTime": (1, 1_000_000, 10_000)}
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         with pytest.raises(ValueError, match="Unknown camera controls: Nope"):
@@ -156,7 +157,7 @@ class TestPicamera2Backend:
         camera = MagicMock()
         camera.camera_controls = {"AfMode": (0, 2, 1)}
         camera.capture_metadata.return_value = {"AfState": controls.AfStateEnum.Focused}
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         await backend.set_controls({"AfMode": "continuous"})
@@ -169,7 +170,7 @@ class TestPicamera2Backend:
         camera = MagicMock()
         camera.camera_controls = {"AfMode": (0, 2, 1)}
         camera.capture_metadata.return_value = {}
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         await backend.set_focus(FocusControlRequest(mode=FocusMode.CONTINUOUS))
@@ -182,7 +183,7 @@ class TestPicamera2Backend:
         camera = MagicMock()
         camera.camera_controls = {"AfMode": (0, 2, 1)}
         camera.capture_metadata.return_value = {}
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         await backend.set_focus(FocusControlRequest(mode=FocusMode.AUTO, trigger_cycle=True))
@@ -196,7 +197,7 @@ class TestPicamera2Backend:
         camera = MagicMock()
         camera.camera_controls = {"AfMode": (0, 2, 1), "LensPosition": (0.0, 10.0, 1.0)}
         camera.capture_metadata.return_value = {}
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         await backend.set_focus(FocusControlRequest(mode=FocusMode.MANUAL, lens_position=2.5))
@@ -212,7 +213,7 @@ class TestPicamera2Backend:
             "AfMode": (controls.AfModeEnum.Manual, controls.AfModeEnum.Continuous, controls.AfModeEnum.Auto),
         }
         camera.capture_metadata.return_value = {}
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         caps = await backend.get_controls_capabilities()
@@ -224,12 +225,12 @@ class TestPicamera2Backend:
         """Cleanup should stop/close the camera and clear the reference."""
         backend = Picamera2Backend()
         camera = MagicMock()
-        backend._camera = camera  # noqa: SLF001
+        backend._camera = camera
         backend.current_mode = CameraMode.PHOTO
 
         await backend.cleanup()
 
         camera.stop.assert_called_once()
         camera.close.assert_called_once()
-        assert backend._camera is None  # noqa: SLF001
+        assert backend._camera is None
         assert backend.current_mode is None

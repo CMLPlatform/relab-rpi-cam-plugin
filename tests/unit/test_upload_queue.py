@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
 
@@ -15,7 +15,7 @@ from app.utils.backend_client import BackendUploadError, UploadedImageInfo
 from app.utils.upload_queue import UploadQueue, UploadQueueWorker
 
 if TYPE_CHECKING:
-    pass
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -62,18 +62,18 @@ class TestEnqueue:
             upload_metadata={"product_id": 42},
         )
 
-        assert not sample_image.exists()
+        assert not await asyncio.to_thread(sample_image.exists)
         assert entry.image_path == queue_root / "abc123.jpg"
         assert entry.metadata_path == queue_root / "abc123.json"
-        assert entry.image_path.exists()
-        assert entry.metadata_path.exists()
+        assert await asyncio.to_thread(entry.image_path.exists)
+        assert await asyncio.to_thread(entry.metadata_path.exists)
 
     async def test_creates_queue_and_dead_directories(self, queue_root: Path) -> None:
         """Instantiating the queue should create both the root and the dead-letter subdir."""
-        assert not queue_root.exists()
+        assert not await asyncio.to_thread(queue_root.exists)
         UploadQueue(queue_root)
-        assert queue_root.is_dir()
-        assert (queue_root / "dead").is_dir()
+        assert await asyncio.to_thread(queue_root.is_dir)
+        assert await asyncio.to_thread((queue_root / "dead").is_dir)
 
 
 class TestIterPending:
@@ -136,8 +136,8 @@ class TestDrainOnce:
 
         assert successes == 1
         assert upload_successful.await_count == 1
-        assert not entry.image_path.exists()
-        assert not entry.metadata_path.exists()
+        assert not await asyncio.to_thread(entry.image_path.exists)
+        assert not await asyncio.to_thread(entry.metadata_path.exists)
 
     async def test_failed_drain_increments_attempts(
         self,
@@ -159,7 +159,7 @@ class TestDrainOnce:
 
         assert successes == 0
         assert upload_failing.await_count == 1
-        assert entry.image_path.exists()  # still present
+        assert await asyncio.to_thread(entry.image_path.exists)  # still present
         reloaded = queue.iter_pending()[0]
         assert reloaded.attempts == 1
         assert reloaded.next_attempt_at > datetime.now(UTC)
@@ -202,7 +202,7 @@ class TestDeadLetter:
             upload_metadata={},
         )
 
-        max_attempts = upload_queue_mod._MAX_ATTEMPTS  # noqa: SLF001
+        max_attempts = upload_queue_mod._MAX_ATTEMPTS
         # Simulate attempts 1..(max_attempts - 1) — not yet dead.
         current = entry
         for attempt in range(1, max_attempts):
@@ -217,8 +217,8 @@ class TestDeadLetter:
         dead = await queue.mark_attempt_failed(current)
         assert dead is True
         assert queue.iter_pending() == []
-        assert (queue_root / "dead" / "doomed.jpg").exists()
-        assert (queue_root / "dead" / "doomed.json").exists()
+        assert await asyncio.to_thread((queue_root / "dead" / "doomed.jpg").exists)
+        assert await asyncio.to_thread((queue_root / "dead" / "doomed.json").exists)
 
 
 class TestUploadQueueWorker:
@@ -230,7 +230,6 @@ class TestUploadQueueWorker:
         worker = UploadQueueWorker(queue, poll_interval_s=0.01)
         worker.start()
         # Give the worker one tick to enter its loop.
-        import asyncio  # noqa: PLC0415
 
         await asyncio.sleep(0.05)
         await worker.stop()

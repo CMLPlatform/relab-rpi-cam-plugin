@@ -153,7 +153,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
     # Start the thermal governor. It watches CPU temperature and dynamically
     # drops the lores preview encoder bitrate when the SoC runs hot.
     thermal_governor = get_thermal_governor()
-    thermal_governor.start(camera_getter=lambda: camera_manager.backend._camera)  # noqa: SLF001
+    thermal_governor.start(camera_getter=lambda: camera_manager.backend.camera)
     logger.info("Thermal governor started")
 
     yield

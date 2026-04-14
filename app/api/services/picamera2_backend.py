@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, NoReturn, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from relab_rpi_cam_models.camera import CameraMode
 from relab_rpi_cam_models.stream import StreamMode
@@ -31,7 +31,9 @@ from app.api.services.stream import get_broadcast_url, get_ffmpeg_output
 from app.core.config import settings
 
 if TYPE_CHECKING:
-    from libcamera import controls
+    # libcamera's `controls` module isn't available to the typechecker
+    # in all environments; treat it as Any for static checks.
+    controls: Any
     from picamera2 import Picamera2
     from picamera2.encoders import H264Encoder
 else:
@@ -73,6 +75,11 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
         self._camera: Picamera2Like | None = None
         self._main_encoder: H264Encoder | None = None
         self.current_mode: CameraMode | None = None
+
+    @property
+    def camera(self) -> Picamera2Like | None:
+        """The live Picamera2 instance, or ``None`` if not yet opened."""
+        return self._camera
 
     async def open(self, mode: CameraMode) -> None:
         """Initialise the persistent pipeline on first call; idempotent thereafter."""
@@ -201,12 +208,12 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
             controls=sorted(view.controls.values(), key=lambda item: item.name.lower()),
         )
 
-    async def set_controls(self, controls_patch: dict[str, JsonValue]) -> CameraControlsView:
+    async def set_controls(self, controls: dict[str, JsonValue]) -> CameraControlsView:
         """Apply Picamera2 controls by backend-native control name."""
         await self.open(CameraMode.VIDEO)
         camera = self._require_camera()
-        controls_patch = self._normalize_controls(camera, controls_patch)
-        await asyncio.to_thread(camera.set_controls, controls_patch)
+        normalized_controls = self._normalize_controls(camera, controls)
+        await asyncio.to_thread(camera.set_controls, normalized_controls)
         return await self._build_controls_view(camera)
 
     async def set_focus(self, request: FocusControlRequest) -> CameraControlsView:

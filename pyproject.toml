@@ -43,7 +43,13 @@
     Repository = "https://github.com/CMLPlatform/relab-rpi-cam-plugin.git"
 
 [dependency-groups]
-  dev  = [{ include-group = "test" }, "commitizen>=4.8.3", "pre-commit>=4.2.0", "ruff>=0.9.6", "ty>=0.0.29"]
+  dev  = [
+    { include-group = "test" },
+    "commitizen>=4.8.3",
+    "pre-commit>=4.2.0",
+    "ruff>=0.9.6",
+    "ty>=0.0.29",
+]
   test = ["pytest>=8.0", "pytest-asyncio>=0.25", "pytest-cov>=6.0"]
 
 ### Tools configuration
@@ -107,7 +113,7 @@
       runtime-evaluated-base-classes = ["pydantic.BaseModel"]
 
     [tool.ruff.lint.per-file-ignores]
-      "tests/**" = ["S101"]
+      "tests/**" = ["S101", "SLF001"]
 
     [tool.ruff.lint.pydocstyle]
       convention = "google"

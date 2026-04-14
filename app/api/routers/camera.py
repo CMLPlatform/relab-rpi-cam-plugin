@@ -57,8 +57,7 @@ async def get_camera_control_capabilities(
     "/controls",
     summary="Set camera controls",
     description=(
-        "Apply backend-native camera controls. Control names are the "
-        "exact strings reported by /camera/controls."
+        "Apply backend-native camera controls. Control names are the exact strings reported by /camera/controls."
     ),
 )
 async def set_camera_controls(

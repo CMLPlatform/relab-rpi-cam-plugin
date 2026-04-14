@@ -69,6 +69,9 @@ class Picamera2Stub:
 class H264EncoderStub:
     """Stub used on non-Raspberry Pi hosts so the app can start."""
 
+    # Present on the runtime encoder; declare for static checkers/tests.
+    bitrate: ClassVar[int | None] = None
+
     def __init__(self) -> None:
         raise RuntimeError(_ERR)
 
