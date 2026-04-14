@@ -35,7 +35,10 @@ import httpx
 from fastapi import APIRouter, Body, HTTPException, Path
 from pydantic import BaseModel, Field
 
+from relab_rpi_cam_models.camera import CameraMode
+
 from app.api.dependencies.camera_management import CameraManagerDependency
+from app.api.exceptions import CameraInitializationError
 from app.api.services.preview_pipeline import (
     PreviewPipelineManager,
     get_preview_pipeline_manager,
@@ -85,7 +88,7 @@ async def open_whep_session(
 ) -> WhepAnswerResponse:
     """Forward a browser WHEP offer to the local MediaMTX and return its answer."""
     pipeline = get_preview_pipeline_manager()
-    camera = _require_camera(camera_manager)
+    camera = await _ensure_camera(camera_manager)
 
     try:
         await pipeline.acquire(camera)
@@ -124,7 +127,7 @@ async def close_whep_session(
         raise HTTPException(status_code=404, detail=f"Unknown WHEP session: {session_id}")
 
     pipeline = get_preview_pipeline_manager()
-    camera = _require_camera(camera_manager)
+    camera = await _ensure_camera(camera_manager)
 
     try:
         await _delete_mediamtx_session(location)
@@ -136,13 +139,24 @@ async def close_whep_session(
     logger.info("Closed WHEP session %s (subscribers=%d)", session_id, pipeline.active_subscribers)
 
 
-def _require_camera(camera_manager: Any) -> Any:
-    """Open the persistent pipeline if needed, returning the Picamera2 handle."""
+async def _ensure_camera(camera_manager: Any) -> Any:
+    """Lazily prime the persistent pipeline and return the Picamera2 handle.
+
+    WHEP sessions are usually the first thing the browser hits after page load,
+    so the camera is typically still cold (or the ``camera_to_standby`` recurring
+    task has cleaned it up between sessions). ``setup_camera`` is idempotent, so
+    calling it here just starts the backend on the first session and no-ops on
+    subsequent ones.
+    """
+    try:
+        await camera_manager.setup_camera(CameraMode.VIDEO)
+    except CameraInitializationError as exc:
+        raise HTTPException(status_code=503, detail=f"Camera backend unavailable: {exc}") from exc
     backend = camera_manager.backend
-    if backend._camera is None:  # noqa: SLF001
-        msg = "Camera backend is not initialised. Call /camera first to prime the pipeline."
-        raise HTTPException(status_code=503, detail=msg)
-    return backend._camera  # noqa: SLF001
+    camera = backend._camera  # noqa: SLF001
+    if camera is None:
+        raise HTTPException(status_code=503, detail="Camera backend failed to initialise")
+    return camera
 
 
 async def _post_offer_to_mediamtx(sdp_offer: str) -> tuple[str, str]:

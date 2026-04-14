@@ -89,6 +89,19 @@ class TestPostOfferToMediamtx:
         assert "MediaMTX unreachable" in str(excinfo.value.detail)
 
 
+def _make_camera_manager(*, primed: bool = True) -> MagicMock:
+    """Build a camera_manager mock whose setup_camera primes backend._camera."""
+    camera_manager = MagicMock()
+    camera = MagicMock() if primed else None
+    camera_manager.backend._camera = camera  # noqa: SLF001
+
+    async def _setup(_mode: object) -> None:
+        camera_manager.backend._camera = camera  # noqa: SLF001
+
+    camera_manager.setup_camera = AsyncMock(side_effect=_setup)
+    return camera_manager
+
+
 class TestOpenCloseSession:
     """Reference-counted lifecycle around the preview pipeline manager."""
 
@@ -109,8 +122,7 @@ class TestOpenCloseSession:
 
         monkeypatch.setattr(whep_mod, "_post_offer_to_mediamtx", _fake_post)
 
-        camera_manager = MagicMock()
-        camera_manager.backend._camera = MagicMock()
+        camera_manager = _make_camera_manager()
 
         response = await whep_mod.open_whep_session(
             camera_manager=camera_manager,
@@ -135,8 +147,7 @@ class TestOpenCloseSession:
 
         monkeypatch.setattr(whep_mod, "_post_offer_to_mediamtx", _broken_post)
 
-        camera_manager = MagicMock()
-        camera_manager.backend._camera = MagicMock()
+        camera_manager = _make_camera_manager()
 
         with pytest.raises(HTTPException):
             await whep_mod.open_whep_session(
@@ -151,8 +162,7 @@ class TestOpenCloseSession:
         pipeline.acquire = AsyncMock(side_effect=RuntimeError("ffmpeg crashed"))
         monkeypatch.setattr(whep_mod, "get_preview_pipeline_manager", lambda: pipeline)
 
-        camera_manager = MagicMock()
-        camera_manager.backend._camera = MagicMock()
+        camera_manager = _make_camera_manager()
 
         with pytest.raises(HTTPException) as excinfo:
             await whep_mod.open_whep_session(
@@ -161,14 +171,16 @@ class TestOpenCloseSession:
             )
         assert excinfo.value.status_code == 503
 
-    async def test_open_returns_503_when_camera_backend_is_cold(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """If the persistent pipeline hasn't been primed, WHEP should 503."""
+    async def test_open_returns_503_when_camera_init_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """If priming the persistent pipeline fails, WHEP should surface a 503."""
+        from app.api.exceptions import CameraInitializationError  # noqa: PLC0415
+
         pipeline = MagicMock()
         pipeline.acquire = AsyncMock()
         monkeypatch.setattr(whep_mod, "get_preview_pipeline_manager", lambda: pipeline)
 
         camera_manager = MagicMock()
-        camera_manager.backend._camera = None
+        camera_manager.setup_camera = AsyncMock(side_effect=CameraInitializationError(0, "no camera attached"))
 
         with pytest.raises(HTTPException) as excinfo:
             await whep_mod.open_whep_session(
@@ -176,6 +188,7 @@ class TestOpenCloseSession:
                 offer=WhepOfferRequest(sdp="v=0\noffer"),
             )
         assert excinfo.value.status_code == 503
+        pipeline.acquire.assert_not_called()
 
     async def test_close_deletes_session_and_releases_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Closing a known session should DELETE on MediaMTX and release the pipeline."""
@@ -190,8 +203,7 @@ class TestOpenCloseSession:
         session_id = "a" * 32
         whep_mod._sessions[session_id] = "http://host.docker.internal:8889/cam-preview/whep/abc"  # noqa: SLF001
 
-        camera_manager = MagicMock()
-        camera_manager.backend._camera = MagicMock()
+        camera_manager = _make_camera_manager()
 
         await whep_mod.close_whep_session(
             camera_manager=camera_manager,
@@ -208,8 +220,7 @@ class TestOpenCloseSession:
         pipeline.release = AsyncMock()
         monkeypatch.setattr(whep_mod, "get_preview_pipeline_manager", lambda: pipeline)
 
-        camera_manager = MagicMock()
-        camera_manager.backend._camera = MagicMock()
+        camera_manager = _make_camera_manager()
 
         with pytest.raises(HTTPException) as excinfo:
             await whep_mod.close_whep_session(
@@ -236,8 +247,7 @@ class TestOpenCloseSession:
         session_id = "c" * 32
         whep_mod._sessions[session_id] = "http://host.docker.internal:8889/cam-preview/whep/xyz"  # noqa: SLF001
 
-        camera_manager = MagicMock()
-        camera_manager.backend._camera = MagicMock()
+        camera_manager = _make_camera_manager()
 
         with pytest.raises(RuntimeError):
             await whep_mod.close_whep_session(

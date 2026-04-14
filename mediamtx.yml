@@ -38,8 +38,8 @@ webrtcAddress: :8889
 # Auto-detect the Pi's LAN IPs as ICE host candidates. host network mode makes
 # these the real interface IPs, not Docker bridge addresses.
 webrtcAdditionalHosts: []
-webrtcICEUDPMuxAddress: :8189
-webrtcICETCPMuxAddress: :8189
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
 
 # API for runtime path control (only used diagnostically).
 api: yes
