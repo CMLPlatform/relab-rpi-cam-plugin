@@ -1,22 +1,22 @@
 """Lores-stream preview pipeline: publishes to the local MediaMTX sidecar.
 
-Architecture (Phase 6B):
+Architecture (post-Phase-9):
 
     picamera2 (lores 640x480) ──H264Encoder──FfmpegOutput──▶ rtsp://mediamtx/cam-preview
                                                                       │
-                                                                      ▼
-                                                           browser ◀─WHEP─ mediamtx:8889
+                                                                      ├──▶ LL-HLS to browsers (:8888)
+                                                                      └──▶ (future) PeerTube / S3 archive
 
-This service manages the lifecycle of the lores H264 encoder and its
-``FfmpegOutput``. It's independent of the main YouTube stream path (Phase 6B
-stage 2): preview runs at ~500kbps on the lores buffer and stays cheap even
-while the main encoder is pushing 4Mbps to YouTube, because the two encoders
-read from different picamera2 stream buffers.
+The encoder runs **always-on** for the lifetime of the app process. At
+~500kbps on the lores buffer the CPU cost is negligible (~3% on a Pi 5,
+measured in HW-3's thermal test), and the alternative — ref-counted
+start/stop via HTTP hooks — added complexity and a cold-start lag on the
+first viewer. Simpler: the Pi lights up MediaMTX when it comes up, MediaMTX
+happily idles with a publisher and no subscribers, and the first LL-HLS
+viewer gets a live stream within ~1-2s.
 
-The service is started on demand — typically by the WHEP proxy router when
-the first browser WHEP session opens — and stopped when the last subscriber
-leaves. Start/stop is reference-counted so multiple concurrent sessions share
-one encoder instance.
+The ``ThermalGovernor`` (Phase 6B) still calls :meth:`set_bitrate` to swap
+the running encoder for a lower-bitrate one when the SoC runs hot.
 """
 
 from __future__ import annotations
@@ -62,7 +62,12 @@ def _build_ffmpeg_output(target_url: str) -> object:
 
 
 class PreviewPipelineManager:
-    """Lifecycle manager for the lores-stream preview H264 encoder."""
+    """Lifecycle manager for the lores-stream preview H264 encoder.
+
+    Post-Phase-9 this is a much thinner wrapper: the encoder is always-on
+    for the process lifetime. :meth:`start` / :meth:`stop` are idempotent
+    and :meth:`set_bitrate` swaps the live encoder without losing viewers.
+    """
 
     def __init__(
         self,
@@ -73,39 +78,22 @@ class PreviewPipelineManager:
         self._target_url = target_url
         self._bitrate = bitrate
         self._encoder: H264Encoder | None = None
-        self._subscribers = 0
         self._lock = asyncio.Lock()
-
-    @property
-    def active_subscribers(self) -> int:
-        """Number of clients currently holding the pipeline open."""
-        return self._subscribers
 
     @property
     def is_running(self) -> bool:
         """Whether the encoder is attached to the lores stream."""
         return self._encoder is not None
 
-    async def acquire(self, camera: Picamera2Like) -> None:
-        """Start the encoder on first acquire, otherwise just increment ref count."""
+    async def start(self, camera: Picamera2Like) -> None:
+        """Start the always-on lores preview encoder. Idempotent."""
         async with self._lock:
-            self._subscribers += 1
             if self._encoder is None:
                 await self._start(camera)
 
-    async def release(self, camera: Picamera2Like) -> None:
-        """Decrement ref count; stop the encoder once nobody holds it."""
+    async def stop(self, camera: Picamera2Like) -> None:
+        """Stop the lores preview encoder (used on cleanup/shutdown)."""
         async with self._lock:
-            if self._subscribers == 0:
-                return
-            self._subscribers -= 1
-            if self._subscribers == 0 and self._encoder is not None:
-                await self._stop(camera)
-
-    async def force_stop(self, camera: Picamera2Like) -> None:
-        """Shut down the encoder regardless of the ref count (used on cleanup/shutdown)."""
-        async with self._lock:
-            self._subscribers = 0
             if self._encoder is not None:
                 await self._stop(camera)
 
@@ -113,8 +101,9 @@ class PreviewPipelineManager:
         """Swap the active encoder with one at a new bitrate.
 
         Used by the thermal governor: when the Pi runs hot, drop the preview
-        bitrate so software H264 encoding costs less CPU. Does nothing if the
-        encoder isn't currently running.
+        bitrate so software H264 encoding costs less CPU. If the encoder
+        isn't currently running (e.g. startup race), the new bitrate is
+        remembered and applied on the next :meth:`start` call.
         """
         async with self._lock:
             self._bitrate = bitrate

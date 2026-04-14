@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, NoReturn, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from relab_rpi_cam_models.camera import CameraMode
 from relab_rpi_cam_models.stream import StreamMode
@@ -18,7 +18,7 @@ from app.api.schemas.camera_controls import (
     FocusMode,
     JsonValue,
 )
-from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
+from app.api.schemas.streaming import YoutubeStreamConfig
 from app.api.services.camera_backend import (
     CaptureResult,
     ControllableCameraBackend,
@@ -27,7 +27,12 @@ from app.api.services.camera_backend import (
 )
 from app.api.services.hardware_protocols import Picamera2Like
 from app.api.services.hardware_stubs import H264EncoderStub, Picamera2Stub
-from app.api.services.stream import get_broadcast_url, get_ffmpeg_output
+from app.api.services.mediamtx_client import MediaMTXAPIError, MediaMTXClient
+from app.api.services.stream import (
+    build_hires_rtsp_output,
+    get_broadcast_url,
+    validate_youtube_mode,
+)
 from app.core.config import settings
 
 if TYPE_CHECKING:
@@ -71,9 +76,10 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
     so no mode switching or pipeline restart is needed.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, mediamtx_client: MediaMTXClient | None = None) -> None:
         self._camera: Picamera2Like | None = None
         self._main_encoder: H264Encoder | None = None
+        self._mediamtx = mediamtx_client or MediaMTXClient()
         self.current_mode: CameraMode | None = None
 
     @property
@@ -140,19 +146,36 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
     ) -> StreamStartResult:
         """Start a provider-backed stream on the main H264 encoder.
 
-        Uses ``start_encoder(name="main")`` instead of ``start_recording`` so the
-        persistent picamera2 pipeline (set up in ``open()`` during Phase 1)
-        stays up — stills-while-streaming keeps working because the main stream
-        continues feeding frames to ``capture_image`` simultaneously.
+        Two-step flow post-Phase-9:
+
+        1. Patch the local MediaMTX ``cam-hires`` path with a ``runOnReady``
+           that egresses to YouTube RTMPS. MediaMTX picks this up the moment a
+           publisher attaches and tears it down automatically on unpublish.
+        2. Start the main H264 encoder with an ``FfmpegOutput`` that publishes
+           RTSP to that same ``cam-hires`` path. The persistent picamera2
+           pipeline stays up across start/stop, so stills-while-streaming
+           keeps working.
         """
-        if mode == StreamMode.YOUTUBE and not youtube_config:
-            raise YoutubeConfigRequiredError
+        validate_youtube_mode(mode, youtube_config)
+        assert youtube_config is not None  # narrowed by validate_youtube_mode
 
         await self.open(CameraMode.VIDEO)
         camera = self._require_camera()
 
+        # Configure the MediaMTX egress before we start publishing. If this
+        # fails the Pi never bothers starting its encoder — no half-started
+        # state to clean up.
         try:
-            stream_output = get_ffmpeg_output(mode, youtube_config)
+            await self._mediamtx.set_youtube_egress(
+                "cam-hires",
+                youtube_config.stream_key.get_secret_value(),
+            )
+        except MediaMTXAPIError as exc:
+            msg = f"Failed to configure MediaMTX YouTube egress: {exc}"
+            raise RuntimeError(msg) from exc
+
+        try:
+            stream_output = build_hires_rtsp_output()
             encoder = H264Encoder()
             await asyncio.wait_for(
                 asyncio.to_thread(camera.start_encoder, encoder, stream_output, name="main"),
@@ -160,28 +183,32 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
             )
             self._main_encoder = encoder
         except TimeoutError as e:
+            await self._mediamtx.clear_egress("cam-hires")
             msg = "Failed to start recording: ffmpeg startup timeout"
             raise RuntimeError(msg) from e
         except (OSError, RuntimeError) as e:
+            await self._mediamtx.clear_egress("cam-hires")
             msg = f"Failed to start recording: {e}"
             raise RuntimeError(msg) from e
 
-        url = get_broadcast_url(youtube_config) if youtube_config else None
-        if url is None:
-            if self._main_encoder is not None:
-                await asyncio.to_thread(camera.stop_encoder, self._main_encoder)
-                self._main_encoder = None
-            _raise_missing_stream_url()
-
+        url = get_broadcast_url(youtube_config)
         return StreamStartResult(mode=mode, url=url)
 
     async def stop_stream(self) -> None:
-        """Stop the main encoder without touching the rest of the persistent pipeline."""
+        """Stop the main encoder and clear the MediaMTX egress."""
         camera = self._require_camera()
-        if self._main_encoder is None:
-            return
-        await asyncio.to_thread(camera.stop_encoder, self._main_encoder)
-        self._main_encoder = None
+        try:
+            if self._main_encoder is not None:
+                await asyncio.to_thread(camera.stop_encoder, self._main_encoder)
+                self._main_encoder = None
+        finally:
+            # Always clear the MediaMTX egress even if the encoder stop raised —
+            # leaving a stale ``runOnReady`` on the path would make the next
+            # stream attempt start with a dangling YouTube target.
+            try:
+                await self._mediamtx.clear_egress("cam-hires")
+            except MediaMTXAPIError as exc:
+                logger.warning("Failed to clear MediaMTX YouTube egress: %s", exc)
 
     async def get_stream_metadata(self) -> tuple[dict, dict]:
         """Return metadata for the active stream."""
@@ -298,12 +325,6 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
             raise ValueError(msg)
 
         return {name: _normalize_control_value(name, value) for name, value in controls_patch.items()}
-
-
-def _raise_missing_stream_url() -> NoReturn:
-    """Raise the standard error for backends that fail to expose a stream URL."""
-    msg = "Streaming backend did not return a public stream URL"
-    raise RuntimeError(msg)
 
 
 def _af_mode_manual() -> object:

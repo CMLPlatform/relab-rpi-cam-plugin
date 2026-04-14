@@ -24,6 +24,20 @@ def _stub_thermal_governor(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(main_mod, "get_thermal_governor", lambda: fake_governor)
 
 
+@pytest.fixture(autouse=True)
+def _stub_preview_sleeper(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub the preview sleeper + camera priming so the lifespan runs without picamera2."""
+    fake_sleeper = MagicMock()
+    fake_sleeper.start = MagicMock()
+    fake_sleeper.stop = AsyncMock()
+    monkeypatch.setattr(main_mod, "get_preview_sleeper", lambda: fake_sleeper)
+    # The lifespan primes the camera via ``camera_manager.setup_camera`` before
+    # handing it to the sleeper. In-process tests have no real camera, so
+    # stub that out too.
+    monkeypatch.setattr(main_mod.camera_manager, "setup_camera", AsyncMock())
+    main_mod.camera_manager.backend._camera = MagicMock()  # noqa: SLF001
+
+
 class DummyTask:
     """Small stand-in for asyncio.Task used in lifespan tests."""
 

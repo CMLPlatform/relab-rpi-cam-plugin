@@ -46,86 +46,53 @@ class TestSingleton:
         assert a is not b
 
 
-class TestAcquireRelease:
-    """Reference-counted start/stop."""
+class TestStartStop:
+    """Always-on lifecycle: idempotent start, clean stop."""
 
-    async def test_first_acquire_starts_encoder(self, stub_encoder_and_output: MagicMock) -> None:
-        """First subscriber triggers start_encoder on the lores stream."""
+    async def test_start_attaches_encoder_to_lores_stream(self, stub_encoder_and_output: MagicMock) -> None:
+        """``start`` attaches a fresh H264Encoder to the lores picamera2 stream."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
 
-        await manager.acquire(camera)
+        await manager.start(camera)
 
-        assert manager.active_subscribers == 1
         assert manager.is_running
         camera.start_encoder.assert_called_once()
         assert camera.start_encoder.call_args.kwargs == {"name": "lores"}
         stub_encoder_and_output.assert_called_once()
 
-    async def test_second_acquire_only_increments_refcount(self) -> None:
-        """Subsequent subscribers must not restart the encoder."""
+    async def test_start_is_idempotent(self) -> None:
+        """Calling start twice must not restart the encoder."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
 
-        await manager.acquire(camera)
-        await manager.acquire(camera)
+        await manager.start(camera)
+        await manager.start(camera)
 
-        assert manager.active_subscribers == 2
+        assert manager.is_running
         camera.start_encoder.assert_called_once()
 
-    async def test_release_below_zero_is_noop(self) -> None:
-        """Releasing with zero subscribers must not error or go negative."""
+    async def test_stop_detaches_the_encoder(self) -> None:
+        """``stop`` detaches the encoder instance it previously attached."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
 
-        await manager.release(camera)
-
-        assert manager.active_subscribers == 0
-        camera.stop_encoder.assert_not_called()
-
-    async def test_last_release_stops_encoder(self) -> None:
-        """Releasing the last subscriber detaches the encoder."""
-        manager = PreviewPipelineManager()
-        camera = MagicMock()
-
-        await manager.acquire(camera)
-        await manager.release(camera)
-
-        assert manager.active_subscribers == 0
-        assert not manager.is_running
+        await manager.start(camera)
         encoder = camera.start_encoder.call_args.args[0]
+        await manager.stop(camera)
+
+        assert not manager.is_running
         camera.stop_encoder.assert_called_once_with(encoder)
 
-    async def test_release_does_not_stop_while_other_subscribers_remain(self) -> None:
-        """Releasing one of many must keep the encoder running."""
+    async def test_stop_without_start_is_noop(self) -> None:
+        """Stopping an idle manager must not error or touch the camera."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
 
-        await manager.acquire(camera)
-        await manager.acquire(camera)
-        await manager.release(camera)
+        await manager.stop(camera)
 
-        assert manager.active_subscribers == 1
-        assert manager.is_running
-        camera.stop_encoder.assert_not_called()
-
-
-class TestForceStop:
-    """force_stop shuts down regardless of the refcount."""
-
-    async def test_force_stop_clears_refcount(self) -> None:
-        """force_stop should zero the refcount and tear down the encoder."""
-        manager = PreviewPipelineManager()
-        camera = MagicMock()
-        await manager.acquire(camera)
-        await manager.acquire(camera)
-
-        await manager.force_stop(camera)
-
-        assert manager.active_subscribers == 0
         assert not manager.is_running
-        encoder = camera.start_encoder.call_args.args[0]
-        camera.stop_encoder.assert_called_once_with(encoder)
+        camera.stop_encoder.assert_not_called()
 
 
 class TestSetBitrate:
@@ -138,7 +105,7 @@ class TestSetBitrate:
 
         await manager.set_bitrate(camera, 200_000)
 
-        assert manager._bitrate == 200_000
+        assert manager._bitrate == 200_000  # noqa: SLF001
         camera.stop_encoder.assert_not_called()
         camera.start_encoder.assert_not_called()
 
@@ -149,7 +116,7 @@ class TestSetBitrate:
         """When the encoder is live, set_bitrate should stop+start at the new rate."""
         manager = PreviewPipelineManager()
         camera = MagicMock()
-        await manager.acquire(camera)
+        await manager.start(camera)
         old_encoder = camera.start_encoder.call_args.args[0]
         camera.start_encoder.reset_mock()
         camera.stop_encoder.reset_mock()
@@ -157,9 +124,9 @@ class TestSetBitrate:
 
         await manager.set_bitrate(camera, 200_000)
 
-        assert manager._bitrate == 200_000
+        assert manager._bitrate == 200_000  # noqa: SLF001
         camera.stop_encoder.assert_called_once_with(old_encoder)
         camera.start_encoder.assert_called_once()
-        # H264Encoder instance should have its bitrate attribute set.
+        # The new encoder should have its bitrate attribute set to the new value.
         new_encoder = stub_encoder_and_output.return_value
         assert new_encoder.bitrate == 200_000

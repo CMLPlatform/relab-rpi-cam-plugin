@@ -76,21 +76,6 @@ def mock_camera_manager(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     return mgr
 
 
-class TestCameraToStandby:
-    """Tests for camera_to_standby."""
-
-    async def test_cleans_up_when_inactive(self, mock_camera_manager: SimpleNamespace) -> None:
-        """Should call cleanup if the stream is not active."""
-        await camera_deps.camera_to_standby()
-        mock_camera_manager.cleanup.assert_awaited_once()
-
-    async def test_skips_cleanup_when_active(self, mock_camera_manager: SimpleNamespace) -> None:
-        """Should not call cleanup if the stream is active."""
-        mock_camera_manager.stream.is_active = True
-        await camera_deps.camera_to_standby()
-        mock_camera_manager.cleanup.assert_not_awaited()
-
-
 class TestCheckStreamDuration:
     """Tests for check_stream_duration."""
 

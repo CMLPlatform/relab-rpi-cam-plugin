@@ -1,64 +1,85 @@
 # MediaMTX config for the RPi camera plugin.
 #
-# The Pi app publishes two RTSP streams into MediaMTX from picamera2's dual
-# main+lores pipeline (Phase 1 groundwork):
+# Post-Phase-9 architecture: MediaMTX is the single media seam for everything
+# the plugin does with H264 video. Flows:
 #
-#   - cam-preview (lores, 640x480, ~500kbps): served to browsers via WHEP for
-#     low-latency WebRTC preview. This is the dominant use case.
-#   - cam-hires   (main, 1920x1080, ~4Mbps): only active while a YouTube stream
-#     is running. Forwarded outbound to YouTube RTMPS by the app (not by
-#     MediaMTX) so the app controls start/stop cleanly.
+#   picamera2 (lores 640x480, ~500kbps) ──RTSP──▶ mediamtx:cam-preview
+#                                                      │
+#                                                      ├── LL-HLS to browsers (:8888)
+#                                                      └── (native clients get the same HLS URL)
 #
-# The container runs in host network mode so WebRTC ICE can advertise the Pi's
-# real LAN IPs as host candidates — the browser media path is peer-to-peer
-# between browser and Pi on the same network, matching the Phase 4 viewer.
+#   picamera2 (main 1920x1080, ~4Mbps)  ──RTSP──▶ mediamtx:cam-hires
+#                                                      │
+#                                                      └── RTMPS to YouTube
+#                                                          (configured at runtime via
+#                                                          MediaMTX's API on :9997 when
+#                                                          the user starts a stream)
 #
-# None of this is sensitive — MediaMTX has no auth configured. It listens on
-# the trusted LAN only. If you need WAN viewing, add a TURN/SFU hop in front;
-# that is explicitly out of scope for this round.
+# The container runs ``network_mode: host`` so the LL-HLS port (8888) is
+# reachable from whatever process proxies segments to the browser (the backend
+# via the WebSocket relay, or the browser directly when on the same LAN).
+#
+# No auth configured — MediaMTX listens on the trusted host network only. The
+# runtime API is localhost-bound. The plugin API controls YouTube egress via
+# that localhost API, never over the public network.
 
 logLevel: info
 logDestinations: [stdout]
 
-# Turn off everything we don't use to minimise the attack/port surface.
+# Turn off listeners we don't use. WebRTC / RTMP / SRT are all gone post-Phase-9.
+# RTMP would be the YouTube ingest target normally, but we don't terminate RTMP
+# *ourselves* — MediaMTX originates an outbound RTMPS connection to YouTube via
+# its path ``runOnReady`` (configured at runtime).
 rtmp: no
-hls: no
+webrtc: no
 srt: no
 playback: no
 metrics: no
 
-# RTSP ingest — the Pi app publishes here.
+# RTSP ingest — the Pi app publishes lores (always) and main (while streaming).
 rtsp: yes
 rtspAddress: :8554
 rtspTransports: [tcp]
 
-# WebRTC / WHEP — browsers connect here.
-webrtc: yes
-webrtcAddress: :8889
-# Auto-detect the Pi's LAN IPs as ICE host candidates. host network mode makes
-# these the real interface IPs, not Docker bridge addresses.
-webrtcAdditionalHosts: []
-webrtcLocalUDPAddress: :8189
-webrtcLocalTCPAddress: :8189
+# LL-HLS output — the single browser/native preview surface post-Phase-9.
+# - ``hlsVariant: lowLatency`` enables the LL-HLS extensions (CMAF fragments +
+#   HTTP/1.1 chunked transfer) for ~1-2s glass-to-glass.
+# - ``hlsSegmentCount: 7`` + ``hlsSegmentDuration: 200ms`` gives a ~1.4s buffer
+#   at the player, which is the sweet spot for LL-HLS without starving players
+#   that stall briefly on network blips.
+# - ``hlsAllowOrigin: '*'`` is fine because the HLS server only listens on the
+#   trusted host network; the actual browser origin is the backend proxy.
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 200ms
+hlsPartDuration: 200ms
+hlsSegmentMaxSize: 50M
+hlsAllowOrigin: '*'
 
-# API for runtime path control (only used diagnostically).
+# Runtime control API — the plugin's ``mediamtx_client`` uses this to add/remove
+# the YouTube egress on the ``cam-hires`` path when the user starts/stops a
+# stream. Localhost-only so nothing external can reconfigure paths.
 api: yes
 apiAddress: 127.0.0.1:9997
 
 pathDefaults:
-  # Accept publish attempts from anywhere on the trusted LAN. Since MediaMTX is
-  # only reachable on the host network (not from the public internet), this is
-  # acceptable. For stricter setups, use publishUser/publishPass here.
+  # Accept publish attempts from anywhere on the trusted host network.
   source: publisher
   sourceOnDemand: no
-  # Don't record any of these streams to disk — the backend stores stills
-  # separately and we don't want to burn the SD card.
+  # Don't record any streams to disk — captures live in the backend / S3, not
+  # on the Pi's SD card.
   record: no
 
 paths:
   cam-preview:
-    # Lores preview stream, published by the Pi app when the first preview
-    # subscriber arrives.
+    # Lores preview stream. Published by the Pi app at startup and kept running
+    # for the lifetime of the process (Phase 9 Decision 2: always-on encoder —
+    # at ~500kbps and ~3% CPU, ref counting is ceremony).
   cam-hires:
     # Full-resolution stream, published by the Pi app only while a YouTube
-    # stream is active.
+    # stream is active. The YouTube RTMPS target is patched in at runtime via
+    # the MediaMTX API (``POST /v3/config/paths/patch/cam-hires`` with a
+    # ``runOnReady`` entry) so we don't bake secrets into this config file.

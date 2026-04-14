@@ -12,7 +12,6 @@ from .images import (
 )
 from .stream import StreamMetadata, StreamMode, StreamView
 from .telemetry import TelemetrySnapshot, ThermalState
-from .whep import WhepAnswerResponse, WhepOfferRequest
 
 __all__ = [
     "BaseMetadata",
@@ -29,6 +28,4 @@ __all__ = [
     "StreamView",
     "TelemetrySnapshot",
     "ThermalState",
-    "WhepAnswerResponse",
-    "WhepOfferRequest",
 ]

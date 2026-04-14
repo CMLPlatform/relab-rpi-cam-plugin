@@ -20,6 +20,11 @@ from websockets.exceptions import ConnectionClosed
 
 from app.core.config import settings
 from app.utils.device_jwt import build_device_assertion
+from app.utils.relay_state import (
+    mark_relay_activity,
+    mark_relay_connected,
+    mark_relay_disconnected,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
@@ -29,9 +34,12 @@ _MSG_TYPE_PING = "ping"
 _MSG_TYPE_PONG = "pong"
 _MSG_TYPE_REQUEST = "request"
 
-# Content-type substrings used to detect binary responses
+# Content-type substrings used to detect binary responses. ``video`` covers
+# LL-HLS segments (``video/mp4`` / ``video/iso.segment``) that the HLS proxy
+# router serves from MediaMTX through the relay.
 _BINARY_IMAGE = "image"
 _BINARY_OCTET = "octet-stream"
+_BINARY_VIDEO = "video"
 
 
 class _AsyncWebSocket(Protocol):
@@ -72,10 +80,13 @@ async def run_relay() -> None:
             logger.info("Connecting to ReLab backend relay at %s", url)
             async with _websocket_connect(url) as ws:
                 delay = _RECONNECT_MIN  # reset on successful connect
+                mark_relay_connected()
                 logger.info("Relay connected. Waiting for commands.")
                 await _receive_loop(ws)
         except _RELAY_CONNECTION_ERRORS as exc:
             logger.warning("Relay connection lost. Reconnecting in %.0fs…", delay, exc_info=exc)
+        finally:
+            mark_relay_disconnected()
 
         await asyncio.sleep(delay)
         delay = min(delay * 2, _RECONNECT_MAX)
@@ -190,6 +201,9 @@ async def _handle_relay_message(
     if msg_type != _MSG_TYPE_REQUEST:
         return
 
+    # Only real command traffic resets the idle timer — pings and noise don't
+    # mean "a user is watching", so we don't hibernate on pings alone.
+    mark_relay_activity()
     task = asyncio.create_task(_run_command(ws, http, msg, command_semaphore))
     pending_tasks.add(task)
     task.add_done_callback(on_task_done)
@@ -236,7 +250,11 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
         logger.warning("Relay received 403 from local API — check that local_relay_api_key is set correctly")
 
     content_type = response.headers.get("content-type", "")
-    is_binary = _BINARY_IMAGE in content_type or _BINARY_OCTET in content_type
+    is_binary = (
+        _BINARY_IMAGE in content_type
+        or _BINARY_OCTET in content_type
+        or _BINARY_VIDEO in content_type
+    )
 
     if is_binary:
         # Send JSON header first, then binary frame

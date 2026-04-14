@@ -50,7 +50,13 @@ class Settings(BaseSettings):
 
     # Camera settings
     camera_backend: Literal["picamera2"] = "picamera2"
-    camera_standby_s: int = 60 * 10  # Camera standby time in seconds (10 minutes)
+
+    # Preview pipeline settings
+    # ``preview_hibernate_after_s = 0`` disables hibernation entirely (always-on).
+    # Any positive value is a relay idle window in seconds — after no relay
+    # traffic for that long, the lores preview encoder is stopped until a new
+    # command arrives or the relay reconnects.
+    preview_hibernate_after_s: int = 60 * 5  # Default: hibernate after 5 min idle
 
     # Auth
     auth_key_name: str = "X-API-Key"

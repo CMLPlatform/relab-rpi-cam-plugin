@@ -24,11 +24,20 @@ services:
         max-file: "3"
 
   mediamtx:
-    # MediaMTX sidecar: receives RTSP publishes from the app (lores preview +
-    # optional main hires), serves them to browsers via WHEP. Runs on the host
-    # network so WebRTC ICE can advertise the Pi's real LAN IPs as host
-    # candidates — browser→Pi media flows peer-to-peer on the same network.
-    image: bluenviron/mediamtx:1.12.0
+    # MediaMTX sidecar: the single media seam for the plugin post-Phase-9.
+    #
+    #   - Ingest: RTSP on :8554 (lores cam-preview always, main cam-hires while
+    #     a YouTube stream is active).
+    #   - Browser/native preview: LL-HLS on :8888.
+    #   - Runtime control: HTTP API on localhost:9997. The plugin's
+    #     ``mediamtx_client`` patches the ``cam-hires`` path at runtime with a
+    #     ``runOnReady`` command that forks ffmpeg inside this container to
+    #     re-publish the stream to YouTube RTMPS.
+    #
+    # ``-ffmpeg`` variant is required because ``runOnReady`` shells out to
+    # ffmpeg and the default image doesn't ship it. Runs on the host network so
+    # all three listeners (8554/8888/9997) are reachable from the app container.
+    image: bluenviron/mediamtx:1.12.0-ffmpeg
     restart: unless-stopped
     network_mode: host
     volumes:

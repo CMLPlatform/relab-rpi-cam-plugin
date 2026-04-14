@@ -16,7 +16,6 @@ from starlette.responses import Response
 from app.__version__ import version
 from app.api.dependencies.camera_management import (
     camera_manager,
-    camera_to_standby,
     check_stream_duration,
     check_stream_health,
 )
@@ -27,9 +26,11 @@ from app.core.config import apply_relay_credentials, settings
 from app.utils.files import cleanup_images, setup_directory
 from app.utils.logging import configure_library_loggers, setup_logging
 from app.utils.pairing import log_pairing_mode_started, run_pairing
+from app.utils.preview_sleeper import get_preview_sleeper
 from app.utils.relay import run_relay
 from app.utils.tasks import repeat_task
 from app.utils.thermal_governor import get_thermal_governor
+from relab_rpi_cam_models.camera import CameraMode
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -141,14 +142,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
         background_tasks.add(asyncio.create_task(run_pairing(_on_paired), name="pairing"))
         log_pairing_mode_started()
 
-    # Start recurring cleanup and health check tasks
+    # Start recurring cleanup and health check tasks. ``camera_to_standby``
+    # is gone post-Phase-9: the lores preview encoder runs for the lifetime of
+    # the app process, so there's no idle state to release.
     recurring_tasks = {
         repeat_task(cleanup_images, settings.cleanup_interval_s, "cleanup_images"),
-        repeat_task(camera_to_standby, settings.camera_standby_s, "camera_to_standby"),
         repeat_task(check_stream_duration, settings.check_stream_interval_s, "check_stream_duration"),
         repeat_task(check_stream_health, settings.check_stream_health_interval_s, "check_stream_health"),
     }
     logger.info("Recurring cleanup and health check tasks started")
+
+    # Prime the persistent picamera2 pipeline. The lores preview encoder is
+    # managed by the PreviewSleeper below — it starts the encoder when the
+    # relay goes active and hibernates it after ``preview_hibernate_after_s``
+    # seconds of relay idleness. The sleeper also handles the "no camera
+    # attached" case by skipping ticks until one appears.
+    try:
+        await camera_manager.setup_camera(CameraMode.VIDEO)
+    except (CameraInitializationError, RuntimeError) as exc:
+        # Don't crash the app if there's no camera attached — the API still
+        # comes up for pairing, telemetry, etc. Image captures will fail with
+        # their own errors.
+        logger.warning("Camera not primed at startup: %s", exc)
 
     # Start the thermal governor. It watches CPU temperature and dynamically
     # drops the lores preview encoder bitrate when the SoC runs hot.
@@ -156,9 +171,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
     thermal_governor.start(camera_getter=lambda: camera_manager.backend.camera)
     logger.info("Thermal governor started")
 
+    # Start the preview sleeper. It polls every ~15s and decides whether the
+    # lores encoder should be running based on relay connectivity + activity.
+    preview_sleeper = get_preview_sleeper()
+    preview_sleeper.start(camera_getter=lambda: camera_manager.backend._camera)  # noqa: SLF001
+    logger.info(
+        "Preview sleeper started (hibernate_after=%ds)",
+        settings.preview_hibernate_after_s,
+    )
+
     yield
 
-    # Shutdown background services (thermal governor first so it stops touching the camera).
+    # Shutdown order: sleeper first (so it stops the encoder cleanly), then
+    # thermal governor (it also touches the encoder), then the rest.
+    await preview_sleeper.stop()
     await thermal_governor.stop()
 
     # Shutdown all background and recurring tasks

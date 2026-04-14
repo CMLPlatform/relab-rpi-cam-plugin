@@ -23,12 +23,6 @@ def get_camera_manager() -> CameraManager:
 CameraManagerDependency = Annotated[CameraManager, Depends(get_camera_manager)]
 
 
-async def camera_to_standby() -> None:
-    """Close camera instance if there is no active stream."""
-    if not camera_manager.stream.is_active:
-        await camera_manager.cleanup()
-
-
 async def check_stream_duration() -> None:
     """Stop streams that exceed maximum duration."""
     if (
