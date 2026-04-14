@@ -69,29 +69,40 @@ The plugin can also run fully standalone, writing captures straight to a local
 S3-compatible bucket (MinIO by default) instead of pushing them to the RELab
 backend. This is useful for hobbyist / bench / offline-first setups.
 
+Everything lives in the same `compose.yml` — switch modes with a profile
+flag, not a separate file.
+
 ```sh
-cp .env.standalone.example .env.standalone
-# edit .env.standalone — at minimum set MINIO_ROOT_PASSWORD and AUTHORIZED_API_KEYS
-docker compose -f docker-compose.standalone.yml --env-file .env.standalone up -d
+# 1. Fill in the standalone section of .env (IMAGE_SINK=s3, S3_*, MINIO_*).
+#    See .env.example for the full list of variables.
+# 2. Start the stack with the standalone profile:
+docker compose --profile standalone up -d
 ```
 
 Once up:
 
 - Camera API at `http://<pi-lan-ip>:8018` (same as paired mode)
 - Live LL-HLS preview at the same URL shape as paired mode (proxied through
-  the Pi's own `/hls` endpoint; no Relab backend needed)
+  the Pi's own `/hls` endpoint; no RELab backend needed)
 - MinIO console at `http://<pi-lan-ip>:9001` — log in with
   `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`
 - Captures browsable under `http://<pi-lan-ip>:9000/rpi-cam/`
 
-The standalone build uses the `[s3]` extra so `aioboto3` is installed in the
-Docker image. Retention policies, access logs, and lifecycle rules live on
-the MinIO bucket itself — configure them through the MinIO console or the
-`mc` CLI as needed.
+The single Docker image ships with `aioboto3` pre-installed so the same
+artifact runs both paired and standalone — the `S3CompatibleSink` is
+lazy-imported and never loads unless `IMAGE_SINK=s3`. Retention policies,
+access logs, and lifecycle rules live on the MinIO bucket itself — configure
+them via the MinIO console or the `mc` CLI.
 
 To point the plugin at a different S3-compatible service (Backblaze B2,
 Cloudflare R2, Wasabi, AWS S3, …), update `S3_ENDPOINT_URL`, credentials, and
-`S3_PUBLIC_URL_TEMPLATE` in `.env.standalone` and restart. No code changes.
+`S3_PUBLIC_URL_TEMPLATE` in `.env` and restart. No code changes. If you're
+running against a managed bucket (i.e. not the bundled MinIO), you can skip
+the `standalone` profile entirely and just run `docker compose up -d` — the
+plugin will still use the S3 sink based on your env vars.
+
+Profiles combine freely: `docker compose --profile standalone --profile observability-ship up -d`
+runs the MinIO sidecar *and* ships logs to your central Loki.
 
 ## Troubleshooting
 

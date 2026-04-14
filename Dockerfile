@@ -15,12 +15,6 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=0
 
-# Optional extras installed into the venv. Pass as a build arg to opt into
-# alternative image sinks — e.g. ``--build-arg IMAGE_SINK_EXTRA=s3`` to add
-# ``aioboto3`` for the standalone MinIO deployment. Empty (default) skips
-# every optional extra and ships the leanest possible image.
-ARG IMAGE_SINK_EXTRA=""
-
 # Configure Raspberry Pi repository (keyring from prep stage)
 COPY --from=rpi-keyring /usr/share/keyrings/raspberrypi-archive-keyring.gpg /usr/share/keyrings/
 RUN printf "Types: deb\nURIs: https://archive.raspberrypi.com/debian/\nSuites: trixie\nComponents: main\nSigned-By: /usr/share/keyrings/raspberrypi-archive-keyring.gpg\n" \
@@ -29,25 +23,23 @@ RUN printf "Types: deb\nURIs: https://archive.raspberrypi.com/debian/\nSuites: t
     apt-get install -y --no-install-recommends python3-picamera2 && \
     rm -rf /var/lib/apt/lists/*
 
-# Install dependencies (cached layer — copy lockfile first for better caching)
+# Install dependencies (cached layer — copy lockfile first for better caching).
+# ``--all-extras`` installs every [project.optional-dependencies] group
+# (currently just ``s3`` → ``aioboto3``). The extras that the active image
+# sink doesn't use are lazy-imported and never load at runtime, so users who
+# stay in paired mode pay the disk cost (~50MB for boto3) but nothing else.
+# Keeping all extras in one image means the same artifact runs both paired
+# and standalone — one build, one tag, profile-driven at runtime.
 COPY .python-version pyproject.toml uv.lock README.md ./
 COPY relab_rpi_cam_models/ relab_rpi_cam_models/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv --system-site-packages && \
-    if [ -n "$IMAGE_SINK_EXTRA" ]; then \
-        uv sync --locked --no-install-project --no-editable --no-dev --extra "$IMAGE_SINK_EXTRA"; \
-    else \
-        uv sync --locked --no-install-project --no-editable --no-dev; \
-    fi
+    uv sync --locked --no-install-project --no-editable --no-dev --all-extras
 
 # Install project
 COPY app/ app/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -n "$IMAGE_SINK_EXTRA" ]; then \
-        uv sync --locked --no-editable --no-dev --extra "$IMAGE_SINK_EXTRA"; \
-    else \
-        uv sync --locked --no-editable --no-dev; \
-    fi
+    uv sync --locked --no-editable --no-dev --all-extras
 
 # Runtime stage: minimal final image
 FROM python:3.13-slim-trixie
