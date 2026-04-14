@@ -1,10 +1,22 @@
-"""Hardware-dependent business logic for streams."""
+"""Hardware-dependent business logic for YouTube live streams.
 
-import asyncio
+Phase 6B: HLS-over-HTTP ingest is gone. YouTube now accepts RTMPS at
+``rtmps://a.rtmps.youtube.com:443/live2/{stream_key}`` and the Pi's
+``Picamera2`` H264 encoder pipes directly to an ``FfmpegOutput`` that
+publishes there. No intermediate MediaMTX hop for YouTube — the app owns the
+ffmpeg subprocess lifecycle directly so start/stop is crisp.
+
+Stream-key validation used to ping YouTube's HLS endpoint to check the key
+before opening the real stream. With HLS gone and no light-weight RTMPS probe
+available, we simply trust the key at start and let YouTube reject at connect
+time — the error surfaces as a clean RuntimeError from ``start_recording``.
+"""
+
+from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING
 
-import httpx
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
@@ -22,12 +34,22 @@ else:
         FfmpegOutput = FfmpegOutputStub
 
 
-# YouTube HLS ingestion uses a fixed manifest filename
-_YOUTUBE_MANIFEST = "master.m3u8"
+# YouTube RTMPS ingest endpoint. Port 443 is required for RTMPS.
+_YOUTUBE_RTMPS_BASE = "rtmps://a.rtmps.youtube.com:443/live2"
+
+
+def build_youtube_rtmps_url(youtube_config: YoutubeStreamConfig) -> str:
+    """Return the RTMPS URL the Pi publishes its main-stream H264 to."""
+    return f"{_YOUTUBE_RTMPS_BASE}/{youtube_config.stream_key.get_secret_value()}"
 
 
 def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | None = None) -> object:
-    """Create FfmpegOutput object for YouTube HLS ingestion."""
+    """Build an ``FfmpegOutput`` that pipes the main H264 encoder to YouTube RTMPS.
+
+    Audio is required by YouTube. We source silence from the container's null
+    PulseAudio sink (created by ``docker_entrypoint.sh``) so there's a valid
+    AAC track alongside the video copy.
+    """
     if mode != StreamMode.YOUTUBE:
         msg = f"Unsupported stream mode: {mode}"
         raise ValueError(msg)
@@ -35,34 +57,22 @@ def get_ffmpeg_output(mode: StreamMode, youtube_config: YoutubeStreamConfig | No
     if not youtube_config:
         raise YoutubeConfigRequiredError
 
+    # ``-c:v copy`` tells ffmpeg to re-mux picamera2's H264 without re-encoding,
+    # ``-f flv`` is the required container for RTMP/RTMPS, ``-shortest`` stops
+    # when the video ends so the null-audio track doesn't keep the pipeline
+    # alive after stop_stream.
     output_str = (
-        "-g 30 -sc_threshold 0 "  # Closed GOP and disabled scene detection
-        "-b:v 2500k -maxrate 2500k "  # Limit bitrate to 2500 kb/s
-        "-f hls "
-        "-hls_time 2 -hls_list_size 5 "  # 5 segments, 2s each
-        "-hls_segment_type mpegts "  # MPEG-TS segments
-        "-hls_flags delete_segments+independent_segments "
-        "-http_persistent 1 "
-        "-connect_timeout 10000000 "  # 10 second connection timeout (microseconds)
-        "-rw_timeout 30000000 "  # 30 second read/write timeout (microseconds)
-        f"-master_pl_name {_YOUTUBE_MANIFEST} "  # Master playlist for YouTube ingestion
-        "-method POST "  # Required by YouTube
-        f"{get_upload_url(youtube_config)}"  # Upload URL
+        "-c:v copy "
+        "-c:a aac -b:a 128k -ar 44100 -ac 2 "
+        "-f flv "
+        "-shortest "
+        f"{build_youtube_rtmps_url(youtube_config)}"
     )
     return FfmpegOutput(
         output_str,
-        audio=True,  # Youtube requires audio
-        audio_bitrate=8000,
-        # NOTE: Using a PulseAudio null source to avoid feedback. The built-in '-f lavfi -i anullsrc` option
-        # is preferred but PiCamera2 FfmpegOutput only accepts pulse devices.
+        audio=True,
+        audio_bitrate=128_000,
         audio_device="nullaudio.monitor",
-    )
-
-
-def get_upload_url(youtube_config: YoutubeStreamConfig) -> AnyUrl:
-    """Get YouTube HLS upload URL."""
-    return AnyUrl(
-        f"https://a.upload.youtube.com/http_upload_hls?cid={youtube_config.stream_key.get_secret_value()}&copy=0&file={_YOUTUBE_MANIFEST}",
     )
 
 
@@ -75,36 +85,3 @@ def get_youtube_embed_url(broadcast_url: AnyUrl) -> str:
     """Convert a public YouTube watch URL into an embeddable URL."""
     url_str = str(broadcast_url)
     return url_str.replace("https://youtube.com/watch?v=", "https://www.youtube.com/embed/", 1)
-
-
-async def validate_stream_key(youtube_config: YoutubeStreamConfig) -> bool:
-    """Validate stream key by checking if the upload URL is valid.
-
-    Retries with exponential backoff on network failures or server errors.
-    """
-    url_str = str(get_upload_url(youtube_config))
-    max_retries = 3
-    base_delay = 1.0  # seconds
-
-    async with httpx.AsyncClient(timeout=10) as client:
-        for attempt in range(max_retries):
-            try:
-                response = await client.post(url_str)
-                if response.status_code == 202:
-                    return True
-                # Don't retry on client errors (4xx), only server errors (5xx)
-                if response.status_code < 500:
-                    logger.warning("YouTube stream key validation returned %d", response.status_code)
-                    return False
-            except (httpx.TimeoutException, httpx.NetworkError) as e:
-                logger.warning("Stream key validation attempt %d failed: %s", attempt + 1, e)
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2**attempt)  # exponential backoff
-                    await asyncio.sleep(delay)
-                    continue
-                return False
-            except Exception:
-                logger.exception("Unexpected error during stream key validation")
-                return False
-
-    return False

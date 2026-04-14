@@ -6,6 +6,7 @@ from .images import (
     CameraProperties,
     CaptureMetadata,
     ImageCaptureResponse,
+    ImageCaptureStatus,
     ImageMetadata,
     ImageProperties,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "CameraStatusView",
     "CaptureMetadata",
     "ImageCaptureResponse",
+    "ImageCaptureStatus",
     "ImageMetadata",
     "ImageProperties",
     "StreamMetadata",

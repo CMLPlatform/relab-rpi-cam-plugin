@@ -1,6 +1,7 @@
 """Pydantic models for image transport contracts."""
 
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Annotated
 
 from pydantic import (
@@ -20,6 +21,11 @@ from pydantic.alias_generators import to_pascal, to_snake
 def serialize_datetime_with_z(dt: datetime) -> str:
     """Serialize datetime to ISO 8601 format with 'Z' timezone."""
     return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def serialize_optional_datetime_with_z(dt: datetime | None) -> str | None:
+    """Serialize an optional datetime, preserving None."""
+    return serialize_datetime_with_z(dt) if dt is not None else None
 
 
 class ImageProperties(BaseModel):
@@ -86,12 +92,34 @@ class ImageMetadata(BaseMetadata):
     image_properties: ImageProperties
 
 
+class ImageCaptureStatus(StrEnum):
+    """Delivery state of a captured image.
+
+    - UPLOADED: the Pi synchronously pushed the bytes to the backend and the
+      backend has stored them. ``image_url`` points at the backend.
+    - QUEUED: the synchronous push failed and the bytes are in the Pi's local
+      upload queue awaiting retry. ``image_url`` is None because nothing is
+      retrievable yet.
+    """
+
+    UPLOADED = "uploaded"
+    QUEUED = "queued"
+
+
 class ImageCaptureResponse(BaseModel):
     """Response model for image capture."""
 
-    image_id: str = Field(pattern=r"^[0-9a-f]{32}$", description="Unique image identifier")
+    image_id: str = Field(pattern=r"^[0-9a-f]{32}$", description="Local capture identifier (Pi-side).")
+    status: ImageCaptureStatus = Field(
+        default=ImageCaptureStatus.UPLOADED,
+        description="Whether the image was successfully pushed to the backend or queued for retry.",
+    )
     metadata: ImageMetadata = Field(description="Image metadata")
-    image_url: AnyUrl = Field(description="URL to access image")
-    expires_at: Annotated[AwareDatetime, PlainSerializer(serialize_datetime_with_z)] = Field(
-        description="Expiration time for image URL"
+    image_url: AnyUrl | None = Field(
+        default=None,
+        description="Backend-hosted URL for the stored image. None when the capture is queued.",
+    )
+    expires_at: Annotated[AwareDatetime | None, PlainSerializer(serialize_optional_datetime_with_z)] = Field(
+        default=None,
+        description="Expiration time for queue entries; None for successfully uploaded images.",
     )

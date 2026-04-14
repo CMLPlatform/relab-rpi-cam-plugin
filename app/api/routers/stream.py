@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, HTTPException
 from relab_rpi_cam_models.stream import StreamMode, StreamView
 
 from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.exceptions import ActiveStreamError, YouTubeValidationError
+from app.api.exceptions import ActiveStreamError
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 
 router = APIRouter(prefix="/stream", tags=["stream"])
@@ -36,8 +36,6 @@ async def start_stream(
         return await camera_manager.start_streaming(StreamMode.YOUTUBE, youtube_config=youtube_config)
 
     except YoutubeConfigRequiredError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except YouTubeValidationError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ActiveStreamError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e

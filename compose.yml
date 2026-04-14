@@ -23,6 +23,22 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  mediamtx:
+    # MediaMTX sidecar: receives RTSP publishes from the app (lores preview +
+    # optional main hires), serves them to browsers via WHEP. Runs on the host
+    # network so WebRTC ICE can advertise the Pi's real LAN IPs as host
+    # candidates — browser→Pi media flows peer-to-peer on the same network.
+    image: bluenviron/mediamtx:1.12.0
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   cloudflared:
     image: cloudflare/cloudflared:2024.11.1
     restart: unless-stopped

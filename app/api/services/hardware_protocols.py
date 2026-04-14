@@ -42,6 +42,12 @@ class Picamera2Like(Protocol):
     def stop_recording(self) -> None:
         """Stop recording."""
 
+    def start_encoder(self, encoder: object, output: object, *, name: str = "main") -> None:
+        """Attach an encoder to a named stream without restarting the camera."""
+
+    def stop_encoder(self, *, name: str = "main") -> None:
+        """Detach an encoder from a named stream."""
+
     def create_still_configuration(self, **kwargs: object) -> dict:
         """Create a still capture configuration."""
 

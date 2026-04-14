@@ -1097,7 +1097,7 @@ wheels = [
 
 [[package]]
 name = "relab-rpi-cam-models"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "relab_rpi_cam_models" }
 dependencies = [
     { name = "pydantic" },

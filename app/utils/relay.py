@@ -12,15 +12,14 @@ import asyncio
 import contextlib
 import json
 import logging
-import secrets
 from typing import TYPE_CHECKING, Protocol, cast
 
 import httpx
-import jwt
 import websockets
 from websockets.exceptions import ConnectionClosed
 
 from app.core.config import settings
+from app.utils.device_jwt import build_device_assertion
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
@@ -49,8 +48,6 @@ logger = logging.getLogger(__name__)
 _RECONNECT_MIN = 2.0
 _RECONNECT_MAX = 60.0
 _MAX_CONCURRENT_COMMANDS = 8
-_ASSERTION_AUDIENCE = "relab-rpi-cam-relay"
-_ASSERTION_TTL_SECONDS = 120
 
 _WEBSOCKET_CONNECTION_ERRORS: tuple[type[Exception], ...] = (ConnectionClosed, OSError)
 
@@ -120,7 +117,7 @@ async def _websocket_connect(url: str) -> AsyncGenerator[_WebSocketConnection]:
         await websockets.connect(
             url,
             max_size=1_048_576,  # 1 MiB limit
-            additional_headers={"Authorization": f"Bearer {_build_device_assertion()}"},
+            additional_headers={"Authorization": f"Bearer {build_device_assertion()}"},
         ),
     )
     try:
@@ -286,28 +283,3 @@ async def _send_error(ws: _WebSocketConnection, msg_id: str, status: int, detail
             },
         ),
     )
-
-
-def _build_device_assertion() -> str:
-    now = _utc_timestamp()
-    payload = {
-        "iss": f"camera:{settings.relay_camera_id}",
-        "sub": f"camera:{settings.relay_camera_id}",
-        "aud": _ASSERTION_AUDIENCE,
-        "iat": now,
-        "nbf": now,
-        "exp": now + _ASSERTION_TTL_SECONDS,
-        "jti": secrets.token_urlsafe(24),
-    }
-    return jwt.encode(
-        payload,
-        settings.relay_private_key_pem,
-        algorithm="ES256",
-        headers={"kid": settings.relay_key_id},
-    )
-
-
-def _utc_timestamp() -> int:
-    from datetime import UTC, datetime  # noqa: PLC0415
-
-    return int(datetime.now(UTC).timestamp())

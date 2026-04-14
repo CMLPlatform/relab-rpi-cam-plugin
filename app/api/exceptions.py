@@ -3,13 +3,6 @@
 from app.api.services.stream_state import ActiveStreamState
 
 
-class YouTubeValidationError(Exception):
-    """Raised when YouTube stream key validation fails."""
-
-    def __init__(self) -> None:
-        super().__init__("Invalid YouTube stream key.")
-
-
 class ActiveStreamError(Exception):
     """Raised when trying to access the camera while a stream is active."""
 

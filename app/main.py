@@ -29,6 +29,7 @@ from app.utils.logging import configure_library_loggers, setup_logging
 from app.utils.pairing import log_pairing_mode_started, run_pairing
 from app.utils.relay import run_relay
 from app.utils.tasks import repeat_task
+from app.utils.thermal_governor import get_thermal_governor
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -148,7 +149,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
         repeat_task(check_stream_health, settings.check_stream_health_interval_s, "check_stream_health"),
     }
     logger.info("Recurring cleanup and health check tasks started")
+
+    # Start the thermal governor. It watches CPU temperature and dynamically
+    # drops the lores preview encoder bitrate when the SoC runs hot.
+    thermal_governor = get_thermal_governor()
+    thermal_governor.start(camera_getter=lambda: camera_manager.backend._camera)  # noqa: SLF001
+    logger.info("Thermal governor started")
+
     yield
+
+    # Shutdown background services (thermal governor first so it stops touching the camera).
+    await thermal_governor.stop()
 
     # Shutdown all background and recurring tasks
     all_tasks = background_tasks | recurring_tasks

@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING, NoReturn, cast
 from relab_rpi_cam_models.camera import CameraMode
 from relab_rpi_cam_models.stream import StreamMode
 
-from app.api.exceptions import CameraInitializationError, YouTubeValidationError
+from app.api.exceptions import CameraInitializationError
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services.camera_backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.api.services.hardware_protocols import Picamera2Like
 from app.api.services.hardware_stubs import H264EncoderStub, Picamera2Stub
-from app.api.services.stream import get_broadcast_url, get_ffmpeg_output, validate_stream_key
+from app.api.services.stream import get_broadcast_url, get_ffmpeg_output
 from app.core.config import settings
 
 if TYPE_CHECKING:
@@ -99,12 +99,15 @@ class Picamera2Backend(StreamingCameraBackend):
         *,
         youtube_config: YoutubeStreamConfig | None = None,
     ) -> StreamStartResult:
-        """Start a provider-backed stream."""
-        if mode == StreamMode.YOUTUBE:
-            if not youtube_config:
-                raise YoutubeConfigRequiredError
-            if not await validate_stream_key(youtube_config):
-                raise YouTubeValidationError
+        """Start a provider-backed stream on the main H264 encoder.
+
+        Uses ``start_encoder(name="main")`` instead of ``start_recording`` so the
+        persistent picamera2 pipeline (set up in ``open()`` during Phase 1)
+        stays up — stills-while-streaming keeps working because the main stream
+        continues feeding frames to ``capture_image`` simultaneously.
+        """
+        if mode == StreamMode.YOUTUBE and not youtube_config:
+            raise YoutubeConfigRequiredError
 
         await self.open(CameraMode.VIDEO)
         camera = self._require_camera()
@@ -112,7 +115,7 @@ class Picamera2Backend(StreamingCameraBackend):
         try:
             stream_output = get_ffmpeg_output(mode, youtube_config)
             await asyncio.wait_for(
-                asyncio.to_thread(camera.start_recording, H264Encoder(), stream_output),
+                asyncio.to_thread(camera.start_encoder, H264Encoder(), stream_output, name="main"),
                 timeout=30.0,
             )
         except TimeoutError as e:
@@ -124,16 +127,15 @@ class Picamera2Backend(StreamingCameraBackend):
 
         url = get_broadcast_url(youtube_config) if youtube_config else None
         if url is None:
-            await asyncio.to_thread(camera.stop_recording)
+            await asyncio.to_thread(camera.stop_encoder, name="main")
             _raise_missing_stream_url()
 
         return StreamStartResult(mode=mode, url=url)
 
     async def stop_stream(self) -> None:
-        """Stop recording and resume the persistent pipeline for subsequent captures."""
+        """Stop the main encoder without touching the rest of the persistent pipeline."""
         camera = self._require_camera()
-        await asyncio.to_thread(camera.stop_recording)
-        await asyncio.to_thread(camera.start)
+        await asyncio.to_thread(camera.stop_encoder, name="main")
 
     async def get_stream_metadata(self) -> tuple[dict, dict]:
         """Return metadata for the active stream."""

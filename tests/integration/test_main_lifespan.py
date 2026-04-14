@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -13,6 +13,15 @@ import app.main as main_mod
 from app.core.config import settings
 
 PAIRING_MODE_LOG = "PAIRING MODE | state=awaiting_claim setup=/setup pairing_backend=https://example.com"
+
+
+@pytest.fixture(autouse=True)
+def _stub_thermal_governor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent the thermal governor's background task from leaking into create_task captures."""
+    fake_governor = MagicMock()
+    fake_governor.start = MagicMock()
+    fake_governor.stop = AsyncMock()
+    monkeypatch.setattr(main_mod, "get_thermal_governor", lambda: fake_governor)
 
 
 class DummyTask:

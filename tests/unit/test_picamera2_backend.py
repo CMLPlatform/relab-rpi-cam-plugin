@@ -7,7 +7,6 @@ from pydantic import AnyUrl, SecretStr
 from relab_rpi_cam_models.camera import CameraMode
 from relab_rpi_cam_models.stream import StreamMode
 
-from app.api.exceptions import YouTubeValidationError
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services.picamera2_backend import Picamera2Backend
 
@@ -49,33 +48,13 @@ class TestPicamera2Backend:
         with pytest.raises(YoutubeConfigRequiredError):
             await backend.start_stream(StreamMode.YOUTUBE, youtube_config=None)
 
-    async def test_start_stream_validates_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Invalid stream keys should raise a validation error."""
+    async def test_start_stream_uses_main_encoder(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """start_stream should attach an encoder to the persistent main stream by name."""
         backend = Picamera2Backend()
         camera = MagicMock()
         backend._camera = camera  # noqa: SLF001
         backend.current_mode = CameraMode.VIDEO
 
-        async def _invalid(*_args: object, **_kwargs: object) -> bool:
-            return False
-
-        monkeypatch.setattr("app.api.services.picamera2_backend.validate_stream_key", _invalid)
-        config = YoutubeStreamConfig(stream_key=SecretStr("bad"), broadcast_key=SecretStr("bad"))
-
-        with pytest.raises(YouTubeValidationError):
-            await backend.start_stream(StreamMode.YOUTUBE, youtube_config=config)
-
-    async def test_start_stream_returns_public_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A successful stream start should return provider-neutral stream state."""
-        backend = Picamera2Backend()
-        camera = MagicMock()
-        backend._camera = camera  # noqa: SLF001
-        backend.current_mode = CameraMode.VIDEO
-
-        async def _valid(*_args: object, **_kwargs: object) -> bool:
-            return True
-
-        monkeypatch.setattr("app.api.services.picamera2_backend.validate_stream_key", _valid)
         monkeypatch.setattr("app.api.services.picamera2_backend.H264Encoder", MagicMock)
         monkeypatch.setattr("app.api.services.picamera2_backend.get_ffmpeg_output", MagicMock(return_value=object()))
 
@@ -84,7 +63,21 @@ class TestPicamera2Backend:
 
         assert result.mode == StreamMode.YOUTUBE
         assert result.url == AnyUrl("https://youtube.com/watch?v=public-id")
-        camera.start_recording.assert_called_once()
+        camera.start_encoder.assert_called_once()
+        assert camera.start_encoder.call_args.kwargs == {"name": "main"}
+        camera.start_recording.assert_not_called()
+
+    async def test_stop_stream_keeps_camera_running(self) -> None:
+        """stop_stream must only detach the encoder — the camera pipeline stays up for stills."""
+        backend = Picamera2Backend()
+        camera = MagicMock()
+        backend._camera = camera  # noqa: SLF001
+
+        await backend.stop_stream()
+
+        camera.stop_encoder.assert_called_once_with(name="main")
+        camera.stop.assert_not_called()
+        camera.start.assert_not_called()
 
     async def test_cleanup_releases_camera(self) -> None:
         """Cleanup should stop/close the camera and clear the reference."""

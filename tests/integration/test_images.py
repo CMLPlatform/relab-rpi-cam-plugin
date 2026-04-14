@@ -1,46 +1,45 @@
-"""Tests for image capture and retrieval endpoints."""
+"""Tests for image capture and preview endpoints."""
 
 import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
+from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
+from app.api.services import camera_manager as camera_manager_mod
 from app.api.services.camera_manager import CameraManager
 from app.core.config import settings
+from app.utils.backend_client import BackendUploadError, UploadedImageInfo
 from tests.constants import JPEG_CONTENT_TYPE
 
+CAPTURED_STATUS_KEY = "status"
 IMAGE_ID_KEY = "image_id"
 IMAGE_URL_KEY = "image_url"
-EXPIRES_AT_KEY = "expires_at"
 CONFLICT_RESPONSE_CODE = "409"
 
 
-class TestGetImage:
-    """Tests for GET /images/{image_id}."""
+@pytest.fixture
+def fake_upload_success(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """Replace camera_manager's imported upload_image with a successful AsyncMock."""
+    mock = AsyncMock(
+        return_value=UploadedImageInfo(
+            image_id="a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8",
+            image_url=AnyUrl("https://backend.example/images/a1b2c3d4.jpg"),
+        ),
+    )
+    monkeypatch.setattr(camera_manager_mod, "upload_image", mock)
+    return mock
 
-    async def test_missing_image_returns_404(self, client: AsyncClient) -> None:
-        """Test that requesting a nonexistent image ID returns a 404."""
-        # Use a valid hex ID format (32 hex chars)
-        resp = await client.get("/images/abcdef0123456789abcdef0123456789")
-        assert resp.status_code == 404
 
-    async def test_existing_image_returns_jpeg(self, client: AsyncClient, tmp_path: Path) -> None:
-        """Test that requesting an existing image ID returns the JPEG file."""
-        # Use a valid hex ID format (32 hex chars)
-        valid_image_id = "abcdef0123456789abcdef0123456789"
-        # Point settings to tmp dir and create a fake JPEG
-        original = settings.image_path
-        settings.image_path = tmp_path
-        (tmp_path / f"{valid_image_id}.jpg").write_bytes(b"\xff\xd8\xff\xe0fake-jpeg")
-
-        try:
-            resp = await client.get(f"/images/{valid_image_id}")
-            assert resp.status_code == 200
-            assert resp.headers["content-type"] == JPEG_CONTENT_TYPE
-        finally:
-            settings.image_path = original
+@pytest.fixture
+def fake_upload_failure(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """Replace camera_manager's imported upload_image with a failing AsyncMock."""
+    mock = AsyncMock(side_effect=BackendUploadError("network unreachable"))
+    monkeypatch.setattr(camera_manager_mod, "upload_image", mock)
+    return mock
 
 
 class TestPreviewEndpoint:
@@ -98,42 +97,105 @@ class TestPreviewEndpoint:
 
 
 class TestCaptureEndpoint:
-    """Tests for POST /images."""
+    """Tests for POST /images — synchronous push + queue fallback."""
 
-    async def test_capture_returns_201(
+    async def test_capture_pushes_to_backend_and_returns_uploaded_status(
         self,
         client: AsyncClient,
+        camera_manager: CameraManager,
+        fake_upload_success: AsyncMock,
         tmp_path: Path,
     ) -> None:
-        """Test that capturing an image returns a 201 with the image ID and URL."""
+        """Happy path: synchronous push returns status=uploaded with backend URL."""
         original = settings.image_path
         settings.image_path = tmp_path
+        camera_manager.upload_queue = camera_manager_mod.UploadQueue(tmp_path / "queue")
 
         try:
-            resp = await client.post("/images")
+            resp = await client.post("/images", json={"product_id": 1})
             assert resp.status_code == 201
             data = resp.json()
-            assert IMAGE_ID_KEY in data
-            assert IMAGE_URL_KEY in data
-            assert EXPIRES_AT_KEY in data
+            assert data[CAPTURED_STATUS_KEY] == "uploaded"
+            assert data[IMAGE_ID_KEY] == "a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8"
+            assert data[IMAGE_URL_KEY] == "https://backend.example/images/a1b2c3d4.jpg"
         finally:
             settings.image_path = original
 
-    async def test_capture_saves_file_to_disk(
+        assert fake_upload_success.await_count == 1
+
+    async def test_capture_deletes_local_file_after_upload(
         self,
         client: AsyncClient,
+        camera_manager: CameraManager,
+        fake_upload_success: AsyncMock,
         tmp_path: Path,
     ) -> None:
-        """Test that capturing an image saves the JPEG file to disk."""
+        """After a successful push the local JPEG should be gone — single source of truth."""
         original = settings.image_path
         settings.image_path = tmp_path
+        camera_manager.upload_queue = camera_manager_mod.UploadQueue(tmp_path / "queue")
 
         try:
-            resp = await client.post("/images")
-            image_id = resp.json()[IMAGE_ID_KEY]
-            assert (tmp_path / f"{image_id}.jpg").exists()
+            resp = await client.post("/images", json=None)
+            assert resp.status_code == 201
+            remaining = list(tmp_path.glob("*.jpg"))
+            assert remaining == []
         finally:
             settings.image_path = original
+
+    async def test_capture_queues_on_upload_failure(
+        self,
+        client: AsyncClient,
+        camera_manager: CameraManager,
+        fake_upload_failure: AsyncMock,
+        tmp_path: Path,
+    ) -> None:
+        """A failing upload should enqueue the capture and return status=queued."""
+        original = settings.image_path
+        settings.image_path = tmp_path
+        camera_manager.upload_queue = camera_manager_mod.UploadQueue(tmp_path / "queue")
+
+        try:
+            resp = await client.post("/images", json={"product_id": 7})
+            assert resp.status_code == 201
+            data = resp.json()
+            assert data[CAPTURED_STATUS_KEY] == "queued"
+            assert data[IMAGE_URL_KEY] is None
+        finally:
+            settings.image_path = original
+
+        assert fake_upload_failure.await_count == 1
+        # Queued file lives under data/queue/ with a .json sidecar.
+        queue_root = tmp_path / "queue"
+        jpgs = list(queue_root.glob("*.jpg"))
+        jsons = list(queue_root.glob("*.json"))
+        assert len(jpgs) == 1
+        assert len(jsons) == 1
+
+    async def test_capture_forwards_upload_metadata_to_backend_client(
+        self,
+        client: AsyncClient,
+        camera_manager: CameraManager,
+        fake_upload_success: AsyncMock,
+        tmp_path: Path,
+    ) -> None:
+        """The upload_metadata body should arrive verbatim at backend_client.upload_image."""
+        original = settings.image_path
+        settings.image_path = tmp_path
+        camera_manager.upload_queue = camera_manager_mod.UploadQueue(tmp_path / "queue")
+
+        try:
+            resp = await client.post(
+                "/images",
+                json={"product_id": 99, "description": "rear view"},
+            )
+            assert resp.status_code == 201
+        finally:
+            settings.image_path = original
+
+        call = fake_upload_success.await_args
+        assert call is not None
+        assert call.kwargs["upload_metadata"] == {"product_id": 99, "description": "rear view"}
 
     async def test_capture_runtime_error_returns_500(
         self,
@@ -141,9 +203,9 @@ class TestCaptureEndpoint:
         camera_manager: CameraManager,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Test that if capturing the image raises a RuntimeError, a 500 response is returned."""
+        """RuntimeError during capture should surface as 500."""
 
-        async def _boom() -> object:
+        async def _boom(upload_metadata: object = None) -> object:  # noqa: ARG001
             msg = "boom"
             raise RuntimeError(msg)
 

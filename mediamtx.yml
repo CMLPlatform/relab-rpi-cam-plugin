@@ -1,0 +1,64 @@
+# MediaMTX config for the RPi camera plugin.
+#
+# The Pi app publishes two RTSP streams into MediaMTX from picamera2's dual
+# main+lores pipeline (Phase 1 groundwork):
+#
+#   - cam-preview (lores, 640x480, ~500kbps): served to browsers via WHEP for
+#     low-latency WebRTC preview. This is the dominant use case.
+#   - cam-hires   (main, 1920x1080, ~4Mbps): only active while a YouTube stream
+#     is running. Forwarded outbound to YouTube RTMPS by the app (not by
+#     MediaMTX) so the app controls start/stop cleanly.
+#
+# The container runs in host network mode so WebRTC ICE can advertise the Pi's
+# real LAN IPs as host candidates — the browser media path is peer-to-peer
+# between browser and Pi on the same network, matching the Phase 4 viewer.
+#
+# None of this is sensitive — MediaMTX has no auth configured. It listens on
+# the trusted LAN only. If you need WAN viewing, add a TURN/SFU hop in front;
+# that is explicitly out of scope for this round.
+
+logLevel: info
+logDestinations: [stdout]
+
+# Turn off everything we don't use to minimise the attack/port surface.
+rtmp: no
+hls: no
+srt: no
+playback: no
+metrics: no
+
+# RTSP ingest — the Pi app publishes here.
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+
+# WebRTC / WHEP — browsers connect here.
+webrtc: yes
+webrtcAddress: :8889
+# Auto-detect the Pi's LAN IPs as ICE host candidates. host network mode makes
+# these the real interface IPs, not Docker bridge addresses.
+webrtcAdditionalHosts: []
+webrtcICEUDPMuxAddress: :8189
+webrtcICETCPMuxAddress: :8189
+
+# API for runtime path control (only used diagnostically).
+api: yes
+apiAddress: 127.0.0.1:9997
+
+pathDefaults:
+  # Accept publish attempts from anywhere on the trusted LAN. Since MediaMTX is
+  # only reachable on the host network (not from the public internet), this is
+  # acceptable. For stricter setups, use publishUser/publishPass here.
+  source: publisher
+  sourceOnDemand: no
+  # Don't record any of these streams to disk — the backend stores stills
+  # separately and we don't want to burn the SD card.
+  record: no
+
+paths:
+  cam-preview:
+    # Lores preview stream, published by the Pi app when the first preview
+    # subscriber arrives.
+  cam-hires:
+    # Full-resolution stream, published by the Pi app only while a YouTube
+    # stream is active.
