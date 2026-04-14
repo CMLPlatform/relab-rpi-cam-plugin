@@ -10,6 +10,7 @@ from .images import (
     ImageProperties,
 )
 from .stream import StreamMetadata, StreamMode, StreamView
+from .telemetry import TelemetrySnapshot, ThermalState
 
 __all__ = [
     "BaseMetadata",
@@ -23,4 +24,6 @@ __all__ = [
     "StreamMetadata",
     "StreamMode",
     "StreamView",
+    "TelemetrySnapshot",
+    "ThermalState",
 ]

@@ -46,3 +46,28 @@ loki.write "local" {
     url = sys.env("LOKI_PUSH_URL")
   }
 }
+
+// --- Metrics pipeline (optional) ---------------------------------------------
+// Scrapes the plugin's /metrics endpoint and forwards to a Prometheus-compatible
+// remote_write receiver. The whole pipeline no-ops cleanly when
+// PROMETHEUS_REMOTE_WRITE_URL is empty: prometheus.scrape still runs but the
+// remote_write sink drops samples if its url is blank.
+
+prometheus.scrape "rpi_cam" {
+  targets = [
+    {
+      __address__ = "app:8018",
+      __metrics_path__ = "/metrics",
+      instance    = sys.env("OBSERVABILITY_INSTANCE"),
+      job         = "rpi-cam-plugin",
+    },
+  ]
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.remote_write "local" {
+  endpoint {
+    url = sys.env("PROMETHEUS_REMOTE_WRITE_URL")
+  }
+}

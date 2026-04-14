@@ -27,9 +27,10 @@
   dependencies = [
     "fastapi[standard]>=0.115.8",
     "pillow>=10.0.0",
+    "psutil>=5.9",
     "pydantic-settings>=2.8.0",
     "pyjwt[crypto]>=2.12.1",
-    "relab-rpi-cam-models>=0.2.0", # NOTE: Keep this aligned with the published contract package
+    "relab-rpi-cam-models>=0.3.0", # NOTE: Keep this aligned with the published contract package
     "websockets>=14.0",
   ]
 
