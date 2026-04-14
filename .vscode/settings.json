@@ -7,10 +7,11 @@
     "editor.defaultFormatter": "charliermarsh.ruff"
   },
   "ty.configuration": {
-		"environment": {
-			"root": ["./"],
-			"python": ".venv/"
-		}
-	},
-
+    "environment": {
+      "root": [
+        "./"
+      ],
+      "python": ".venv/"
+    }
+  }
 }
