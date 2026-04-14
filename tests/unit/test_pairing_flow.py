@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Self, cast
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from app.api.dependencies.auth import reload_authorized_hashes
@@ -215,6 +216,106 @@ class TestPairingCycle:
         assert f"PAIRING ROTATING | expired_code={PAIRING_CODE_1} reason=expired" in log_text
         assert pairing_mod._format_pairing_ready_message(PAIRING_CODE_2) in log_text  # noqa: SLF001
         assert PAIRING_FAILURE_LOG not in log_text
+
+    async def test_register_timeout_retries_same_cycle_without_traceback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A timeout while registering should be retried before the pairing cycle gives up."""
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+        monkeypatch.setattr(settings, "base_url", "https://camera.example/")
+        monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
+        client = FakeClient(
+            post_responses=[FakeResponse(201)],
+            get_responses=[
+                FakeResponse(200, {"status": pairing_mod.STATUS_WAITING}),
+                FakeResponse(
+                    200,
+                    {
+                        "status": pairing_mod.STATUS_PAIRED,
+                        "camera_id": RELAY_CAMERA_ID,
+                        "ws_url": RELAY_BACKEND_URL,
+                        "auth_scheme": RELAY_AUTH_SCHEME,
+                        "key_id": RELAY_KEY_ID,
+                    },
+                ),
+            ],
+        )
+        timeout_request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/register")
+        client.post = AsyncMock(  # type: ignore[method-assign]
+            side_effect=[
+                httpx.ReadTimeout("register timed out", request=timeout_request),
+                FakeResponse(201),
+            ]
+        )
+        monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: client)
+        monkeypatch.setattr(pairing_mod, "_generate_code_and_fingerprint", lambda: (PAIRING_CODE_1, "FP1"))
+        on_paired = AsyncMock()
+
+        with caplog.at_level(logging.WARNING):
+            await pairing_mod.run_pairing(on_paired)
+
+        on_paired.assert_awaited_once()
+        assert "PAIRING REGISTER TIMEOUT | code=CODE1 retry_in_s=1" in caplog.text
+        assert "Traceback" not in caplog.text
+
+    async def test_poll_timeout_retries_same_cycle_without_traceback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A timeout while polling should be treated as transient and retried in place."""
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+        monkeypatch.setattr(settings, "base_url", "https://camera.example/")
+        monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
+        client = FakeClient(
+            post_responses=[FakeResponse(201)],
+            get_responses=[
+                FakeResponse(200, {"status": pairing_mod.STATUS_WAITING}),
+                FakeResponse(
+                    200,
+                    {
+                        "status": pairing_mod.STATUS_PAIRED,
+                        "camera_id": RELAY_CAMERA_ID,
+                        "ws_url": RELAY_BACKEND_URL,
+                        "auth_scheme": RELAY_AUTH_SCHEME,
+                        "key_id": RELAY_KEY_ID,
+                    },
+                ),
+            ],
+        )
+        waiting_response = FakeResponse(200, {"status": pairing_mod.STATUS_WAITING})
+        paired_response = FakeResponse(
+            200,
+            {
+                "status": pairing_mod.STATUS_PAIRED,
+                "camera_id": RELAY_CAMERA_ID,
+                "ws_url": RELAY_BACKEND_URL,
+                "auth_scheme": RELAY_AUTH_SCHEME,
+                "key_id": RELAY_KEY_ID,
+            },
+        )
+        timeout_request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/poll")
+        client.get = AsyncMock(  # type: ignore[method-assign]
+            side_effect=[
+                httpx.ReadTimeout("poll timed out", request=timeout_request),
+                waiting_response,
+                paired_response,
+            ]
+        )
+        monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: client)
+        monkeypatch.setattr(pairing_mod, "_generate_code_and_fingerprint", lambda: (PAIRING_CODE_1, "FP1"))
+        on_paired = AsyncMock()
+
+        with caplog.at_level(logging.WARNING):
+            await pairing_mod.run_pairing(on_paired)
+
+        on_paired.assert_awaited_once()
+        assert "PAIRING POLL TIMEOUT | code=CODE1 retry_in_s=3" in caplog.text
+        assert "Traceback" not in caplog.text
 
     def test_pairing_mode_prefers_detected_lan_setup_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Loopback base URLs should prefer a best-effort LAN setup URL in logs."""

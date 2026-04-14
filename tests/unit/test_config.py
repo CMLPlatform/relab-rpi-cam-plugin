@@ -89,3 +89,13 @@ class TestSettingsDefaults:
         """By default, the relay should be disabled since it requires explicit configuration to work securely."""
         s = Settings()
         assert s.relay_enabled is False
+
+
+class TestPairingSettings:
+    """Tests for pairing-related settings defaults."""
+
+    def test_defaults_are_sensible(self) -> None:
+        """Pairing retry settings should default to short, readable delays."""
+        s = Settings()
+        assert s.pairing_register_timeout_retry_s == 1
+        assert s.pairing_poll_interval_s == 3

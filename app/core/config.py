@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     # Pairing: set this to the backend's HTTP(S) API URL to enable zero-config pairing.
     # When set and relay credentials are absent, the RPi enters pairing mode on boot.
     pairing_backend_url: str = ""  # https://your-backend/api
+    pairing_register_timeout_retry_s: int = 1  # Delay before retrying a timed-out pairing register request
+    pairing_poll_interval_s: int = 3  # Delay between pairing poll requests and after poll timeouts
 
     @field_validator("relay_backend_url")
     @classmethod

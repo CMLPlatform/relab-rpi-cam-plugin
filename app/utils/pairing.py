@@ -50,7 +50,6 @@ def _get_credentials_file() -> Path:
 
 
 _CREDENTIALS_FILE = _get_credentials_file()
-_POLL_INTERVAL_S = 3
 _CODE_LENGTH = 3  # token_hex(3) → 6 hex chars
 PAIRING_CODE_TTL_SECONDS = 10 * 60
 
@@ -227,6 +226,11 @@ def _log_pairing_http_status_error(exc: httpx.HTTPStatusError) -> None:
     )
 
 
+def _log_pairing_timeout(stage: str, code: str, retry_in_s: int) -> None:
+    """Log a transient timeout during pairing with consistent wording."""
+    logger.warning("PAIRING %s TIMEOUT | code=%s retry_in_s=%s", stage, code, retry_in_s)
+
+
 async def run_pairing(on_paired: Callable[[], Coroutine[Any, Any, None]]) -> None:
     """Run the pairing flow: register → poll → configure → callback."""
     base = _normalize_pairing_backend_base_url(core_config.settings.pairing_backend_url.rstrip("/"))
@@ -273,15 +277,21 @@ async def _pairing_cycle(
 
     # Register
     for _attempt in range(3):
-        resp = await client.post(
-            f"{base_url}/plugins/rpi-cam/pairing/register",
-            json={
-                "code": code,
-                "rpi_fingerprint": fingerprint,
-                "public_key_jwk": public_key_jwk,
-                "key_id": key_id,
-            },
-        )
+        try:
+            resp = await client.post(
+                f"{base_url}/plugins/rpi-cam/pairing/register",
+                json={
+                    "code": code,
+                    "rpi_fingerprint": fingerprint,
+                    "public_key_jwk": public_key_jwk,
+                    "key_id": key_id,
+                },
+            )
+        except httpx.TimeoutException:
+            retry_delay_s = core_config.settings.pairing_register_timeout_retry_s
+            _log_pairing_timeout("REGISTER", code, retry_delay_s)
+            await asyncio.sleep(retry_delay_s)
+            continue
         if resp.status_code == 201:
             break
         if resp.status_code == 409:
@@ -302,11 +312,16 @@ async def _pairing_cycle(
 
     # Poll
     while True:
-        await asyncio.sleep(_POLL_INTERVAL_S)
-        resp = await client.get(
-            f"{base_url}/plugins/rpi-cam/pairing/poll",
-            params={"code": code, "fingerprint": fingerprint},
-        )
+        poll_interval_s = core_config.settings.pairing_poll_interval_s
+        await asyncio.sleep(poll_interval_s)
+        try:
+            resp = await client.get(
+                f"{base_url}/plugins/rpi-cam/pairing/poll",
+                params={"code": code, "fingerprint": fingerprint},
+            )
+        except httpx.TimeoutException:
+            _log_pairing_timeout("POLL", code, poll_interval_s)
+            continue
         if resp.status_code == 404:
             # Code expired — restart cycle
             logger.warning("PAIRING ROTATING | expired_code=%s reason=expired", code)
