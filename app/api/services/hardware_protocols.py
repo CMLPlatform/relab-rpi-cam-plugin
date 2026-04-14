@@ -27,8 +27,8 @@ class Picamera2Like(Protocol):
     def close(self) -> None:
         """Release the camera."""
 
-    def capture_image(self) -> "PilImage":
-        """Capture a still image (PIL Image at runtime)."""
+    def capture_image(self, name: str = "main") -> "PilImage":
+        """Capture a still image from the named stream (PIL Image at runtime)."""
 
     def capture_metadata(self) -> dict | None:
         """Capture metadata for the last image or frame."""

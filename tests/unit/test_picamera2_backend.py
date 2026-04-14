@@ -1,7 +1,6 @@
 """Tests for the Picamera2 backend implementation."""
 
-import logging
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic import AnyUrl, SecretStr
@@ -12,23 +11,36 @@ from app.api.exceptions import YouTubeValidationError
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services.picamera2_backend import Picamera2Backend
 
-STILL_RESIZE_MARKER = "source=still_resize"
-STILL_DURATION_MARKER = "duration_ms=20.00"
-
 
 class TestPicamera2Backend:
     """Tests for the concrete Picamera2 backend."""
 
-    async def test_open_reuses_current_mode(self) -> None:
-        """Opening the same mode twice should not reconfigure twice."""
+    async def test_open_is_idempotent_once_started(self) -> None:
+        """Opening again after the pipeline is running should not reconfigure."""
         backend = Picamera2Backend()
         camera = MagicMock()
         backend._camera = camera  # noqa: SLF001
         backend.current_mode = CameraMode.PHOTO
 
-        await backend.open(CameraMode.PHOTO)
+        await backend.open(CameraMode.VIDEO)
 
         camera.configure.assert_not_called()
+        camera.start.assert_not_called()
+        assert backend.current_mode == CameraMode.VIDEO
+
+    async def test_capture_image_reads_main_stream(self) -> None:
+        """capture_image must pull from the persistent main stream by name."""
+        backend = Picamera2Backend()
+        camera = MagicMock()
+        camera.camera_properties = {"Model": "mock"}
+        camera.capture_metadata.return_value = {"FrameDuration": 33_333}
+        camera.capture_image.return_value = MagicMock()
+        backend._camera = camera  # noqa: SLF001
+        backend.current_mode = CameraMode.PHOTO
+
+        await backend.capture_image()
+
+        camera.capture_image.assert_called_once_with("main")
 
     async def test_start_stream_requires_config(self) -> None:
         """YouTube streaming should require YouTube config."""
@@ -74,40 +86,16 @@ class TestPicamera2Backend:
         assert result.url == AnyUrl("https://youtube.com/watch?v=public-id")
         camera.start_recording.assert_called_once()
 
-    async def test_preview_logs_timing_and_source(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Preview capture should log duration and source."""
-        backend = Picamera2Backend()
-        resized_image = MagicMock()
-        resized_image.save = MagicMock()
-        captured_image = MagicMock()
-        captured_image.resize.return_value = resized_image
-        monkeypatch.setattr(
-            backend,
-            "capture_image",
-            AsyncMock(return_value=MagicMock(image=captured_image)),
-        )
-        monkeypatch.setattr("app.api.services.picamera2_backend.time.perf_counter", MagicMock(side_effect=[5.0, 5.02]))
-
-        with caplog.at_level(logging.DEBUG):
-            await backend.capture_preview_jpeg()
-
-        assert STILL_RESIZE_MARKER in caplog.text
-        assert STILL_DURATION_MARKER in caplog.text
-
-    async def test_cleanup_clears_cached_configs(self) -> None:
-        """Cleanup should reset cached preview/still/video configs."""
+    async def test_cleanup_releases_camera(self) -> None:
+        """Cleanup should stop/close the camera and clear the reference."""
         backend = Picamera2Backend()
         camera = MagicMock()
         backend._camera = camera  # noqa: SLF001
         backend.current_mode = CameraMode.PHOTO
-        backend._still_config = {"still": True}  # noqa: SLF001
-        backend._video_config = {"video": True}  # noqa: SLF001
 
         await backend.cleanup()
 
-        assert backend._still_config is None  # noqa: SLF001
-        assert backend._video_config is None  # noqa: SLF001
+        camera.stop.assert_called_once()
+        camera.close.assert_called_once()
+        assert backend._camera is None  # noqa: SLF001
+        assert backend.current_mode is None

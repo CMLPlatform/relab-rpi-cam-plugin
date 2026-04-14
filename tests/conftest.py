@@ -13,7 +13,7 @@ from relab_rpi_cam_models.stream import StreamMode
 from app.api.dependencies.auth import reload_authorized_hashes, verify_request
 from app.api.dependencies.camera_management import get_camera_manager
 from app.api.schemas.streaming import YoutubeStreamConfig
-from app.api.services.camera_backend import CameraBackend, CaptureResult, StreamStartResult
+from app.api.services.camera_backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.api.services.camera_manager import CameraManager
 from app.core.config import settings
 from app.main import app
@@ -52,9 +52,6 @@ def camera_manager() -> CameraManager:
                 capture_metadata=self.capture_metadata,
             )
 
-        async def capture_preview_jpeg(self) -> bytes:
-            return b"preview-jpeg"
-
         async def start_stream(
             self,
             mode: StreamMode,
@@ -77,7 +74,7 @@ def camera_manager() -> CameraManager:
             self.current_mode = None
 
     backend = FakeBackend()
-    return CameraManager(backend=cast("CameraBackend", backend))
+    return CameraManager(backend=cast("StreamingCameraBackend", backend))
 
 
 @pytest.fixture

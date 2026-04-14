@@ -25,7 +25,7 @@ class Picamera2Stub:
     def close(self) -> None:
         """Close the stub camera."""
 
-    def capture_image(self) -> object:
+    def capture_image(self, _name: str = "main") -> object:
         """Capture a stub image (returns a PIL Image when running on Pi)."""
 
     def capture_metadata(self) -> dict | None:

@@ -15,7 +15,7 @@ from relab_rpi_cam_models.stream import StreamMode
 from app.api.dependencies import camera_management as camera_deps
 from app.api.exceptions import ActiveStreamError
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
-from app.api.services.camera_backend import CameraBackend, CaptureResult, StreamStartResult
+from app.api.services.camera_backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.api.services.camera_manager import CameraManager
 from app.api.services.stream_service import StreamService
 from app.core.config import settings
@@ -33,7 +33,6 @@ class FakeBackend:
         self.stop_stream = AsyncMock()
         self.open = AsyncMock(side_effect=self._open)
         self.capture_image = AsyncMock()
-        self.capture_preview_jpeg = AsyncMock(return_value=b"preview")
         self.start_stream = AsyncMock()
         self.get_stream_metadata = AsyncMock(return_value=({"Model": "mock-camera"}, {"FrameDuration": 33_333}))
 
@@ -123,7 +122,7 @@ class TestCameraManagerCleanup:
         mock_clear_directory = AsyncMock()
         monkeypatch.setattr("app.api.services.camera_manager.clear_directory", mock_clear_directory)
 
-        manager = CameraManager(backend=cast("CameraBackend", FakeBackend()))
+        manager = CameraManager(backend=cast("StreamingCameraBackend",FakeBackend()))
 
         await manager.cleanup()
 
@@ -137,7 +136,7 @@ class TestCameraManagerStartStreaming:
 
     async def test_raises_when_stream_already_active(self) -> None:
         """Should raise ActiveStreamError if a stream is already active."""
-        manager = CameraManager(backend=cast("CameraBackend", FakeBackend()))
+        manager = CameraManager(backend=cast("StreamingCameraBackend",FakeBackend()))
         manager.stream.mode = StreamMode.YOUTUBE
         manager.stream.started_at = datetime.now(UTC)
 
@@ -151,7 +150,7 @@ class TestCameraManagerStartStreaming:
             mode=StreamMode.YOUTUBE,
             url=AnyUrl("https://youtube.com/watch?v=valid-broadcast"),
         )
-        manager = CameraManager(backend=cast("CameraBackend", backend))
+        manager = CameraManager(backend=cast("StreamingCameraBackend",backend))
 
         youtube_config = YoutubeStreamConfig(
             stream_key=SecretStr("valid-key"),
@@ -169,7 +168,7 @@ class TestCameraManagerStartStreaming:
         """Should reset stream state if the backend fails to start the stream."""
         backend = FakeBackend()
         backend.start_stream.side_effect = RuntimeError("camera disconnected")
-        manager = CameraManager(backend=cast("CameraBackend", backend))
+        manager = CameraManager(backend=cast("StreamingCameraBackend",backend))
 
         youtube_config = YoutubeStreamConfig(
             stream_key=SecretStr("key"),
@@ -185,7 +184,7 @@ class TestCameraManagerStartStreaming:
         """Should bubble up provider-specific validation errors from the backend."""
         backend = FakeBackend()
         backend.start_stream.side_effect = YoutubeConfigRequiredError
-        manager = CameraManager(backend=cast("CameraBackend", backend))
+        manager = CameraManager(backend=cast("StreamingCameraBackend",backend))
 
         with pytest.raises(YoutubeConfigRequiredError):
             await manager.start_streaming(StreamMode.YOUTUBE, youtube_config=None)
@@ -203,7 +202,7 @@ class TestCameraManagerCapture:
             camera_properties={"Model": "mock-camera"},
             capture_metadata={"FrameDuration": 33_333},
         )
-        manager = CameraManager(backend=cast("CameraBackend", backend))
+        manager = CameraManager(backend=cast("StreamingCameraBackend",backend))
         original = settings.image_path
         settings.image_path = tmp_path / "images"
         settings.image_path.mkdir()
@@ -222,7 +221,7 @@ class TestCameraManagerStopStreaming:
 
     async def test_raises_when_no_stream_active(self) -> None:
         """Should raise RuntimeError if no stream is active."""
-        manager = CameraManager(backend=cast("CameraBackend", FakeBackend()))
+        manager = CameraManager(backend=cast("StreamingCameraBackend",FakeBackend()))
 
         with pytest.raises(RuntimeError, match="No stream active"):
             await manager.stop_streaming()
@@ -230,7 +229,7 @@ class TestCameraManagerStopStreaming:
     async def test_stops_active_stream(self) -> None:
         """Should stop the stream through the backend."""
         backend = FakeBackend()
-        manager = CameraManager(backend=cast("CameraBackend", backend))
+        manager = CameraManager(backend=cast("StreamingCameraBackend",backend))
         manager.stream.mode = StreamMode.YOUTUBE
         manager.stream.url = AnyUrl("https://youtube.com/watch?v=valid-broadcast")
         manager.stream.started_at = datetime.now(UTC)
@@ -246,7 +245,7 @@ class TestCameraManagerGetStatus:
 
     async def test_returns_status_without_stream(self) -> None:
         """Should return status with no stream info when stream is inactive."""
-        manager = CameraManager(backend=cast("CameraBackend", FakeBackend()))
+        manager = CameraManager(backend=cast("StreamingCameraBackend",FakeBackend()))
 
         status = await manager.get_status()
 

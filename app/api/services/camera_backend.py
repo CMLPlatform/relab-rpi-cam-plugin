@@ -1,9 +1,16 @@
-"""Backend abstraction for hardware-specific camera implementations."""
+"""Backend abstraction for hardware-specific camera implementations.
+
+The core ``CameraBackend`` Protocol covers what every camera must do: open,
+capture a still, and clean up. Backends for non-standard sensors (infrared,
+hyperspectral, etc.) only have to satisfy this core. Backends that also do live
+video streaming additionally implement ``StreamingCameraBackend``; the camera
+manager uses ``isinstance`` checks to gate streaming operations.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from pydantic import AnyUrl
 
@@ -34,8 +41,9 @@ class StreamStartResult:
     url: AnyUrl
 
 
+@runtime_checkable
 class CameraBackend(Protocol):
-    """Behavior required from a concrete camera backend."""
+    """Core behaviour required from every camera backend."""
 
     current_mode: CameraMode | None
 
@@ -45,8 +53,13 @@ class CameraBackend(Protocol):
     async def capture_image(self) -> CaptureResult:
         """Capture a full-resolution image and metadata."""
 
-    async def capture_preview_jpeg(self) -> bytes:
-        """Capture a preview JPEG suitable for the UI."""
+    async def cleanup(self) -> None:
+        """Release backend resources."""
+
+
+@runtime_checkable
+class StreamingCameraBackend(CameraBackend, Protocol):
+    """Extension for backends capable of live video streaming (YouTube, etc.)."""
 
     async def start_stream(
         self,
@@ -61,6 +74,3 @@ class CameraBackend(Protocol):
 
     async def get_stream_metadata(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """Return camera properties and current stream capture metadata."""
-
-    async def cleanup(self) -> None:
-        """Release backend resources."""

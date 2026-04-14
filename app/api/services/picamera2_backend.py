@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from io import BytesIO
-from typing import TYPE_CHECKING, Literal, NoReturn, cast
+from typing import TYPE_CHECKING, NoReturn, cast
 
 from relab_rpi_cam_models.camera import CameraMode
 from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.exceptions import CameraInitializationError, YouTubeValidationError
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
-from app.api.services.camera_backend import CameraBackend, CaptureResult, StreamStartResult
+from app.api.services.camera_backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.api.services.hardware_protocols import Picamera2Like
 from app.api.services.hardware_stubs import H264EncoderStub, Picamera2Stub
 from app.api.services.stream import get_broadcast_url, get_ffmpeg_output, validate_stream_key
@@ -22,9 +20,7 @@ from app.core.config import settings
 if TYPE_CHECKING:
     from picamera2 import Picamera2
     from picamera2.encoders import H264Encoder
-    from PIL.Image import Image as PilImage
 else:
-    PilImage = object
     try:
         from picamera2 import Picamera2
         from picamera2.encoders import H264Encoder
@@ -33,35 +29,31 @@ else:
         H264Encoder = H264EncoderStub
 
 logger = logging.getLogger(__name__)
-_PREVIEW_SIZE = (640, 480)
+
+# Main stream: full-resolution buffer used for stills and, when active, the
+# YouTube H264 encoder. Lores stream: low-resolution buffer reserved for the
+# preview H264 encoder (MediaMTX WHEP, Phase 6) — much cheaper on CPU than
+# encoding main, which matters because preview is the dominant use case while
+# YouTube streaming is rare.
+_MAIN_SIZE = (1920, 1080)
+_LORES_SIZE = (640, 480)
 
 
-class Picamera2Backend(CameraBackend):
-    """Concrete camera backend backed by Picamera2."""
+class Picamera2Backend(StreamingCameraBackend):
+    """Concrete camera backend backed by Picamera2.
+
+    Runs a single persistent video configuration with both a main (1080p) and a
+    lores (640x480) stream. Stills are pulled from the running main stream via
+    ``capture_image("main")`` — Pi 5's dual-ISP handles still-while-recording,
+    so no mode switching or pipeline restart is needed.
+    """
 
     def __init__(self) -> None:
         self._camera: Picamera2Like | None = None
         self.current_mode: CameraMode | None = None
-        self._still_config: dict | None = None
-        self._video_config: dict | None = None
-
-    def _get_camera_config(self, mode: CameraMode, camera: Picamera2Like) -> dict:
-        """Build or reuse the underlying Picamera2 config for the requested mode."""
-        match mode:
-            case CameraMode.PHOTO:
-                if self._still_config is None:
-                    self._still_config = camera.create_still_configuration(main={"size": (1920, 1080)}, raw=None)
-                return self._still_config
-            case CameraMode.VIDEO:
-                if self._video_config is None:
-                    self._video_config = camera.create_video_configuration(raw=None)
-                return self._video_config
-            case _:
-                msg = f"Unhandled camera mode: {mode}"
-                raise ValueError(msg)
 
     async def open(self, mode: CameraMode) -> None:
-        """Initialize or reconfigure the Picamera2 camera."""
+        """Initialise the persistent pipeline on first call; idempotent thereafter."""
         if self._camera is None:
             try:
                 self._camera = cast(
@@ -74,22 +66,23 @@ class Picamera2Backend(CameraBackend):
                 ) from e
             except (RuntimeError, OSError) as e:
                 raise CameraInitializationError(settings.camera_device_num, str(e)) from e
-        elif self.current_mode == mode:
-            return
-        else:
-            await asyncio.to_thread(self._camera.stop)
 
-        camera = self._require_camera()
-        config = self._get_camera_config(mode, camera)
-        camera.configure(config)
-        await asyncio.to_thread(camera.start)
+            camera = self._require_camera()
+            config = camera.create_video_configuration(
+                main={"size": _MAIN_SIZE},
+                lores={"size": _LORES_SIZE},
+                raw=None,
+            )
+            camera.configure(config)
+            await asyncio.to_thread(camera.start)
+
         self.current_mode = mode
 
     async def capture_image(self) -> CaptureResult:
-        """Capture a full-resolution image and metadata."""
+        """Capture a still from the running main stream."""
         await self.open(CameraMode.PHOTO)
         camera = self._require_camera()
-        image = await asyncio.to_thread(camera.capture_image)
+        image = await asyncio.to_thread(camera.capture_image, "main")
         capture_metadata = await asyncio.wait_for(asyncio.to_thread(camera.capture_metadata), timeout=10)
         if capture_metadata is None:
             msg = "Failed to capture image metadata"
@@ -99,16 +92,6 @@ class Picamera2Backend(CameraBackend):
             camera_properties=camera.camera_properties,
             capture_metadata=capture_metadata,
         )
-
-    async def capture_preview_jpeg(self) -> bytes:
-        """Capture a low-resolution preview JPEG."""
-        started = time.perf_counter()
-        preview, source = await self._capture_preview_image()
-        buf = BytesIO()
-        preview.save(buf, format="JPEG", quality=70)
-        duration_ms = (time.perf_counter() - started) * 1000
-        logger.debug("Preview capture source=%s duration_ms=%.2f", source, duration_ms)
-        return buf.getvalue()
 
     async def start_stream(
         self,
@@ -147,9 +130,10 @@ class Picamera2Backend(CameraBackend):
         return StreamStartResult(mode=mode, url=url)
 
     async def stop_stream(self) -> None:
-        """Stop the current recording session."""
+        """Stop recording and resume the persistent pipeline for subsequent captures."""
         camera = self._require_camera()
         await asyncio.to_thread(camera.stop_recording)
+        await asyncio.to_thread(camera.start)
 
     async def get_stream_metadata(self) -> tuple[dict, dict]:
         """Return metadata for the active stream."""
@@ -167,8 +151,6 @@ class Picamera2Backend(CameraBackend):
             await asyncio.to_thread(self._camera.close)
             self._camera = None
             self.current_mode = None
-            self._still_config = None
-            self._video_config = None
 
     def _require_camera(self) -> Picamera2Like:
         """Return the initialized camera or raise a runtime error."""
@@ -176,11 +158,6 @@ class Picamera2Backend(CameraBackend):
             msg = "Camera backend has not been initialized"
             raise RuntimeError(msg)
         return self._camera
-
-    async def _capture_preview_image(self) -> tuple[PilImage, Literal["still_resize"]]:
-        """Capture preview frames from the active photo pipeline without reconfiguring sensor modes."""
-        result = await self.capture_image()
-        return result.image.resize(_PREVIEW_SIZE), "still_resize"
 
 
 def _raise_missing_stream_url() -> NoReturn:

@@ -1,8 +1,11 @@
 """Main camera manager service class."""
 
 import asyncio
+import logging
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from urllib.parse import urljoin
 
 from pydantic import AnyUrl
@@ -13,12 +16,22 @@ from relab_rpi_cam_models.stream import StreamMode, StreamView
 from app.api.exceptions import ActiveStreamError
 from app.api.schemas.streaming import YoutubeStreamConfig
 from app.api.services.backend_factory import create_camera_backend
-from app.api.services.camera_backend import CameraBackend
+from app.api.services.camera_backend import CameraBackend, StreamingCameraBackend
 from app.api.services.contract_adapters import build_image_metadata, image_metadata_to_exif
 from app.api.services.stream_service import StreamService
 from app.api.services.stream_state import ActiveStreamState
 from app.core.config import settings
 from app.utils.files import clear_directory
+
+logger = logging.getLogger(__name__)
+_PREVIEW_SIZE = (640, 480)
+
+
+class StreamingNotSupportedError(RuntimeError):
+    """Raised when a streaming operation is attempted on a non-streaming backend."""
+
+    def __init__(self, backend: CameraBackend) -> None:
+        super().__init__(f"Backend {type(backend).__name__} does not support live streaming")
 
 
 class CameraManager:
@@ -87,15 +100,35 @@ class CameraManager:
         )
 
     async def capture_preview_jpeg(self) -> bytes:
-        """Capture a low-res JPEG for viewfinder preview. Does not save to disk."""
+        """Capture a low-res JPEG for the polling-preview fallback.
+
+        The dominant preview path in the web UI is MediaMTX WHEP (Phase 6). This
+        method exists for native clients and as a diagnostic: it runs a regular
+        still capture and resizes. Because the backend pipeline is persistent,
+        no mode switch happens and the full path is ~10× faster than it used
+        to be.
+        """
         if self.stream.is_active:
             raise ActiveStreamError(self.stream)
 
+        started = time.perf_counter()
         await self._acquire_lock()
         try:
-            return await self.backend.capture_preview_jpeg()
+            result = await self.backend.capture_image()
         finally:
             self.lock.release()
+
+        preview = result.image.resize(_PREVIEW_SIZE)
+        buf = BytesIO()
+        preview.save(buf, format="JPEG", quality=70)
+        logger.debug("Preview capture duration_ms=%.2f", (time.perf_counter() - started) * 1000)
+        return buf.getvalue()
+
+    def _require_streaming_backend(self) -> StreamingCameraBackend:
+        """Return the backend narrowed to StreamingCameraBackend, or raise."""
+        if not isinstance(self.backend, StreamingCameraBackend):
+            raise StreamingNotSupportedError(self.backend)
+        return self.backend
 
     async def start_streaming(
         self,
@@ -104,13 +137,14 @@ class CameraManager:
         youtube_config: YoutubeStreamConfig | None = None,
     ) -> StreamView:
         """Start streaming for the requested provider/mode."""
+        backend = self._require_streaming_backend()
         if self.stream.is_active:
             raise ActiveStreamError(self.stream)
 
         await self._acquire_lock()
         try:
             try:
-                result = await self.backend.start_stream(mode, youtube_config=youtube_config)
+                result = await backend.start_stream(mode, youtube_config=youtube_config)
                 self.stream_service.start(result)
             except Exception:
                 self.stream_service.reset()
@@ -126,10 +160,11 @@ class CameraManager:
 
     async def stop_streaming(self) -> None:
         """Stop an active stream."""
+        backend = self._require_streaming_backend()
         await self._acquire_lock()
         try:
             if self.stream.is_active:
-                await self.backend.stop_stream()
+                await backend.stop_stream()
                 self.stream_service.reset()
             else:
                 err_msg = "No stream active"
@@ -156,7 +191,8 @@ class CameraManager:
     async def get_stream_info(self) -> StreamView | None:
         """Get stream information including metadata if active."""
         if self.stream.is_active:
-            camera_properties, capture_metadata = await self.backend.get_stream_metadata()
+            backend = self._require_streaming_backend()
+            camera_properties, capture_metadata = await backend.get_stream_metadata()
             return self.stream_service.build_view(
                 camera_properties=camera_properties,
                 capture_metadata=capture_metadata,
