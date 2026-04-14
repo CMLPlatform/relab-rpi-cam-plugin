@@ -27,9 +27,11 @@ class _Response:
         self.headers = headers or {}
 
 
-def _patch_httpx(response: _Response | Exception) -> object:
+def _patch_httpx(response: _Response | Exception | list[_Response]) -> object:
     client = MagicMock()
     if isinstance(response, Exception):
+        client.post = AsyncMock(side_effect=response)
+    elif isinstance(response, list):
         client.post = AsyncMock(side_effect=response)
     else:
         client.post = AsyncMock(return_value=response)
@@ -80,6 +82,21 @@ class TestPostOfferToMediamtx:
             await _post_offer_to_mediamtx("v=0\no=- offer")
         assert excinfo.value.status_code == 502
         assert "HTTP 400" in str(excinfo.value.detail)
+
+    async def test_mediamtx_no_stream_404_retries(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A just-started RTSP publisher can appear shortly after the first WHEP offer."""
+        monkeypatch.setattr(whep_mod.asyncio, "sleep", AsyncMock())
+        responses = [
+            _Response(404, body="{\"error\":\"no stream is available on path 'cam-preview'\"}"),
+            _Response(201, body="v=0\nanswer", headers={"Location": "/cam-preview/whep/abc"}),
+        ]
+
+        with _patch_httpx(responses):
+            answer, location = await _post_offer_to_mediamtx("v=0\no=- offer")
+
+        assert answer == "v=0\nanswer"
+        assert location == "http://host.docker.internal:8889/cam-preview/whep/abc"
+        whep_mod.asyncio.sleep.assert_awaited_once_with(0.25)
 
     async def test_network_error_raises_503(self) -> None:
         """A connection failure should surface as 503."""

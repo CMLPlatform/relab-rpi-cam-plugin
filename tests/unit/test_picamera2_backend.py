@@ -65,17 +65,21 @@ class TestPicamera2Backend:
         assert result.url == AnyUrl("https://youtube.com/watch?v=public-id")
         camera.start_encoder.assert_called_once()
         assert camera.start_encoder.call_args.kwargs == {"name": "main"}
+        assert backend._main_encoder is camera.start_encoder.call_args.args[0]  # noqa: SLF001
         camera.start_recording.assert_not_called()
 
     async def test_stop_stream_keeps_camera_running(self) -> None:
         """stop_stream must only detach the encoder — the camera pipeline stays up for stills."""
         backend = Picamera2Backend()
         camera = MagicMock()
+        encoder = MagicMock()
         backend._camera = camera  # noqa: SLF001
+        backend._main_encoder = encoder  # noqa: SLF001
 
         await backend.stop_stream()
 
-        camera.stop_encoder.assert_called_once_with(name="main")
+        camera.stop_encoder.assert_called_once_with(encoder)
+        assert backend._main_encoder is None  # noqa: SLF001
         camera.stop.assert_not_called()
         camera.start.assert_not_called()
 

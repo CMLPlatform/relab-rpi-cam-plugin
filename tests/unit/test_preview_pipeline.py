@@ -94,7 +94,8 @@ class TestAcquireRelease:
 
         assert manager.active_subscribers == 0
         assert not manager.is_running
-        camera.stop_encoder.assert_called_once_with(name="lores")
+        encoder = camera.start_encoder.call_args.args[0]
+        camera.stop_encoder.assert_called_once_with(encoder)
 
     async def test_release_does_not_stop_while_other_subscribers_remain(
         self,
@@ -127,7 +128,8 @@ class TestForceStop:
 
         assert manager.active_subscribers == 0
         assert not manager.is_running
-        camera.stop_encoder.assert_called_once_with(name="lores")
+        encoder = camera.start_encoder.call_args.args[0]
+        camera.stop_encoder.assert_called_once_with(encoder)
 
 
 class TestSetBitrate:
@@ -152,6 +154,7 @@ class TestSetBitrate:
         manager = PreviewPipelineManager()
         camera = MagicMock()
         await manager.acquire(camera)
+        old_encoder = camera.start_encoder.call_args.args[0]
         camera.start_encoder.reset_mock()
         camera.stop_encoder.reset_mock()
         stub_encoder_and_output.reset_mock()
@@ -159,7 +162,7 @@ class TestSetBitrate:
         await manager.set_bitrate(camera, 200_000)
 
         assert manager._bitrate == 200_000  # noqa: SLF001
-        camera.stop_encoder.assert_called_once_with(name="lores")
+        camera.stop_encoder.assert_called_once_with(old_encoder)
         camera.start_encoder.assert_called_once()
         # H264Encoder should have been instantiated with the new bitrate.
         assert stub_encoder_and_output.call_args.kwargs.get("bitrate") == 200_000

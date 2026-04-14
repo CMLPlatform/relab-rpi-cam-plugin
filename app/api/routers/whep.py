@@ -27,6 +27,7 @@ encoder on, the last DELETE turns it off.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Annotated, Any
@@ -52,6 +53,9 @@ router = APIRouter(prefix="/whep", tags=["whep"])
 # preview ingest (see ``preview_pipeline.DEFAULT_MEDIAMTX_URL``).
 _MEDIAMTX_WHEP_URL = "http://host.docker.internal:8889/cam-preview/whep"
 _WHEP_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+_MEDIAMTX_READY_ATTEMPTS = 6
+_MEDIAMTX_READY_DELAY_S = 0.25
+_MEDIAMTX_NO_STREAM_TEXT = "no stream is available"
 
 
 class WhepOfferRequest(BaseModel):
@@ -163,11 +167,15 @@ async def _post_offer_to_mediamtx(sdp_offer: str) -> tuple[str, str]:
     """POST a raw SDP offer to MediaMTX's WHEP endpoint. Return (answer, location)."""
     try:
         async with httpx.AsyncClient(timeout=_WHEP_TIMEOUT) as client:
-            response = await client.post(
-                _MEDIAMTX_WHEP_URL,
-                content=sdp_offer,
-                headers={"Content-Type": "application/sdp"},
-            )
+            for attempt in range(_MEDIAMTX_READY_ATTEMPTS):
+                response = await client.post(
+                    _MEDIAMTX_WHEP_URL,
+                    content=sdp_offer,
+                    headers={"Content-Type": "application/sdp"},
+                )
+                if not _is_mediamtx_stream_not_ready(response) or attempt == _MEDIAMTX_READY_ATTEMPTS - 1:
+                    break
+                await asyncio.sleep(_MEDIAMTX_READY_DELAY_S)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail=f"MediaMTX unreachable: {exc}") from exc
 
@@ -186,6 +194,11 @@ async def _post_offer_to_mediamtx(sdp_offer: str) -> tuple[str, str]:
     if location.startswith("/"):
         location = f"http://host.docker.internal:8889{location}"
     return response.text, location
+
+
+def _is_mediamtx_stream_not_ready(response: httpx.Response) -> bool:
+    """Return whether MediaMTX has not seen the just-started RTSP publisher yet."""
+    return response.status_code == 404 and _MEDIAMTX_NO_STREAM_TEXT in response.text
 
 
 async def _delete_mediamtx_session(location: str) -> None:

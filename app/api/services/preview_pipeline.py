@@ -136,7 +136,7 @@ class PreviewPipelineManager:
     async def _stop(self, camera: Picamera2Like) -> None:
         logger.info("Stopping lores preview pipeline")
         try:
-            await asyncio.to_thread(camera.stop_encoder, name="lores")
+            await asyncio.to_thread(camera.stop_encoder, self._encoder)
         except (OSError, RuntimeError) as exc:
             logger.warning("Preview pipeline stop had a non-fatal error: %s", exc)
         self._encoder = None

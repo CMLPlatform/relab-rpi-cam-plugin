@@ -94,10 +94,11 @@ class TestCorsConfig:
 
     async def test_preflight_allows_auth_header(self, unauthed_client: AsyncClient) -> None:
         """Configured auth headers should be accepted in CORS preflight responses."""
+        origin = str(settings.allowed_cors_origins[0]).rstrip("/")
         resp = await unauthed_client.options(
             "/camera",
             headers={
-                "Origin": "http://localhost:8000",
+                "Origin": origin,
                 "Access-Control-Request-Method": "GET",
                 "Access-Control-Request-Headers": settings.auth_key_name,
             },

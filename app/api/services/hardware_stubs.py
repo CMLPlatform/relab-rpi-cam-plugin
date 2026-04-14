@@ -43,8 +43,8 @@ class Picamera2Stub:
     def start_encoder(self, encoder: object, output: object, *, name: str = "main") -> None:
         """Stub attach an encoder to a named stream."""
 
-    def stop_encoder(self, *, name: str = "main") -> None:
-        """Stub detach an encoder from a named stream."""
+    def stop_encoder(self, encoders: object | None = None) -> None:
+        """Stub detach one, many, or all encoders."""
 
     def create_still_configuration(self, **_kwargs: object) -> dict:
         """Create a stub still configuration."""

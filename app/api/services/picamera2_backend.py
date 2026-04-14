@@ -50,6 +50,7 @@ class Picamera2Backend(StreamingCameraBackend):
 
     def __init__(self) -> None:
         self._camera: Picamera2Like | None = None
+        self._main_encoder: H264Encoder | None = None
         self.current_mode: CameraMode | None = None
 
     async def open(self, mode: CameraMode) -> None:
@@ -123,10 +124,12 @@ class Picamera2Backend(StreamingCameraBackend):
 
         try:
             stream_output = get_ffmpeg_output(mode, youtube_config)
+            encoder = H264Encoder()
             await asyncio.wait_for(
-                asyncio.to_thread(camera.start_encoder, H264Encoder(), stream_output, name="main"),
+                asyncio.to_thread(camera.start_encoder, encoder, stream_output, name="main"),
                 timeout=30.0,
             )
+            self._main_encoder = encoder
         except TimeoutError as e:
             msg = "Failed to start recording: ffmpeg startup timeout"
             raise RuntimeError(msg) from e
@@ -136,7 +139,9 @@ class Picamera2Backend(StreamingCameraBackend):
 
         url = get_broadcast_url(youtube_config) if youtube_config else None
         if url is None:
-            await asyncio.to_thread(camera.stop_encoder, name="main")
+            if self._main_encoder is not None:
+                await asyncio.to_thread(camera.stop_encoder, self._main_encoder)
+                self._main_encoder = None
             _raise_missing_stream_url()
 
         return StreamStartResult(mode=mode, url=url)
@@ -144,7 +149,10 @@ class Picamera2Backend(StreamingCameraBackend):
     async def stop_stream(self) -> None:
         """Stop the main encoder without touching the rest of the persistent pipeline."""
         camera = self._require_camera()
-        await asyncio.to_thread(camera.stop_encoder, name="main")
+        if self._main_encoder is None:
+            return
+        await asyncio.to_thread(camera.stop_encoder, self._main_encoder)
+        self._main_encoder = None
 
     async def get_stream_metadata(self) -> tuple[dict, dict]:
         """Return metadata for the active stream."""
@@ -161,6 +169,7 @@ class Picamera2Backend(StreamingCameraBackend):
             await asyncio.to_thread(self._camera.stop)
             await asyncio.to_thread(self._camera.close)
             self._camera = None
+            self._main_encoder = None
             self.current_mode = None
 
     def _require_camera(self) -> Picamera2Like:
