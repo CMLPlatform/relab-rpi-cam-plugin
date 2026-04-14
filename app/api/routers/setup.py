@@ -36,4 +36,3 @@ async def setup_page(request: Request) -> HTMLResponse:
             "pairing_code_ttl_seconds": PAIRING_CODE_TTL_SECONDS,
         },
     )
-

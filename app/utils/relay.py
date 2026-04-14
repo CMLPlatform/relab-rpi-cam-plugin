@@ -12,13 +12,15 @@ import asyncio
 import contextlib
 import json
 import logging
+import secrets
 from typing import TYPE_CHECKING, Protocol, cast
 
 import httpx
+import jwt
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-from app.core.config import apply_relay_credentials, settings
+from app.core.config import settings
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
@@ -31,10 +33,6 @@ _MSG_TYPE_REQUEST = "request"
 # Content-type substrings used to detect binary responses
 _BINARY_IMAGE = "image"
 _BINARY_OCTET = "octet-stream"
-
-
-class _StaleKeyError(Exception):
-    """Raised when the relay API key has been rotated and needs to be reloaded."""
 
 
 class _AsyncWebSocket(Protocol):
@@ -51,6 +49,8 @@ logger = logging.getLogger(__name__)
 _RECONNECT_MIN = 2.0
 _RECONNECT_MAX = 60.0
 _MAX_CONCURRENT_COMMANDS = 8
+_ASSERTION_AUDIENCE = "relab-rpi-cam-relay"
+_ASSERTION_TTL_SECONDS = 120
 
 _WEBSOCKET_CONNECTION_ERRORS: tuple[type[Exception], ...] = (ConnectionClosed, OSError)
 
@@ -120,7 +120,7 @@ async def _websocket_connect(url: str) -> AsyncGenerator[_WebSocketConnection]:
         await websockets.connect(
             url,
             max_size=1_048_576,  # 1 MiB limit
-            additional_headers={"Authorization": f"Bearer {settings.relay_api_key}"},
+            additional_headers={"Authorization": f"Bearer {_build_device_assertion()}"},
         ),
     )
     try:
@@ -131,30 +131,19 @@ async def _websocket_connect(url: str) -> AsyncGenerator[_WebSocketConnection]:
 
 async def _receive_loop(ws: _WebSocketConnection) -> None:
     """Process command messages from the backend until the connection closes."""
-    # Include the relay API key so the local API accepts relayed commands.
-    auth_headers = {settings.auth_key_name: settings.relay_api_key} if settings.relay_api_key else {}
+    # Include a local-only key so relayed commands can call the Pi's local API.
+    auth_headers = {settings.auth_key_name: settings.local_relay_api_key} if settings.local_relay_api_key else {}
     pending_tasks: set[asyncio.Task[None]] = set()
     command_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_COMMANDS)
 
     def _on_task_done(task: asyncio.Task[None]) -> None:
-        """Callback when a command task completes. Checks for stale key errors."""
+        """Callback when a command task completes."""
         pending_tasks.discard(task)
         if task.cancelled():
             return
-
         exc = task.exception()
-        if exc is None:
-            return
-
-        if isinstance(exc, _StaleKeyError):
-            # Signal reconnection by closing the WebSocket, which will exit _receive_loop
-            _task = asyncio.create_task(_close_ws_for_reconnect(ws))
-            # Keep a reference so the task isn't garbage-collected immediately
-            pending_tasks.add(_task)
-            _task.add_done_callback(pending_tasks.discard)
-            return
-
-        logger.debug("Command task failed", exc_info=exc)
+        if exc is not None:
+            logger.debug("Command task failed", exc_info=exc)
 
     async with httpx.AsyncClient(base_url=str(settings.base_url).rstrip("/"), headers=auth_headers) as http:
         try:
@@ -231,10 +220,7 @@ async def _drain_pending_tasks(pending_tasks: set[asyncio.Task[None]], *, cancel
 
 
 async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg: dict) -> None:
-    """Dispatch a single command to the local API and send the response.
-
-    Raises _StaleKeyError if the relay API key has been rotated (403 response).
-    """
+    """Dispatch a single command to the local API and send the response."""
     msg_id = msg.get("id", "")
     method: str = msg.get("method", "GET").upper()
     path: str = msg.get("path", "/")
@@ -249,11 +235,8 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
         await _send_error(ws, msg_id, 503, str(exc))
         return
 
-    # Detect if the relay API key has been rotated (backend returns 403)
     if response.status_code == 403:
-        logger.warning("Relay received 403 Unauthorized — API key may have been rotated")
-        message = "Relay API key rotated"
-        raise _StaleKeyError(message)
+        logger.warning("Relay received 403 from local API — check that local_relay_api_key is set correctly")
 
     content_type = response.headers.get("content-type", "")
     is_binary = _BINARY_IMAGE in content_type or _BINARY_OCTET in content_type
@@ -305,13 +288,26 @@ async def _send_error(ws: _WebSocketConnection, msg_id: str, status: int, detail
     )
 
 
-async def _close_ws_for_reconnect(ws: _WebSocketConnection) -> None:
-    """Close the WebSocket connection to trigger reconnection with new credentials.
+def _build_device_assertion() -> str:
+    now = _utc_timestamp()
+    payload = {
+        "iss": f"camera:{settings.relay_camera_id}",
+        "sub": f"camera:{settings.relay_camera_id}",
+        "aud": _ASSERTION_AUDIENCE,
+        "iat": now,
+        "nbf": now,
+        "exp": now + _ASSERTION_TTL_SECONDS,
+        "jti": secrets.token_urlsafe(24),
+    }
+    return jwt.encode(
+        payload,
+        settings.relay_private_key_pem,
+        algorithm="ES256",
+        headers={"kid": settings.relay_key_id},
+    )
 
-    Called when the relay API key is detected to have been rotated (403 response).
-    Reloads credentials before closing so the next connection uses the new key.
-    """
-    logger.info("Closing relay connection to reconnect with new API key.")
-    apply_relay_credentials()
-    with contextlib.suppress(Exception):
-        await ws.close()
+
+def _utc_timestamp() -> int:
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    return int(datetime.now(UTC).timestamp())

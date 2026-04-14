@@ -8,9 +8,10 @@
   },
   "ty.configuration": {
 		"environment": {
-			"root": ["./backend"],
-			"python": "./backend/.venv/"
+			"root": ["./"],
+			"python": ".venv/"
 		}
 	},
-	"ty.interpreter": ["${workspaceFolder}/backend/.venv/bin/python"],
+	"ty.interpreter": [".venv/bin/python"],
 }
+

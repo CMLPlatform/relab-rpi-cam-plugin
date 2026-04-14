@@ -1,6 +1,7 @@
 """Configuration settings for the Raspberry Pi API app."""
 
 import logging
+import secrets
 import warnings
 from collections.abc import Iterable
 from pathlib import Path
@@ -14,6 +15,7 @@ from app.utils.pairing import _CREDENTIALS_FILE, load_relay_credentials
 # Set the project base directory and .env file
 BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
 _HTTPS_SCHEME = "https"
+_RELAY_AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
 logger = logging.getLogger(__name__)
 
 
@@ -60,12 +62,21 @@ class Settings(BaseSettings):
     # WebSocket relay (auto-enabled when all three fields are set)
     relay_backend_url: str = ""  # wss://your-backend/plugins/rpi-cam/ws/connect
     relay_camera_id: str = ""
-    relay_api_key: str = ""
+    relay_auth_scheme: str = "device_assertion"
+    relay_key_id: str = ""
+    relay_private_key_pem: str = ""
+    local_relay_api_key: str = ""
 
     @property
     def relay_enabled(self) -> bool:
-        """Relay is enabled when all three relay fields are set."""
-        return bool(self.relay_backend_url and self.relay_camera_id and self.relay_api_key)
+        """Relay is enabled when the platform device credential is configured."""
+        return bool(
+            self.relay_backend_url
+            and self.relay_camera_id
+            and self.relay_auth_scheme == _RELAY_AUTH_SCHEME_DEVICE_ASSERTION
+            and self.relay_key_id
+            and self.relay_private_key_pem
+        )
 
     @property
     def cookie_secure(self) -> bool:
@@ -96,7 +107,7 @@ class Settings(BaseSettings):
 
     @field_validator("authorized_api_keys", mode="before")
     @classmethod
-    def _parse_api_keys(cls, v: object) -> list[str]:
+    def _parse_api_keys(cls, v: object) -> list[str]:  # noqa: PLR0911
         """Accept a JSON array, a comma-separated string, or an empty value.
 
         Handles common .env mistakes such as ``[KEY]`` (unquoted JSON string)
@@ -159,7 +170,9 @@ def apply_relay_credentials() -> None:
         set_runtime_relay_credentials(
             relay_backend_url=str(creds.get("relay_backend_url", "")),
             relay_camera_id=str(creds.get("relay_camera_id", "")),
-            relay_api_key=str(creds.get("relay_api_key", "")),
+            relay_auth_scheme=str(creds.get("relay_auth_scheme", "device_assertion")),
+            relay_key_id=str(creds.get("relay_key_id", "")),
+            relay_private_key_pem=str(creds.get("relay_private_key_pem", "")),
         )
 
 
@@ -167,16 +180,22 @@ def set_runtime_relay_credentials(
     *,
     relay_backend_url: str,
     relay_camera_id: str,
-    relay_api_key: str,
+    relay_auth_scheme: str,
+    relay_key_id: str,
+    relay_private_key_pem: str,
 ) -> None:
     """Apply relay credentials at runtime and refresh dependent auth state."""
     settings.relay_backend_url = relay_backend_url
     settings.relay_camera_id = relay_camera_id
-    settings.relay_api_key = relay_api_key
+    settings.relay_auth_scheme = relay_auth_scheme
+    settings.relay_key_id = relay_key_id
+    settings.relay_private_key_pem = relay_private_key_pem
 
-    # Ensure the relay API key is accepted by the local API for loopback calls.
-    if settings.relay_api_key and settings.relay_api_key not in settings.authorized_api_keys:
-        settings.authorized_api_keys.append(settings.relay_api_key)
+    # Use a local-only key for relayed loopback calls into this FastAPI app.
+    if not settings.local_relay_api_key:
+        settings.local_relay_api_key = f"LOCAL_{secrets.token_urlsafe(32)}"
+    if settings.local_relay_api_key not in settings.authorized_api_keys:
+        settings.authorized_api_keys.append(settings.local_relay_api_key)
 
     # Refresh the pre-computed auth key hashes after modifying the key list.
     from app.api.dependencies.auth import reload_authorized_hashes  # noqa: PLC0415 — deferred to avoid circular import

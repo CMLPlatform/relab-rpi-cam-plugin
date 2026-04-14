@@ -8,7 +8,9 @@ from app.core.config import Settings, apply_relay_credentials
 
 RELAY_BACKEND_URL = "wss://example.com/ws"
 RELAY_CAMERA_ID = "cam-1"
-RELAY_API_KEY = "key-1"
+RELAY_AUTH_SCHEME = "device_assertion"
+RELAY_KEY_ID = "key-1"
+RELAY_PRIVATE_KEY_PEM = "private-key"
 
 
 class TestRelayEnabledProperty:
@@ -24,7 +26,9 @@ class TestRelayEnabledProperty:
         s = Settings(
             relay_backend_url="wss://example.com/ws",
             relay_camera_id="cam-1",
-            relay_api_key="key-1",
+            relay_auth_scheme=RELAY_AUTH_SCHEME,
+            relay_key_id=RELAY_KEY_ID,
+            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
         assert s.relay_enabled is True
 
@@ -34,8 +38,8 @@ class TestRelayEnabledProperty:
         assert s.relay_enabled is False
 
     def test_disabled_when_only_key(self) -> None:
-        """Relay should be disabled if only the API key is set."""
-        s = Settings(relay_api_key="key-1")
+        """Relay should be disabled if only the private key is set."""
+        s = Settings(relay_private_key_pem=RELAY_PRIVATE_KEY_PEM)
         assert s.relay_enabled is False
 
 
@@ -47,7 +51,9 @@ class TestApplyRelayCredentials:
         creds = {
             "relay_backend_url": RELAY_BACKEND_URL,
             "relay_camera_id": RELAY_CAMERA_ID,
-            "relay_api_key": RELAY_API_KEY,
+            "relay_auth_scheme": RELAY_AUTH_SCHEME,
+            "relay_key_id": RELAY_KEY_ID,
+            "relay_private_key_pem": RELAY_PRIVATE_KEY_PEM,
         }
         creds_file = tmp_path / "relay_credentials.json"
         creds_file.write_text(json.dumps(creds))
@@ -59,13 +65,19 @@ class TestApplyRelayCredentials:
         ):
             mock_settings.relay_backend_url = ""
             mock_settings.relay_camera_id = ""
-            mock_settings.relay_api_key = ""
+            mock_settings.relay_auth_scheme = ""
+            mock_settings.relay_key_id = ""
+            mock_settings.relay_private_key_pem = ""
+            mock_settings.local_relay_api_key = ""
             mock_settings.authorized_api_keys = []
             apply_relay_credentials()
             assert mock_settings.relay_backend_url == RELAY_BACKEND_URL
             assert mock_settings.relay_camera_id == RELAY_CAMERA_ID
-            assert mock_settings.relay_api_key == RELAY_API_KEY
-            assert RELAY_API_KEY in mock_settings.authorized_api_keys
+            assert mock_settings.relay_auth_scheme == RELAY_AUTH_SCHEME
+            assert mock_settings.relay_key_id == RELAY_KEY_ID
+            assert mock_settings.relay_private_key_pem == RELAY_PRIVATE_KEY_PEM
+            assert mock_settings.local_relay_api_key.startswith("LOCAL_")
+            assert mock_settings.local_relay_api_key in mock_settings.authorized_api_keys
 
     def test_noop_when_no_file(self, tmp_path: Path) -> None:
         """Should do nothing if the credentials file doesn't exist."""
@@ -76,7 +88,7 @@ class TestApplyRelayCredentials:
             patch("app.api.dependencies.auth.reload_authorized_hashes"),
         ):
             mock_settings.relay_backend_url = ""
-            mock_settings.relay_api_key = ""
+            mock_settings.relay_private_key_pem = ""
             mock_settings.authorized_api_keys = []
             apply_relay_credentials()
             assert mock_settings.relay_backend_url == ""

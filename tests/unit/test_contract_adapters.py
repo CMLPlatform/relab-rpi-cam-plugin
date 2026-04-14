@@ -52,9 +52,7 @@ class TestActiveStreamState:
 
     def test_inactive_stream_returns_none(self) -> None:
         """Inactive runtime state should not produce a response DTO."""
-        assert (
-            ActiveStreamState().to_view({"Model": MOCK_CAMERA_MODEL}, {"FrameDuration": 33_333}) is None
-        )
+        assert ActiveStreamState().to_view({"Model": MOCK_CAMERA_MODEL}, {"FrameDuration": 33_333}) is None
 
     def test_active_stream_returns_contract_view(self) -> None:
         """Active runtime state should adapt into a shared stream view."""

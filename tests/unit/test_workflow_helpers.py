@@ -22,7 +22,7 @@ def test_validate_models_package_tag_accepts_matching_tag(
 ) -> None:
     """Matching tag and package version should validate successfully."""
     pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text("[project]\nversion = \"1.2.3\"\n", encoding="utf-8")
+    pyproject.write_text('[project]\nversion = "1.2.3"\n', encoding="utf-8")
     args = argparse.Namespace(
         tag_name="relab-rpi-cam-models-v1.2.3",
         pyproject=pyproject,

@@ -11,11 +11,13 @@ from app.core.config import settings
 from tests.constants import HTML_CONTENT_TYPE
 
 SETUP_TITLE = "RPi Camera — Setup"
-CAMERA_URL_TEXT = "Camera URL"
+SETUP_COPY_TEXT = "Pair this camera with the ReLab app"
 PAIRING_CODE = "ABC123"
 RELAY_CONNECTED_TEXT = 'WebSocket relay: <span class="online">connected</span>'
 PAIRING_FAILED_TEXT = "Pairing failed"
 PAIRED_SUCCESS_TEXT = "Pairing complete"
+PAIRING_EXPIRY_ATTR = "data-pairing-expiry"
+PAIRING_TTL_ATTR = 'data-ttl-ms="600000"'
 
 
 class TestSetupPage:
@@ -32,10 +34,10 @@ class TestSetupPage:
         resp = await unauthed_client.get("/setup")
         assert SETUP_TITLE in resp.text
 
-    async def test_setup_page_contains_camera_url(self, unauthed_client: AsyncClient) -> None:
-        """Test that the setup page shows the camera URL field."""
+    async def test_setup_page_contains_pairing_copy(self, unauthed_client: AsyncClient) -> None:
+        """Test that the setup page shows the pairing instructions."""
         resp = await unauthed_client.get("/setup")
-        assert CAMERA_URL_TEXT in resp.text
+        assert SETUP_COPY_TEXT in resp.text
 
     async def test_setup_page_shows_pairing_status(
         self,
@@ -53,18 +55,29 @@ class TestSetupPage:
                 expires_at=datetime.now(UTC) + timedelta(minutes=10),
             ),
         )
-        original = (settings.relay_backend_url, settings.relay_camera_id, settings.relay_api_key)
+        original = (
+            settings.relay_backend_url,
+            settings.relay_camera_id,
+            settings.relay_key_id,
+            settings.relay_private_key_pem,
+        )
         settings.relay_backend_url = "wss://example.com/ws"
         settings.relay_camera_id = "cam-1"
-        settings.relay_api_key = "key-1"
+        settings.relay_key_id = "key-1"
+        settings.relay_private_key_pem = "private-key"
         try:
             resp = await unauthed_client.get("/setup")
             assert PAIRING_CODE in resp.text
-            assert "data-pairing-expiry" in resp.text
-            assert "data-ttl-ms=\"600000\"" in resp.text
+            assert PAIRING_EXPIRY_ATTR in resp.text
+            assert PAIRING_TTL_ATTR in resp.text
             assert RELAY_CONNECTED_TEXT in resp.text
         finally:
-            settings.relay_backend_url, settings.relay_camera_id, settings.relay_api_key = original
+            (
+                settings.relay_backend_url,
+                settings.relay_camera_id,
+                settings.relay_key_id,
+                settings.relay_private_key_pem,
+            ) = original
 
     async def test_setup_page_shows_pairing_error(
         self,

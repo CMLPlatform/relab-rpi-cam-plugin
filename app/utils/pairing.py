@@ -11,6 +11,7 @@ it enters pairing mode:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json as json_mod
 import logging
 import os
@@ -25,6 +26,8 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 
 import app.core.config as core_config
 
@@ -54,6 +57,7 @@ PAIRING_CODE_TTL_SECONDS = 10 * 60
 # Pairing status values
 STATUS_WAITING = "waiting"
 STATUS_PAIRED = "paired"
+AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
 _DOCKER_HOST_ALIAS = "host.docker.internal"
 
@@ -169,12 +173,9 @@ def log_pairing_mode_started() -> None:
 def _format_pairing_ready_message(code: str) -> str:
     """Return a single-line pairing message that stays readable in Docker logs."""
     return (
-        "PAIRING READY | code=%s | setup=%s | pairing_backend=%s | "
+        f"PAIRING READY | code={_sanitize_log_value(code)} | setup={_pairing_setup_location()} | "
+        f"pairing_backend={core_config.settings.pairing_backend_url.rstrip('/')} | "
         "claim_in='RELab app > Cameras > Add Camera'"
-    ) % (
-        _sanitize_log_value(code),
-        _pairing_setup_location(),
-        core_config.settings.pairing_backend_url.rstrip("/"),
     )
 
 
@@ -185,6 +186,7 @@ def _log_pairing_ready(code: str) -> None:
 
 def _log_pairing_connect_error(exc: httpx.ConnectError, base_url: str) -> None:
     """Log actionable guidance for unreachable pairing backends."""
+    del exc
     parsed = urlparse(base_url)
     if parsed.hostname in _LOOPBACK_HOSTS and _is_running_in_container():
         logger.error(
@@ -262,6 +264,9 @@ async def _pairing_cycle(
 ) -> None:
     """Single pairing attempt: register a code and poll until claimed."""
     code, fingerprint = _generate_code_and_fingerprint()
+    private_key = _generate_private_key()
+    key_id = secrets.token_urlsafe(16)
+    public_key_jwk = _public_jwk(private_key, key_id)
     _set_pairing_code_state(code, fingerprint)
     _state.status = "registering"
     _state.error = None
@@ -270,13 +275,21 @@ async def _pairing_cycle(
     for _attempt in range(3):
         resp = await client.post(
             f"{base_url}/plugins/rpi-cam/pairing/register",
-            json={"code": code, "rpi_fingerprint": fingerprint},
+            json={
+                "code": code,
+                "rpi_fingerprint": fingerprint,
+                "public_key_jwk": public_key_jwk,
+                "key_id": key_id,
+            },
         )
         if resp.status_code == 201:
             break
         if resp.status_code == 409:
             # Code collision — regenerate
             code, fingerprint = _generate_code_and_fingerprint()
+            private_key = _generate_private_key()
+            key_id = secrets.token_urlsafe(16)
+            public_key_jwk = _public_jwk(private_key, key_id)
             _set_pairing_code_state(code, fingerprint)
             continue
         resp.raise_for_status()
@@ -316,14 +329,18 @@ async def _pairing_cycle(
             _save_relay_credentials(
                 relay_backend_url=data["ws_url"],
                 camera_id=data["camera_id"],
-                api_key=data["api_key"],
+                relay_auth_scheme=data["auth_scheme"],
+                key_id=data["key_id"],
+                private_key_pem=_private_key_pem(private_key),
             )
 
             # Update in-memory settings
             core_config.set_runtime_relay_credentials(
                 relay_backend_url=data["ws_url"],
                 relay_camera_id=data["camera_id"],
-                relay_api_key=data["api_key"],
+                relay_auth_scheme=data["auth_scheme"],
+                relay_key_id=data["key_id"],
+                relay_private_key_pem=_private_key_pem(private_key),
             )
 
             # Start the relay
@@ -337,10 +354,40 @@ def _generate_code_and_fingerprint() -> tuple[str, str]:
     return code, fingerprint
 
 
+def _generate_private_key() -> ec.EllipticCurvePrivateKey:
+    return ec.generate_private_key(ec.SECP256R1())
+
+
+def _b64url_uint(value: int) -> str:
+    raw = value.to_bytes(32, "big")
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def _public_jwk(private_key: ec.EllipticCurvePrivateKey, key_id: str) -> dict[str, str]:
+    public_numbers = private_key.public_key().public_numbers()
+    return {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": _b64url_uint(public_numbers.x),
+        "y": _b64url_uint(public_numbers.y),
+        "kid": key_id,
+    }
+
+
+def _private_key_pem(private_key: ec.EllipticCurvePrivateKey) -> str:
+    return private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("ascii")
+
+
 def _save_relay_credentials(
     relay_backend_url: str,
     camera_id: str,
-    api_key: str,
+    relay_auth_scheme: str,
+    key_id: str,
+    private_key_pem: str,
 ) -> None:
     """Persist relay credentials to a separate JSON file (not .env).
 
@@ -352,7 +399,9 @@ def _save_relay_credentials(
     data = {
         "relay_backend_url": relay_backend_url,
         "relay_camera_id": camera_id,
-        "relay_api_key": api_key,
+        "relay_auth_scheme": relay_auth_scheme,
+        "relay_key_id": key_id,
+        "relay_private_key_pem": private_key_pem,
     }
     # Ensure the directory exists
     _CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -364,6 +413,7 @@ def _save_relay_credentials(
         tmp.write(json_mod.dumps(data, indent=2))
     try:
         Path(tmp_path).replace(_CREDENTIALS_FILE)
+        _CREDENTIALS_FILE.chmod(0o600)
     except OSError:
         # Clean up temp file if replace fails
         with suppress(OSError):

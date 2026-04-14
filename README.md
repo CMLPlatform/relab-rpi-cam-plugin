@@ -17,22 +17,22 @@ The plugin runs a lightweight FastAPI server on your Raspberry Pi that:
 
 - Captures images from the connected camera module
 - Exposes low-resolution snapshot previews for live viewfinder polling
-- Connects to the RELab platform (via WebSocket relay or direct HTTP)
+- Connects to the RELab platform via WebSocket relay
 - Exposes a REST API for manual testing and integration
 
 Supports **Raspberry Pi 5/4** with **Camera Module 3/v2**, running on Raspberry Pi OS (64-bit) with Python 3.13+.
 
-## Connection Options
+## Connection
 
-| Mode                              | Use When                                | Setup                                       |
-| --------------------------------- | --------------------------------------- | ------------------------------------------- |
-| **WebSocket Relay** (recommended) | Your Pi doesn't have a public IP        | Just share a pairing code in the RELab app  |
-| **Direct HTTP**                   | Your Pi is accessible from the internet | Configure your API key and provide your URL |
+The plugin connects to the RELab backend via **WebSocket relay**. The Pi opens an outbound connection to the backend — no public IP address or port forwarding is required.
+
+Pairing is automatic: set `PAIRING_BACKEND_URL` in your `.env`, start the plugin, and enter the 6-character code in the RELab app. The Pi generates an asymmetric key pair locally, registers the public key with the backend, and keeps the private key on-device. No API key is ever copied manually.
 
 ## Getting Started
 
 1. [Prepare your Pi and install the plugin](INSTALL.md)
-1. Choose a connection method (WebSocket or HTTP)
+1. Set `PAIRING_BACKEND_URL` in your `.env` and start the plugin
+1. Enter the pairing code shown on `/setup` (or in logs) in the RELab app
 1. Visit `http://your-pi-ip:8018` to test
    - `/setup` — Pairing and status
    - `/images/preview` — Snapshot preview for viewfinder polling, unavailable while streaming

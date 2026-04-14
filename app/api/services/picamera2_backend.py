@@ -64,7 +64,9 @@ class Picamera2Backend(CameraBackend):
         """Initialize or reconfigure the Picamera2 camera."""
         if self._camera is None:
             try:
-                self._camera = cast(Picamera2Like, await asyncio.to_thread(lambda: Picamera2(camera_num=settings.camera_device_num)))
+                self._camera = cast(
+                    "Picamera2Like", await asyncio.to_thread(lambda: Picamera2(camera_num=settings.camera_device_num))
+                )
             except IndexError as e:
                 raise CameraInitializationError(
                     settings.camera_device_num,

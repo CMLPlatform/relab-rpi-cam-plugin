@@ -15,7 +15,8 @@ from app.utils import pairing as pairing_mod
 EXAMPLE_BACKEND_URL = "https://example.com"
 RELAY_BACKEND_URL = "wss://example.com/ws"
 RELAY_CAMERA_ID = "cam-1"
-RELAY_API_KEY = "key-1"
+RELAY_AUTH_SCHEME = "device_assertion"
+RELAY_KEY_ID = "key-1"
 PAIRING_CODE_1 = "CODE1"
 PAIRING_CODE_2 = "CODE2"
 PAIRING_MODE_LOG_PREFIX = "PAIRING MODE | state=awaiting_claim setup=/setup"
@@ -87,12 +88,11 @@ class TestRunPairing:
         seen: list[str] = []
 
         async def fake_pairing_cycle(
-            _client: Any,
+            _client: object,
             base_url: str,
-            _on_paired: Any,
+            _on_paired: object,
         ) -> None:
             seen.append(base_url)
-            return None
 
         monkeypatch.setattr(pairing_mod, "_pairing_cycle", fake_pairing_cycle)
         monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: FakeClient([], []))
@@ -114,7 +114,10 @@ class TestPairingCycle:
         original_settings = (
             settings.relay_backend_url,
             settings.relay_camera_id,
-            settings.relay_api_key,
+            settings.relay_auth_scheme,
+            settings.relay_key_id,
+            settings.relay_private_key_pem,
+            settings.local_relay_api_key,
             list(settings.authorized_api_keys),
         )
         monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
@@ -131,7 +134,8 @@ class TestPairingCycle:
                         "status": pairing_mod.STATUS_PAIRED,
                         "camera_id": RELAY_CAMERA_ID,
                         "ws_url": RELAY_BACKEND_URL,
-                        "api_key": RELAY_API_KEY,
+                        "auth_scheme": RELAY_AUTH_SCHEME,
+                        "key_id": RELAY_KEY_ID,
                     },
                 ),
             ],
@@ -148,19 +152,25 @@ class TestPairingCycle:
             on_paired.assert_awaited_once()
             assert settings.relay_backend_url == RELAY_BACKEND_URL
             assert settings.relay_camera_id == RELAY_CAMERA_ID
-            assert settings.relay_api_key == RELAY_API_KEY
-            assert RELAY_API_KEY in settings.authorized_api_keys
+            assert settings.relay_auth_scheme == RELAY_AUTH_SCHEME
+            assert settings.relay_key_id == RELAY_KEY_ID
+            assert settings.relay_private_key_pem
+            assert settings.local_relay_api_key.startswith("LOCAL_")
+            assert settings.local_relay_api_key in settings.authorized_api_keys
             log_text = caplog.text
             assert PAIRING_MODE_LOG_PREFIX in log_text
             assert pairing_mod._format_pairing_ready_message(PAIRING_CODE_2) in log_text  # noqa: SLF001
             assert f"PAIRING COMPLETE | camera_id={RELAY_CAMERA_ID} relay_starting=true" in log_text
-            assert RELAY_API_KEY not in log_text
+            assert settings.relay_private_key_pem not in log_text
             assert FINGERPRINT_2 not in log_text
         finally:
             (
                 settings.relay_backend_url,
                 settings.relay_camera_id,
-                settings.relay_api_key,
+                settings.relay_auth_scheme,
+                settings.relay_key_id,
+                settings.relay_private_key_pem,
+                settings.local_relay_api_key,
                 settings.authorized_api_keys,
             ) = original_settings
             reload_authorized_hashes()
@@ -185,7 +195,8 @@ class TestPairingCycle:
                         "status": pairing_mod.STATUS_PAIRED,
                         "camera_id": RELAY_CAMERA_ID,
                         "ws_url": RELAY_BACKEND_URL,
-                        "api_key": RELAY_API_KEY,
+                        "auth_scheme": RELAY_AUTH_SCHEME,
+                        "key_id": RELAY_KEY_ID,
                     },
                 ),
             ],
@@ -240,17 +251,28 @@ class TestPairingCycle:
         """Test that credentials are saved to and loaded from disk correctly."""
         creds_file = tmp_path / "relay_credentials.json"
         monkeypatch.setattr(pairing_mod, "_CREDENTIALS_FILE", creds_file)
+        private_key = pairing_mod._private_key_pem(pairing_mod._generate_private_key())  # noqa: SLF001
 
-        pairing_mod._save_relay_credentials(RELAY_BACKEND_URL, RELAY_CAMERA_ID, RELAY_API_KEY)  # noqa: SLF001
+        pairing_mod._save_relay_credentials(  # noqa: SLF001
+            RELAY_BACKEND_URL,
+            RELAY_CAMERA_ID,
+            RELAY_AUTH_SCHEME,
+            RELAY_KEY_ID,
+            private_key,
+        )
         assert json.loads(creds_file.read_text()) == {
             "relay_backend_url": RELAY_BACKEND_URL,
             "relay_camera_id": RELAY_CAMERA_ID,
-            "relay_api_key": RELAY_API_KEY,
+            "relay_auth_scheme": RELAY_AUTH_SCHEME,
+            "relay_key_id": RELAY_KEY_ID,
+            "relay_private_key_pem": private_key,
         }
         assert pairing_mod.load_relay_credentials() == {
             "relay_backend_url": RELAY_BACKEND_URL,
             "relay_camera_id": RELAY_CAMERA_ID,
-            "relay_api_key": RELAY_API_KEY,
+            "relay_auth_scheme": RELAY_AUTH_SCHEME,
+            "relay_key_id": RELAY_KEY_ID,
+            "relay_private_key_pem": private_key,
         }
 
     async def test_load_relay_credentials_returns_none_when_missing(

@@ -69,32 +69,10 @@ The simplest approach. No credential exchange required.
    - Headless over SSH/logs: watch for the `PAIRING READY` log line
 
 1. **Pair in RELab app**\
-   Go to Cameras > Add Camera, select WebSocket mode, and enter the pairing code.
+   Go to Cameras > Add Camera and enter the pairing code.
 
 1. **Done**\
    The Pi automatically receives credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
-
-### Option B: Manual WebSocket Setup
-
-For cases where automatic pairing isn't available.
-
-1. **Register in RELab app**\
-   Cameras > Add Camera > WebSocket mode > Manual setup.
-
-1. **Copy credentials to file**\
-   Create `~/.config/relab/relay_credentials.json`:
-
-   ```json
-   {
-     "relay_backend_url": "wss://api.cml-relab.org/plugins/rpi-cam/ws/connect",
-     "relay_camera_id": "<your-camera-id>",
-     "relay_api_key": "<your-api-key>"
-   }
-   ```
-
-   Or set `RELAB_CREDENTIALS_FILE` to use a custom path.
-
-1. **Restart the plugin**
 
 When you run the plugin via Docker Compose, `compose.yml` persists this directory with a named
 volume at `/home/rpicam/.config/relab`, so paired relay credentials survive container restarts.
@@ -191,9 +169,8 @@ Verify camera is properly connected to the CSI port.
 
 ### WebSocket relay won't connect
 
-- Verify `~/.config/relab/relay_credentials.json` exists with valid credentials
+- Verify `~/.config/relab/relay_credentials.json` exists (created automatically after pairing)
 - Check Pi has outbound internet access
-- Confirm API key matches platform registration (regenerate if unsure)
 - Check plugin logs: `docker compose logs app`
 - If `observability-ship` is enabled, inspect the external Loki/Grafana collector configured by `LOKI_PUSH_URL`.
 

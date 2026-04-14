@@ -65,6 +65,9 @@
   <section class="setup-hero">
     <div class="setup-eyebrow">Raspberry Pi Camera</div>
     <h1>Setup</h1>
+    <div style="margin-top: 12px;">
+      <a href="{{ url_for('homepage') }}" class="btn">Home</a>
+    </div>
     <p>Pair this camera with the ReLab app without typing relay credentials by hand.</p>
   </section>
 
@@ -123,13 +126,6 @@
       {% else %}
         <p>WebSocket relay: <span class="offline">not configured</span></p>
       {% endif %}
-    </div>
-  </section>
-
-  <section class="setup-status">
-    <div class="setup-status-grid">
-      <h2>Camera URL (HTTP mode)</h2>
-      <p><code>{{ base_url }}</code></p>
     </div>
   </section>
 </main>

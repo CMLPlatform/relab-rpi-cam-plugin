@@ -13,6 +13,9 @@ from app.utils import relay as relay_mod
 from app.utils.relay import _build_relay_url, _handle_command, _receive_loop, _relay_configured, _send_error
 
 RELAY_URL = "wss://example.com/ws?camera_id=cam-42"
+RELAY_AUTH_SCHEME = "device_assertion"
+RELAY_KEY_ID = "key-1"
+RELAY_PRIVATE_KEY_PEM = "private-key"
 MESSAGE_ID = "msg-1"
 DETAIL = "oops"
 PONG_TYPE = "pong"
@@ -31,7 +34,9 @@ class TestRelayConfigured:
         s = Settings(
             relay_backend_url="wss://example.com/ws",
             relay_camera_id="cam-1",
-            relay_api_key="key-1",
+            relay_auth_scheme=RELAY_AUTH_SCHEME,
+            relay_key_id=RELAY_KEY_ID,
+            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
         with patch("app.utils.relay.settings", s):
             assert _relay_configured() is True
