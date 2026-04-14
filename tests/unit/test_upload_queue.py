@@ -10,18 +10,42 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import AnyUrl
 
-from app.utils import upload_queue as upload_queue_mod
-from app.utils.backend_client import BackendUploadError, UploadedImageInfo
+from app.api.services.image_sinks.base import ImageSinkError, StoredImage
 from app.utils.upload_queue import UploadQueue, UploadQueueWorker
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
+class _FakeSink:
+    """Minimal ``ImageSink`` stub — returns a fixed ``StoredImage`` on every ``put``."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self._fail = fail
+        self.put = AsyncMock(side_effect=self._put)
+
+    async def _put(self, **_kwargs: object) -> StoredImage:
+        if self._fail:
+            raise ImageSinkError("fake sink is failing")
+        return StoredImage(image_id="srv-1", image_url=AnyUrl("https://example.com/img.jpg"))
+
+
 @pytest.fixture
 def queue_root(tmp_path: Path) -> Path:
     """A clean upload-queue root directory."""
     return tmp_path / "queue"
+
+
+@pytest.fixture
+def sink() -> _FakeSink:
+    """A happy-path sink that always succeeds."""
+    return _FakeSink(fail=False)
+
+
+@pytest.fixture
+def failing_sink() -> _FakeSink:
+    """A sink that always raises ``ImageSinkError``."""
+    return _FakeSink(fail=True)
 
 
 @pytest.fixture
@@ -32,28 +56,17 @@ def sample_image(tmp_path: Path) -> Path:
     return path
 
 
-@pytest.fixture
-def upload_successful(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
-    """Replace upload_image with an AsyncMock that succeeds."""
-    mock = AsyncMock(return_value=UploadedImageInfo(image_id="srv-1", image_url=AnyUrl("https://example/img.jpg")))
-    monkeypatch.setattr(upload_queue_mod, "upload_image", mock)
-    return mock
-
-
-@pytest.fixture
-def upload_failing(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
-    """Replace upload_image with an AsyncMock that always raises."""
-    mock = AsyncMock(side_effect=BackendUploadError("network down"))
-    monkeypatch.setattr(upload_queue_mod, "upload_image", mock)
-    return mock
-
-
 class TestEnqueue:
     """Tests for UploadQueue.enqueue."""
 
-    async def test_moves_file_and_writes_metadata(self, queue_root: Path, sample_image: Path) -> None:
+    async def test_moves_file_and_writes_metadata(
+        self,
+        queue_root: Path,
+        sample_image: Path,
+        sink: _FakeSink,
+    ) -> None:
         """Enqueue should move the jpg into the queue root and write a metadata sidecar."""
-        queue = UploadQueue(queue_root)
+        queue = UploadQueue(queue_root, sink=sink)
         entry = await queue.enqueue(
             image_id="abc123",
             image_path=sample_image,
@@ -68,10 +81,14 @@ class TestEnqueue:
         assert await asyncio.to_thread(entry.image_path.exists)
         assert await asyncio.to_thread(entry.metadata_path.exists)
 
-    async def test_creates_queue_and_dead_directories(self, queue_root: Path) -> None:
+    async def test_creates_queue_and_dead_directories(
+        self,
+        queue_root: Path,
+        sink: _FakeSink,
+    ) -> None:
         """Instantiating the queue should create both the root and the dead-letter subdir."""
         assert not await asyncio.to_thread(queue_root.exists)
-        UploadQueue(queue_root)
+        UploadQueue(queue_root, sink=sink)
         assert await asyncio.to_thread(queue_root.is_dir)
         assert await asyncio.to_thread((queue_root / "dead").is_dir)
 
@@ -79,9 +96,14 @@ class TestEnqueue:
 class TestIterPending:
     """Tests for iter_pending ordering + resilience."""
 
-    async def test_returns_entries_sorted_by_next_attempt(self, queue_root: Path, sample_image: Path) -> None:
+    async def test_returns_entries_sorted_by_next_attempt(
+        self,
+        queue_root: Path,
+        sample_image: Path,
+        sink: _FakeSink,
+    ) -> None:
         """Entries with earlier next_attempt_at should come first."""
-        queue = UploadQueue(queue_root)
+        queue = UploadQueue(queue_root, sink=sink)
 
         # Enqueue one entry that's due now.
         await queue.enqueue(
@@ -104,9 +126,9 @@ class TestIterPending:
         entries = queue.iter_pending()
         assert [e.image_id for e in entries] == ["entry-a", "entry-b"]
 
-    def test_skips_orphan_metadata(self, queue_root: Path) -> None:
+    def test_skips_orphan_metadata(self, queue_root: Path, sink: _FakeSink) -> None:
         """A .json without a matching .jpg should be cleaned up, not yielded."""
-        queue = UploadQueue(queue_root)
+        queue = UploadQueue(queue_root, sink=sink)
         orphan = queue_root / "orphan.json"
         orphan.write_text('{"image_id": "orphan"}')
         assert queue.iter_pending() == []
@@ -120,10 +142,10 @@ class TestDrainOnce:
         self,
         queue_root: Path,
         sample_image: Path,
-        upload_successful: AsyncMock,
+        sink: _FakeSink,
     ) -> None:
-        """When upload_image succeeds, the queue entry should be deleted."""
-        queue = UploadQueue(queue_root)
+        """When the sink succeeds, the queue entry should be deleted."""
+        queue = UploadQueue(queue_root, sink=sink)
         entry = await queue.enqueue(
             image_id="happy",
             image_path=sample_image,
@@ -135,7 +157,7 @@ class TestDrainOnce:
         successes = await queue.drain_once()
 
         assert successes == 1
-        assert upload_successful.await_count == 1
+        assert sink.put.await_count == 1
         assert not await asyncio.to_thread(entry.image_path.exists)
         assert not await asyncio.to_thread(entry.metadata_path.exists)
 
@@ -143,10 +165,10 @@ class TestDrainOnce:
         self,
         queue_root: Path,
         sample_image: Path,
-        upload_failing: AsyncMock,
+        failing_sink: _FakeSink,
     ) -> None:
-        """A failed upload should bump attempts and schedule a later retry."""
-        queue = UploadQueue(queue_root)
+        """A failed sink put should bump attempts and schedule a later retry."""
+        queue = UploadQueue(queue_root, sink=failing_sink)
         entry = await queue.enqueue(
             image_id="sad",
             image_path=sample_image,
@@ -158,7 +180,7 @@ class TestDrainOnce:
         successes = await queue.drain_once()
 
         assert successes == 0
-        assert upload_failing.await_count == 1
+        assert failing_sink.put.await_count == 1
         assert await asyncio.to_thread(entry.image_path.exists)  # still present
         reloaded = queue.iter_pending()[0]
         assert reloaded.attempts == 1
@@ -167,10 +189,10 @@ class TestDrainOnce:
     async def test_skips_entries_not_yet_due(
         self,
         queue_root: Path,
-        upload_successful: AsyncMock,
+        sink: _FakeSink,
     ) -> None:
         """Entries with next_attempt_at in the future must be ignored this pass."""
-        queue = UploadQueue(queue_root)
+        queue = UploadQueue(queue_root, sink=sink)
         future = datetime.now(UTC) + timedelta(hours=1)
         (queue_root / "waiting.jpg").write_bytes(b"\xff\xd8")
         (queue_root / "waiting.json").write_text(
@@ -181,7 +203,7 @@ class TestDrainOnce:
         successes = await queue.drain_once()
 
         assert successes == 0
-        assert upload_successful.await_count == 0
+        assert sink.put.await_count == 0
 
 
 class TestDeadLetter:
@@ -191,9 +213,12 @@ class TestDeadLetter:
         self,
         queue_root: Path,
         sample_image: Path,
+        sink: _FakeSink,
     ) -> None:
         """After _MAX_ATTEMPTS consecutive failures the entry should move under dead/."""
-        queue = UploadQueue(queue_root)
+        from app.utils import upload_queue as upload_queue_mod  # noqa: PLC0415
+
+        queue = UploadQueue(queue_root, sink=sink)
         entry = await queue.enqueue(
             image_id="doomed",
             image_path=sample_image,
@@ -202,7 +227,7 @@ class TestDeadLetter:
             upload_metadata={},
         )
 
-        max_attempts = upload_queue_mod._MAX_ATTEMPTS
+        max_attempts = upload_queue_mod._MAX_ATTEMPTS  # noqa: SLF001
         # Simulate attempts 1..(max_attempts - 1) — not yet dead.
         current = entry
         for attempt in range(1, max_attempts):
@@ -224,9 +249,9 @@ class TestDeadLetter:
 class TestUploadQueueWorker:
     """Tests for the background worker start/stop lifecycle."""
 
-    async def test_start_then_stop_does_not_raise(self, queue_root: Path) -> None:
+    async def test_start_then_stop_does_not_raise(self, queue_root: Path, sink: _FakeSink) -> None:
         """The worker should cleanly start and stop even with an empty queue."""
-        queue = UploadQueue(queue_root)
+        queue = UploadQueue(queue_root, sink=sink)
         worker = UploadQueueWorker(queue, poll_interval_s=0.01)
         worker.start()
         # Give the worker one tick to enter its loop.

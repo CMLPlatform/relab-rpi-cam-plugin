@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from app.utils.backend_client import BackendUploadError, UploadedImageInfo, upload_image
+from app.api.services.image_sinks.base import ImageSink, ImageSinkError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -54,10 +54,16 @@ class QueuedCapture:
 
 
 class UploadQueue:
-    """File-backed queue for pending backend uploads."""
+    """File-backed queue for pending image sink uploads.
 
-    def __init__(self, root: Path) -> None:
+    The queue is sink-agnostic: on drain it calls ``sink.put(...)`` for each
+    pending entry, so swapping the sink (backend ↔ S3) doesn't require any
+    changes here. The same retry / dead-letter machinery covers both paths.
+    """
+
+    def __init__(self, root: Path, sink: ImageSink) -> None:
         self._root = root
+        self._sink = sink
         self._dead_root = root / "dead"
         self._root.mkdir(parents=True, exist_ok=True)
         self._dead_root.mkdir(parents=True, exist_ok=True)
@@ -158,13 +164,14 @@ class UploadQueue:
                 continue
             try:
                 image_bytes = await asyncio.to_thread(entry.image_path.read_bytes)
-                result: UploadedImageInfo = await upload_image(
+                stored = await self._sink.put(
+                    image_id=entry.image_id,
                     image_bytes=image_bytes,
                     filename=entry.filename,
                     capture_metadata=entry.capture_metadata,
                     upload_metadata=entry.upload_metadata,
                 )
-            except BackendUploadError as exc:
+            except ImageSinkError as exc:
                 logger.debug("Queue drain: %s still failing: %s", entry.image_id, exc)
                 await self.mark_attempt_failed(entry)
                 continue
@@ -174,7 +181,7 @@ class UploadQueue:
                 continue
 
             await self.mark_attempt_succeeded(entry)
-            logger.info("Queue drain: %s uploaded as backend id %s", entry.image_id, result.image_id)
+            logger.info("Queue drain: %s uploaded as stored id %s", entry.image_id, stored.image_id)
             successes += 1
         return successes
 

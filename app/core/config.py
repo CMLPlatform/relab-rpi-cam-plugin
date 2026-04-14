@@ -58,6 +58,22 @@ class Settings(BaseSettings):
     # command arrives or the relay reconnects.
     preview_hibernate_after_s: int = 60 * 5  # Default: hibernate after 5 min idle
 
+    # Image sink selection (Phase 10A). ``auto`` infers from what's configured:
+    # ``pairing_backend_url`` → backend, ``s3_endpoint_url`` → s3, nothing → error.
+    image_sink: Literal["backend", "s3", "auto"] = "auto"
+    # S3-compatible sink config (required when image_sink=s3 or when auto-
+    # inferred from S3_ENDPOINT_URL). Works with MinIO, B2, R2, Wasabi, AWS S3.
+    s3_endpoint_url: str = ""
+    s3_bucket: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_region: str = "us-east-1"
+    # Template for the public URL returned to the frontend. Variables:
+    # ``{endpoint}``, ``{bucket}``, ``{key}``. Default is path-style, which is
+    # what MinIO + pre-signed S3 both return. Override for virtual-hosted S3
+    # or CDN-fronted buckets (R2 custom domains, CloudFront, etc.).
+    s3_public_url_template: str = "{endpoint}/{bucket}/{key}"
+
     # Auth
     auth_key_name: str = "X-API-Key"
     auth_cookie_secure: bool | None = None

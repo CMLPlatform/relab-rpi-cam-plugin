@@ -204,6 +204,10 @@ class TestCameraManagerCapture:
 
     async def test_capture_uses_backend_result(self, tmp_path: Path) -> None:
         """Should build an image response from the backend capture result."""
+        from pydantic import AnyUrl  # noqa: PLC0415
+
+        from app.api.services.image_sinks.base import StoredImage  # noqa: PLC0415
+
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="green")
         backend.capture_image.return_value = CaptureResult(
@@ -211,7 +215,21 @@ class TestCameraManagerCapture:
             camera_properties={"Model": "mock-camera"},
             capture_metadata={"FrameDuration": 33_333},
         )
-        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
+
+        # Stub sink that reports a successful upload without touching any real backend.
+        stub_image_id = "a" * 32  # 32-char hex, matches ImageCaptureResponse.image_id pattern
+        class _StubSink:
+            put = AsyncMock(
+                return_value=StoredImage(
+                    image_id=stub_image_id,
+                    image_url=AnyUrl("https://example.com/img.jpg"),
+                )
+            )
+
+        manager = CameraManager(
+            backend=cast("StreamingCameraBackend", backend),
+            sink=_StubSink(),
+        )
         original = settings.image_path
         settings.image_path = tmp_path / "images"
         settings.image_path.mkdir()
@@ -222,6 +240,7 @@ class TestCameraManagerCapture:
             settings.image_path = original
 
         assert response.metadata.camera_properties.camera_model == MOCK_CAMERA
+        assert response.image_id == stub_image_id
         backend.capture_image.assert_awaited_once()
 
 

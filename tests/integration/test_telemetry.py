@@ -20,7 +20,11 @@ from tests.constants import (
 def _mock_psutil(monkeypatch: pytest.MonkeyPatch) -> None:
     """Isolate tests from the host's real CPU/memory/disk state."""
     monkeypatch.setattr(telemetry_mod, "_read_cpu_temp_c", lambda: 48.2)
-    monkeypatch.setattr(telemetry_mod.psutil, "cpu_percent", lambda _interval=None: 7.5)
+    monkeypatch.setattr(
+        telemetry_mod.psutil,
+        "cpu_percent",
+        lambda interval=None, percpu=False: 7.5,  # noqa: ARG005
+    )
     monkeypatch.setattr(telemetry_mod.psutil, "virtual_memory", lambda: MagicMock(percent=31.0))
     monkeypatch.setattr(
         telemetry_mod.shutil,

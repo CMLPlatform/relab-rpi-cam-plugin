@@ -24,10 +24,10 @@ from app.api.schemas.streaming import YoutubeStreamConfig
 from app.api.services.backend_factory import create_camera_backend
 from app.api.services.camera_backend import CameraBackend, ControllableCameraBackend, StreamingCameraBackend
 from app.api.services.contract_adapters import build_image_metadata, image_metadata_to_exif
+from app.api.services.image_sinks import ImageSink, ImageSinkError, get_image_sink
 from app.api.services.stream_service import StreamService
 from app.api.services.stream_state import ActiveStreamState
 from app.core.config import settings
-from app.utils.backend_client import BackendUploadError, upload_image
 from app.utils.files import clear_directory
 from app.utils.upload_queue import UploadQueue
 
@@ -67,12 +67,36 @@ class CameraManager:
         self,
         backend: CameraBackend | None = None,
         upload_queue: UploadQueue | None = None,
+        sink: ImageSink | None = None,
     ) -> None:
         self.backend = backend or create_camera_backend()
-        self.upload_queue = upload_queue or UploadQueue(settings.image_path / "queue")
+        # The image sink is resolved lazily on first ``capture_jpeg`` so that
+        # instantiating a ``CameraManager`` (e.g. the module-level singleton
+        # in ``dependencies/camera_management.py``) doesn't fire factory
+        # validation errors when imports happen before env is loaded.
+        self._sink: ImageSink | None = sink
+        self._upload_queue_override = upload_queue
+        self._upload_queue: UploadQueue | None = None
         self.stream_service = StreamService()
         self.lock = asyncio.Lock()
         self.lock_timeout = 10
+
+    @property
+    def sink(self) -> ImageSink:
+        """Return the configured image sink, resolving lazily on first access."""
+        if self._sink is None:
+            self._sink = get_image_sink(settings)
+        return self._sink
+
+    @property
+    def upload_queue(self) -> UploadQueue:
+        """Return the upload queue, creating it on first access with the active sink."""
+        if self._upload_queue is None:
+            self._upload_queue = self._upload_queue_override or UploadQueue(
+                settings.image_path / "queue",
+                sink=self.sink,
+            )
+        return self._upload_queue
 
     @property
     def stream(self) -> ActiveStreamState:
@@ -129,14 +153,15 @@ class CameraManager:
 
         try:
             image_bytes = await asyncio.to_thread(image_path.read_bytes)
-            uploaded = await upload_image(
+            stored = await self.sink.put(
+                image_id=image_id,
                 image_bytes=image_bytes,
                 filename=filename,
                 capture_metadata=capture_metadata_dict,
                 upload_metadata=upload_meta,
             )
-        except BackendUploadError as exc:
-            logger.warning("Backend upload for %s failed; enqueueing for retry: %s", image_id, exc)
+        except ImageSinkError as exc:
+            logger.warning("Image sink for %s failed; enqueueing for retry: %s", image_id, exc)
             await self.upload_queue.enqueue(
                 image_id=image_id,
                 image_path=image_path,
@@ -155,11 +180,11 @@ class CameraManager:
         await asyncio.to_thread(_unlink_quiet, image_path)
 
         return ImageCaptureResponse(
-            image_id=uploaded.image_id,
+            image_id=stored.image_id,
             status=ImageCaptureStatus.UPLOADED,
             metadata=img_metadata,
-            image_url=uploaded.image_url,
-            expires_at=None,
+            image_url=stored.image_url,
+            expires_at=stored.expires_at,
         )
 
     async def capture_preview_jpeg(self) -> bytes:

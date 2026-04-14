@@ -15,6 +15,12 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=0
 
+# Optional extras installed into the venv. Pass as a build arg to opt into
+# alternative image sinks — e.g. ``--build-arg IMAGE_SINK_EXTRA=s3`` to add
+# ``aioboto3`` for the standalone MinIO deployment. Empty (default) skips
+# every optional extra and ships the leanest possible image.
+ARG IMAGE_SINK_EXTRA=""
+
 # Configure Raspberry Pi repository (keyring from prep stage)
 COPY --from=rpi-keyring /usr/share/keyrings/raspberrypi-archive-keyring.gpg /usr/share/keyrings/
 RUN printf "Types: deb\nURIs: https://archive.raspberrypi.com/debian/\nSuites: trixie\nComponents: main\nSigned-By: /usr/share/keyrings/raspberrypi-archive-keyring.gpg\n" \
@@ -28,12 +34,20 @@ COPY .python-version pyproject.toml uv.lock README.md ./
 COPY relab_rpi_cam_models/ relab_rpi_cam_models/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv --system-site-packages && \
-    uv sync --locked --no-install-project --no-editable --no-dev
+    if [ -n "$IMAGE_SINK_EXTRA" ]; then \
+        uv sync --locked --no-install-project --no-editable --no-dev --extra "$IMAGE_SINK_EXTRA"; \
+    else \
+        uv sync --locked --no-install-project --no-editable --no-dev; \
+    fi
 
 # Install project
 COPY app/ app/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-editable --no-dev
+    if [ -n "$IMAGE_SINK_EXTRA" ]; then \
+        uv sync --locked --no-editable --no-dev --extra "$IMAGE_SINK_EXTRA"; \
+    else \
+        uv sync --locked --no-editable --no-dev; \
+    fi
 
 # Runtime stage: minimal final image
 FROM python:3.13-slim-trixie

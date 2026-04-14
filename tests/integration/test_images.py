@@ -9,10 +9,10 @@ from httpx import AsyncClient
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
-from app.api.services import camera_manager as camera_manager_mod
 from app.api.services.camera_manager import CameraManager
+from app.api.services.image_sinks.base import ImageSinkError, StoredImage
 from app.core.config import settings
-from app.utils.backend_client import BackendUploadError, UploadedImageInfo
+from app.utils.upload_queue import UploadQueue
 from tests.constants import (
     JPEG_CONTENT_TYPE,
     QUEUED_STATUS,
@@ -27,25 +27,38 @@ IMAGE_URL_KEY = "image_url"
 CONFLICT_RESPONSE_CODE = "409"
 
 
-@pytest.fixture
-def fake_upload_success(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
-    """Replace camera_manager's imported upload_image with a successful AsyncMock."""
-    mock = AsyncMock(
-        return_value=UploadedImageInfo(
+class _StubSink:
+    """In-memory image sink driven by a pytest fixture."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self._fail = fail
+        self.put = AsyncMock(side_effect=self._put)
+
+    async def _put(self, **_kwargs: object) -> StoredImage:
+        if self._fail:
+            raise ImageSinkError("network unreachable")
+        return StoredImage(
             image_id=SAMPLE_IMAGE_ID,
             image_url=AnyUrl(SAMPLE_IMAGE_URL),
-        ),
-    )
-    monkeypatch.setattr(camera_manager_mod, "upload_image", mock)
-    return mock
+        )
 
 
 @pytest.fixture
-def fake_upload_failure(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
-    """Replace camera_manager's imported upload_image with a failing AsyncMock."""
-    mock = AsyncMock(side_effect=BackendUploadError("network unreachable"))
-    monkeypatch.setattr(camera_manager_mod, "upload_image", mock)
-    return mock
+def stub_success_sink(camera_manager: CameraManager) -> _StubSink:
+    """Swap the camera manager's image sink for a happy-path stub."""
+    sink = _StubSink(fail=False)
+    camera_manager._sink = sink  # noqa: SLF001 — test hook
+    camera_manager._upload_queue = None  # noqa: SLF001 — force the queue to re-resolve with the stub sink
+    return sink
+
+
+@pytest.fixture
+def stub_failing_sink(camera_manager: CameraManager) -> _StubSink:
+    """Swap the camera manager's image sink for a failing stub."""
+    sink = _StubSink(fail=True)
+    camera_manager._sink = sink  # noqa: SLF001
+    camera_manager._upload_queue = None  # noqa: SLF001
+    return sink
 
 
 class TestPreviewEndpoint:
@@ -104,19 +117,17 @@ class TestPreviewEndpoint:
 
 
 class TestCaptureEndpoint:
-    """Tests for POST /images — synchronous push + queue fallback."""
+    """Tests for POST /images — synchronous sink put + queue fallback."""
 
-    async def test_capture_pushes_to_backend_and_returns_uploaded_status(
+    async def test_capture_pushes_and_returns_uploaded_status(
         self,
         client: AsyncClient,
-        camera_manager: CameraManager,
-        fake_upload_success: AsyncMock,
+        stub_success_sink: _StubSink,
         tmp_path: Path,
     ) -> None:
-        """Happy path: synchronous push returns status=uploaded with backend URL."""
+        """Happy path: synchronous sink put returns status=uploaded with the sink's URL."""
         original = settings.image_path
         settings.image_path = tmp_path
-        camera_manager.upload_queue = camera_manager_mod.UploadQueue(tmp_path / "queue")
 
         try:
             resp = await client.post("/images", json={"product_id": 1})
@@ -128,19 +139,17 @@ class TestCaptureEndpoint:
         finally:
             settings.image_path = original
 
-        assert fake_upload_success.await_count == 1
+        assert stub_success_sink.put.await_count == 1
 
-    @pytest.mark.usefixtures("fake_upload_success")
     async def test_capture_deletes_local_file_after_upload(
         self,
         client: AsyncClient,
-        camera_manager: CameraManager,
+        stub_success_sink: _StubSink,  # noqa: ARG002 — fixture seeds the sink
         tmp_path: Path,
     ) -> None:
         """After a successful push the local JPEG should be gone — single source of truth."""
         original = settings.image_path
         settings.image_path = tmp_path
-        camera_manager.upload_queue = camera_manager_mod.UploadQueue(tmp_path / "queue")
 
         try:
             resp = await client.post("/images", json=None)
@@ -151,17 +160,15 @@ class TestCaptureEndpoint:
         finally:
             settings.image_path = original
 
-    async def test_capture_queues_on_upload_failure(
+    async def test_capture_queues_on_sink_failure(
         self,
         client: AsyncClient,
-        camera_manager: CameraManager,
-        fake_upload_failure: AsyncMock,
+        stub_failing_sink: _StubSink,
         tmp_path: Path,
     ) -> None:
-        """A failing upload should enqueue the capture and return status=queued."""
+        """A failing sink should enqueue the capture and return status=queued."""
         original = settings.image_path
         settings.image_path = tmp_path
-        camera_manager.upload_queue = camera_manager_mod.UploadQueue(tmp_path / "queue")
 
         try:
             resp = await client.post("/images", json={"product_id": 7})
@@ -172,7 +179,7 @@ class TestCaptureEndpoint:
         finally:
             settings.image_path = original
 
-        assert fake_upload_failure.await_count == 1
+        assert stub_failing_sink.put.await_count == 1
         # Queued file lives under data/queue/ with a .json sidecar.
         queue_root = tmp_path / "queue"
         jpgs = list(queue_root.glob("*.jpg"))
@@ -180,17 +187,15 @@ class TestCaptureEndpoint:
         assert len(jpgs) == 1
         assert len(jsons) == 1
 
-    async def test_capture_forwards_upload_metadata_to_backend_client(
+    async def test_capture_forwards_upload_metadata_to_sink(
         self,
         client: AsyncClient,
-        camera_manager: CameraManager,
-        fake_upload_success: AsyncMock,
+        stub_success_sink: _StubSink,
         tmp_path: Path,
     ) -> None:
-        """The upload_metadata body should arrive verbatim at backend_client.upload_image."""
+        """The upload_metadata body should arrive verbatim at ``sink.put``."""
         original = settings.image_path
         settings.image_path = tmp_path
-        camera_manager.upload_queue = camera_manager_mod.UploadQueue(tmp_path / "queue")
 
         try:
             resp = await client.post(
@@ -201,7 +206,7 @@ class TestCaptureEndpoint:
         finally:
             settings.image_path = original
 
-        call = fake_upload_success.await_args
+        call = stub_success_sink.put.await_args
         assert call is not None
         assert call.kwargs["upload_metadata"] == {"product_id": 99, "description": "rear view"}
 

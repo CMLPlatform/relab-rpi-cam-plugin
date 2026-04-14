@@ -37,6 +37,15 @@
   requires-python = ">=3.13" # Python 3.13+ available in Debian Trixie for picamera2
   version         = "0.2.0"  # NOTE: Versioning is handled by commitizen
 
+  # Optional dependency groups — installed with ``uv sync --extra <name>``.
+  # Users who never need a given sink don't pay its installation cost.
+  [project.optional-dependencies]
+    # S3-compatible object storage sink (MinIO / B2 / R2 / Wasabi / AWS S3).
+    # ``aioboto3`` pulls in ~30 MB of boto3/botocore so we keep it opt-in.
+    # Install with ``uv sync --extra s3`` (or via the standalone Docker build
+    # arg ``IMAGE_SINK_EXTRA=s3``).
+    s3 = ["aioboto3>=13.0"]
+
   [project.urls]
     Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
     Issues     = "https://github.com/CMLPlatform/relab-rpi-cam-plugin/issues"

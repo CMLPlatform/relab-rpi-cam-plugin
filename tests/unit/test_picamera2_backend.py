@@ -83,20 +83,32 @@ class TestPicamera2Backend:
             await backend.start_stream(StreamMode.YOUTUBE, youtube_config=None)
 
     async def test_start_stream_uses_main_encoder(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """start_stream should attach an encoder to the persistent main stream by name."""
+        """start_stream should attach an encoder to the persistent main stream and patch MediaMTX."""
+        from unittest.mock import AsyncMock  # noqa: PLC0415
+
         backend = Picamera2Backend()
         camera = MagicMock()
         backend._camera = camera
         backend.current_mode = CameraMode.VIDEO
+        # Stub the MediaMTX patch calls — the runtime client would otherwise
+        # try to PATCH the localhost API which doesn't exist in unit tests.
+        backend._mediamtx.set_youtube_egress = AsyncMock()
+        backend._mediamtx.clear_egress = AsyncMock()
 
         monkeypatch.setattr("app.api.services.picamera2_backend.H264Encoder", MagicMock)
-        monkeypatch.setattr("app.api.services.picamera2_backend.get_ffmpeg_output", MagicMock(return_value=object()))
+        monkeypatch.setattr(
+            "app.api.services.picamera2_backend.build_hires_rtsp_output",
+            MagicMock(return_value=object()),
+        )
 
         config = YoutubeStreamConfig(stream_key=SecretStr("good"), broadcast_key=SecretStr("public-id"))
         result = await backend.start_stream(StreamMode.YOUTUBE, youtube_config=config)
 
         assert result.mode == StreamMode.YOUTUBE
         assert result.url == AnyUrl("https://youtube.com/watch?v=public-id")
+        # The MediaMTX egress is configured BEFORE the encoder publishes — no
+        # half-started state on failure.
+        backend._mediamtx.set_youtube_egress.assert_awaited_once_with("cam-hires", "good")
         camera.start_encoder.assert_called_once()
         assert camera.start_encoder.call_args.kwargs == {"name": "main"}
         assert backend._main_encoder is camera.start_encoder.call_args.args[0]
@@ -104,9 +116,12 @@ class TestPicamera2Backend:
 
     async def test_stop_stream_keeps_camera_running(self) -> None:
         """stop_stream must only detach the encoder — the camera pipeline stays up for stills."""
+        from unittest.mock import AsyncMock  # noqa: PLC0415
+
         backend = Picamera2Backend()
         camera = MagicMock()
         encoder = MagicMock()
+        backend._mediamtx.clear_egress = AsyncMock()
         backend._camera = camera
         backend._main_encoder = encoder
 

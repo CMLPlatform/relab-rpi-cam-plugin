@@ -63,6 +63,36 @@ Without the profile, logs are still written to Docker logs and the 7-day rotatin
 
 For platform management and operation, see the [RELab camera guide](https://docs.cml-relab.org/user-guides/rpi-cam/).
 
+## Standalone mode (no RELab backend)
+
+The plugin can also run fully standalone, writing captures straight to a local
+S3-compatible bucket (MinIO by default) instead of pushing them to the RELab
+backend. This is useful for hobbyist / bench / offline-first setups.
+
+```sh
+cp .env.standalone.example .env.standalone
+# edit .env.standalone — at minimum set MINIO_ROOT_PASSWORD and AUTHORIZED_API_KEYS
+docker compose -f docker-compose.standalone.yml --env-file .env.standalone up -d
+```
+
+Once up:
+
+- Camera API at `http://<pi-lan-ip>:8018` (same as paired mode)
+- Live LL-HLS preview at the same URL shape as paired mode (proxied through
+  the Pi's own `/hls` endpoint; no Relab backend needed)
+- MinIO console at `http://<pi-lan-ip>:9001` — log in with
+  `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`
+- Captures browsable under `http://<pi-lan-ip>:9000/rpi-cam/`
+
+The standalone build uses the `[s3]` extra so `aioboto3` is installed in the
+Docker image. Retention policies, access logs, and lifecycle rules live on
+the MinIO bucket itself — configure them through the MinIO console or the
+`mc` CLI as needed.
+
+To point the plugin at a different S3-compatible service (Backblaze B2,
+Cloudflare R2, Wasabi, AWS S3, …), update `S3_ENDPOINT_URL`, credentials, and
+`S3_PUBLIC_URL_TEMPLATE` in `.env.standalone` and restart. No code changes.
+
 ## Troubleshooting
 
 **Camera not detected?** Run `rpicam-hello --list-cameras`
