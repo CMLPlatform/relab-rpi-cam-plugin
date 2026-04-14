@@ -78,22 +78,23 @@ class TestPreviewEndpoint:
         resp = await client.get("/images/preview")
         assert resp.status_code == 500
 
-    async def test_preview_while_streaming_returns_409(
+    async def test_preview_while_streaming_returns_jpeg(
         self,
         client: AsyncClient,
         camera_manager: CameraManager,
     ) -> None:
-        """Preview should be unavailable while a stream is active."""
+        """Preview still reads from the persistent main stream while YouTube is active."""
         camera_manager.stream.mode = StreamMode.YOUTUBE
         resp = await client.get("/images/preview")
-        assert resp.status_code == 409
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == JPEG_CONTENT_TYPE
 
-    async def test_openapi_documents_409_response(self, client: AsyncClient) -> None:
-        """OpenAPI should document preview conflicts while streaming."""
+    async def test_openapi_does_not_document_stream_conflict(self, client: AsyncClient) -> None:
+        """Preview capture is expected to work while YouTube streaming is active."""
         resp = await client.get("/openapi.json")
         assert resp.status_code == 200
         preview_get = resp.json()["paths"]["/images/preview"]["get"]
-        assert CONFLICT_RESPONSE_CODE in preview_get["responses"]
+        assert CONFLICT_RESPONSE_CODE not in preview_get["responses"]
 
 
 class TestCaptureEndpoint:

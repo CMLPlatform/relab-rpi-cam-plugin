@@ -43,6 +43,16 @@ def _patch_httpx(response: _Response | Exception | list[_Response]) -> object:
 class TestPostOfferToMediamtx:
     """Tests for the raw SDP forwarder used by the WHEP router."""
 
+    def test_request_schema_example_has_required_webrtc_lines(self) -> None:
+        """The OpenAPI example should look like a real browser WHEP offer."""
+        example = WhepOfferRequest.model_json_schema()["examples"][0]["sdp"]
+
+        assert "a=mid:0" in example
+        assert "a=ice-ufrag:" in example
+        assert "a=ice-pwd:" in example
+        assert "a=fingerprint:sha-256" in example
+        assert "a=rtpmap:96 H264/90000" in example
+
     async def test_happy_path_returns_answer_and_absolute_location(self) -> None:
         """MediaMTX returns a 201 with answer SDP and a relative Location."""
         response = _Response(
