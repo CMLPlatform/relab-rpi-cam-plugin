@@ -68,9 +68,18 @@ class Picamera2Backend(StreamingCameraBackend):
                 raise CameraInitializationError(settings.camera_device_num, str(e)) from e
 
             camera = self._require_camera()
+            # RGB888 on main (24bpp) cuts per-buffer DMA by 25% vs picamera2's
+            # default XBGR8888 (32bpp) and matches what ``capture_image`` ends up
+            # converting to anyway — no extra colour-space hop. ``buffer_count=4``
+            # trims the default ``create_video_configuration`` value of 6 so the
+            # dual main+lores pipeline fits comfortably inside the Pi's default
+            # CMA reservation (previously seen as dma_heap ENOMEM at configure
+            # time). ``display=None`` skips an unused preview pathway.
             config = camera.create_video_configuration(
-                main={"size": _MAIN_SIZE},
-                lores={"size": _LORES_SIZE},
+                main={"size": _MAIN_SIZE, "format": "RGB888"},
+                lores={"size": _LORES_SIZE, "format": "YUV420"},
+                buffer_count=4,
+                display=None,
                 raw=None,
             )
             camera.configure(config)
