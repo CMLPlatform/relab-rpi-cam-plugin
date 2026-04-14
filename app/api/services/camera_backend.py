@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from pydantic import AnyUrl
 
+from app.api.schemas.camera_controls import CameraControlsView, FocusControlRequest, JsonValue
 from app.api.schemas.streaming import YoutubeStreamConfig
 
 if TYPE_CHECKING:
@@ -74,3 +75,17 @@ class StreamingCameraBackend(CameraBackend, Protocol):
 
     async def get_stream_metadata(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """Return camera properties and current stream capture metadata."""
+
+
+@runtime_checkable
+class ControllableCameraBackend(CameraBackend, Protocol):
+    """Extension for backends that expose runtime camera controls."""
+
+    async def get_controls(self) -> CameraControlsView:
+        """Return supported controls and latest observed values."""
+
+    async def set_controls(self, controls: dict[str, JsonValue]) -> CameraControlsView:
+        """Apply backend-native camera controls and return the updated view."""
+
+    async def set_focus(self, request: FocusControlRequest) -> CameraControlsView:
+        """Apply a friendly focus request and return the updated view."""

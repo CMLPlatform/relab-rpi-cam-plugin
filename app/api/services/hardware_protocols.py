@@ -14,6 +14,7 @@ class Picamera2Like(Protocol):
     """Behavior required from a Picamera2-compatible camera object."""
 
     camera_properties: dict[str, Any]
+    camera_controls: dict[str, tuple[Any, Any, Any]]
 
     def configure(self, config: object) -> None:
         """Configure the camera for the next capture or recording."""
@@ -47,6 +48,12 @@ class Picamera2Like(Protocol):
 
     def stop_encoder(self, encoders: object | None = None) -> None:
         """Detach one, many, or all encoders."""
+
+    def set_controls(self, controls: dict[str, object]) -> None:
+        """Set runtime camera controls."""
+
+    def autofocus_cycle(self, *, wait: bool | None = None, signal_function: object | None = None) -> object:
+        """Run a Picamera2 autofocus cycle."""
 
     def create_still_configuration(self, **kwargs: object) -> dict:
         """Create a still capture configuration."""

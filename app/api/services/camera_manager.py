@@ -12,12 +12,12 @@ from typing import TYPE_CHECKING
 
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 from relab_rpi_cam_models.images import ImageCaptureResponse, ImageCaptureStatus
-from relab_rpi_cam_models.stream import StreamMode, StreamView
 
 from app.api.exceptions import ActiveStreamError
+from app.api.schemas.camera_controls import CameraControlsPatch, CameraControlsView, FocusControlRequest
 from app.api.schemas.streaming import YoutubeStreamConfig
 from app.api.services.backend_factory import create_camera_backend
-from app.api.services.camera_backend import CameraBackend, StreamingCameraBackend
+from app.api.services.camera_backend import CameraBackend, ControllableCameraBackend, StreamingCameraBackend
 from app.api.services.contract_adapters import build_image_metadata, image_metadata_to_exif
 from app.api.services.stream_service import StreamService
 from app.api.services.stream_state import ActiveStreamState
@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
+    from relab_rpi_cam_models.stream import StreamMode, StreamView
+
 logger = logging.getLogger(__name__)
 _PREVIEW_SIZE = (640, 480)
 
@@ -39,6 +41,13 @@ class StreamingNotSupportedError(RuntimeError):
 
     def __init__(self, backend: CameraBackend) -> None:
         super().__init__(f"Backend {type(backend).__name__} does not support live streaming")
+
+
+class CameraControlsNotSupportedError(RuntimeError):
+    """Raised when a controls operation is attempted on a non-controllable backend."""
+
+    def __init__(self, backend: CameraBackend) -> None:
+        super().__init__(f"Backend {type(backend).__name__} does not support remote camera controls")
 
 
 def _unlink_quiet(path: Path) -> None:
@@ -75,9 +84,6 @@ class CameraManager:
 
     async def setup_camera(self, mode: CameraMode) -> None:
         """Prepare the configured backend for the requested camera mode."""
-        if self.stream.is_active and mode == CameraMode.PHOTO:
-            raise ActiveStreamError(self.stream)
-
         await self._acquire_lock()
         try:
             await self.backend.open(mode)
@@ -94,9 +100,6 @@ class CameraManager:
         a successful synchronous upload the local file is deleted. On failure the
         file is moved into the upload queue for exponential-backoff retry.
         """
-        if self.stream.is_active:
-            raise ActiveStreamError(self.stream)
-
         upload_meta = dict(upload_metadata or {})
 
         await self._acquire_lock()
@@ -160,12 +163,9 @@ class CameraManager:
         The dominant preview path in the web UI is MediaMTX WHEP (Phase 6). This
         method exists for native clients and as a diagnostic: it runs a regular
         still capture and resizes. Because the backend pipeline is persistent,
-        no mode switch happens and the full path is ~10× faster than it used
+        no mode switch happens and the full path is ~10x faster than it used
         to be.
         """
-        if self.stream.is_active:
-            raise ActiveStreamError(self.stream)
-
         started = time.perf_counter()
         await self._acquire_lock()
         try:
@@ -184,6 +184,39 @@ class CameraManager:
         if not isinstance(self.backend, StreamingCameraBackend):
             raise StreamingNotSupportedError(self.backend)
         return self.backend
+
+    def _require_controllable_backend(self) -> ControllableCameraBackend:
+        """Return the backend narrowed to ControllableCameraBackend, or raise."""
+        if not isinstance(self.backend, ControllableCameraBackend):
+            raise CameraControlsNotSupportedError(self.backend)
+        return self.backend
+
+    async def get_controls(self) -> CameraControlsView:
+        """Return supported controls for the active backend."""
+        backend = self._require_controllable_backend()
+        await self._acquire_lock()
+        try:
+            return await backend.get_controls()
+        finally:
+            self.lock.release()
+
+    async def set_controls(self, patch: CameraControlsPatch) -> CameraControlsView:
+        """Apply backend-native controls through the active backend."""
+        backend = self._require_controllable_backend()
+        await self._acquire_lock()
+        try:
+            return await backend.set_controls(patch.controls)
+        finally:
+            self.lock.release()
+
+    async def set_focus(self, request: FocusControlRequest) -> CameraControlsView:
+        """Apply friendly focus controls through the active backend."""
+        backend = self._require_controllable_backend()
+        await self._acquire_lock()
+        try:
+            return await backend.set_focus(request)
+        finally:
+            self.lock.release()
 
     async def start_streaming(
         self,

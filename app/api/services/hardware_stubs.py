@@ -9,6 +9,7 @@ class Picamera2Stub:
     """Stub used on non-Raspberry Pi hosts so the app can start."""
 
     camera_properties: ClassVar[dict[str, Any]] = {}
+    camera_controls: ClassVar[dict[str, tuple[Any, Any, Any]]] = {}
 
     def __init__(self, _camera_num: int = 0) -> None:
         raise RuntimeError(_ERR)
@@ -45,6 +46,12 @@ class Picamera2Stub:
 
     def stop_encoder(self, encoders: object | None = None) -> None:
         """Stub detach one, many, or all encoders."""
+
+    def set_controls(self, controls: dict[str, object]) -> None:
+        """Set stub camera controls."""
+
+    def autofocus_cycle(self, *, wait: bool | None = None, signal_function: object | None = None) -> object:
+        """Run a stub autofocus cycle."""
 
     def create_still_configuration(self, **_kwargs: object) -> dict:
         """Create a stub still configuration."""
