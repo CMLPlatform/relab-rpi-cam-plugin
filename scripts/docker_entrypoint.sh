@@ -12,11 +12,5 @@ run_as_rpicam() {
   su -s /bin/bash -c "$*" rpicam
 }
 
-# Start PulseAudio daemon (handles case where already running)
-run_as_rpicam "pulseaudio --start --daemonize 2>/dev/null || true"
-
-# Create a null audio sink if it doesn't exist (idempotent)
-run_as_rpicam 'pactl list sinks short 2>/dev/null | grep -q "nullaudio" || pactl load-module module-null-sink sink_name=nullaudio > /dev/null 2>&1 || true'
-
 # Run the FastAPI application
 exec su -s /bin/bash -c '.venv/bin/fastapi run app/main.py --host 0.0.0.0 --port 8018' rpicam

@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
     summary="Get snapshot preview",
     responses={
         200: {"description": "Single low-resolution JPEG snapshot for polling-based preview."},
-        409: {"description": "Preview is unavailable while a YouTube stream is active."},
     },
 )
 async def preview_image(camera_manager: CameraManagerDependency) -> Response:

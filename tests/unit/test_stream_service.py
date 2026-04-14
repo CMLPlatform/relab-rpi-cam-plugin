@@ -1,7 +1,10 @@
 """Tests for stream service helpers."""
 
+from unittest.mock import MagicMock
+
 import pytest
 from pydantic import AnyUrl, SecretStr
+
 from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
@@ -9,14 +12,6 @@ from app.api.services import stream as stream_service
 
 EMBED_URL = "https://www.youtube.com/embed/broadcast-key"
 RTMPS_BASE = "rtmps://a.rtmps.youtube.com:443/live2"
-
-
-class DummyFfmpegOutput:
-    """Capture FfmpegOutput construction arguments."""
-
-    def __init__(self, output_str: str, **kwargs: object) -> None:
-        self.output_str = output_str
-        self.kwargs = kwargs
 
 
 class TestStreamUrls:
@@ -53,7 +48,6 @@ class TestFfmpegOutput:
 
     def test_youtube_output_builds_rtmps_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The ffmpeg output string should target YouTube RTMPS with FLV muxing and AAC audio."""
-        monkeypatch.setattr(stream_service, "FfmpegOutput", DummyFfmpegOutput)
         config = YoutubeStreamConfig(
             stream_key=SecretStr("stream-key"),
             broadcast_key=SecretStr("broadcast-key"),
@@ -61,16 +55,30 @@ class TestFfmpegOutput:
 
         output = stream_service.get_ffmpeg_output(StreamMode.YOUTUBE, config)
 
-        assert isinstance(output, DummyFfmpegOutput)
-        assert output.kwargs["audio"] is True
-        assert "-f flv" in output.output_str
-        assert "-c:v copy" in output.output_str
-        assert "aac" in output.output_str
-        assert f"{RTMPS_BASE}/stream-key" in output.output_str
+        assert isinstance(output, stream_service.SilentAudioFfmpegOutput)
+        assert "-f flv" in output.output_filename
+        assert "-shortest" in output.output_filename
+        assert f"{RTMPS_BASE}/stream-key" in output.output_filename
+
+    def test_silent_audio_output_orders_inputs_before_codecs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The lavfi audio input must be declared before ffmpeg codec/output options."""
+        popen = MagicMock(return_value=MagicMock(stdin=MagicMock()))
+        monkeypatch.setattr(stream_service.subprocess, "Popen", popen)
+        monkeypatch.setattr(stream_service.Output, "start", MagicMock())
+
+        output = stream_service.SilentAudioFfmpegOutput("-ar 44100 -ac 2 -f flv -shortest rtmps://example")
+        output.start()
+
+        command = popen.call_args.args[0]
+        anullsrc_index = command.index("anullsrc=channel_layout=stereo:sample_rate=44100")
+        video_codec_index = command.index("-c:v")
+        audio_codec_index = command.index("-c:a")
+        assert anullsrc_index < audio_codec_index < video_codec_index
+        assert "nullaudio.monitor" not in command
         # HLS-era leftovers must stay gone.
-        assert "hls" not in output.output_str
-        assert "master.m3u8" not in output.output_str
-        assert "http_upload_hls" not in output.output_str
+        assert "hls" not in command
+        assert "master.m3u8" not in command
+        assert "http_upload_hls" not in command
 
     def test_unsupported_mode_raises(self) -> None:
         """Unsupported stream modes should fail fast."""

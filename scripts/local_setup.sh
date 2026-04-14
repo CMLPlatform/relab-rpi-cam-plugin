@@ -29,16 +29,6 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 
-# Create a null audio sink to stream null audio to YouTube, if it doesn't already exist
-if command -v pactl >/dev/null 2>&1; then
-	if pactl list sinks short | grep -q "nullaudio"; then
-		echo "Null audio sink 'nullaudio' already exists"
-	else
-		echo "Creating null audio sink 'nullaudio'..."
-		pactl load-module module-null-sink sink_name=nullaudio
-	fi
-fi
-
 # Install uv if not already installed
 if ! command -v uv >/dev/null 2>&1; then
 	echo "Installing uv (https://astral.sh/uv)..."
