@@ -43,6 +43,7 @@ class CameraControlsPatch(BaseModel):
     """Generic camera controls patch using backend-native control names."""
 
     controls: dict[str, JsonValue] = Field(
+        description="Backend-native control names and values.",
         examples=[{"ExposureTime": 10000, "AnalogueGain": 1.5}],
         min_length=1,
     )
@@ -51,6 +52,20 @@ class CameraControlsPatch(BaseModel):
 class FocusControlRequest(BaseModel):
     """Request body for common focus operations."""
 
-    mode: FocusMode
-    lens_position: float | None = Field(default=None, ge=0)
-    trigger_cycle: bool = False
+    mode: FocusMode = Field(description="Focus mode to apply.")
+    lens_position: float | None = Field(
+        default=None,
+        ge=0,
+        description="Manual focus lens position; only used with mode=manual.",
+    )
+    trigger_cycle: bool = Field(
+        default=False,
+        description="When mode=auto, run a one-shot autofocus cycle.",
+    )
+
+
+class CameraControlsCapabilities(BaseModel):
+    """Compact controls response tailored for UI display."""
+
+    supported: bool
+    controls: list[CameraControlInfo] = Field(default_factory=list)

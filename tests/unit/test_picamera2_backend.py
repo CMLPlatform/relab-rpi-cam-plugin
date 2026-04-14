@@ -200,6 +200,23 @@ class TestPicamera2Backend:
 
         camera.set_controls.assert_called_once_with({"AfMode": controls.AfModeEnum.Manual, "LensPosition": 2.5})
 
+    async def test_get_controls_capabilities_returns_sorted_list(self) -> None:
+        """get_controls_capabilities should return a sorted list of control info."""
+        backend = Picamera2Backend()
+        camera = MagicMock()
+        camera.camera_controls = {
+            "ExposureTime": (1, 1_000_000, 10_000),
+            "AfMode": (controls.AfModeEnum.Manual, controls.AfModeEnum.Continuous, controls.AfModeEnum.Auto),
+        }
+        camera.capture_metadata.return_value = {}
+        backend._camera = camera  # noqa: SLF001
+        backend.current_mode = CameraMode.VIDEO
+
+        caps = await backend.get_controls_capabilities()
+
+        assert caps.supported is True
+        assert [control.name for control in caps.controls] == ["AfMode", "ExposureTime"]
+
     async def test_cleanup_releases_camera(self) -> None:
         """Cleanup should stop/close the camera and clear the reference."""
         backend = Picamera2Backend()

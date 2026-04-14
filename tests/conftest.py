@@ -14,6 +14,7 @@ from app.api.dependencies.auth import reload_authorized_hashes, verify_request
 from app.api.dependencies.camera_management import get_camera_manager
 from app.api.schemas.camera_controls import (
     CameraControlInfo,
+    CameraControlsCapabilities,
     CameraControlsView,
     FocusControlRequest,
     JsonValue,
@@ -92,6 +93,14 @@ class FakeBackend:
                 )
             },
             values=self.capture_metadata,
+        )
+
+    async def get_controls_capabilities(self) -> CameraControlsCapabilities:
+        """Return mock control capabilities for UI helpers."""
+        view = await self.get_controls()
+        return CameraControlsCapabilities(
+            supported=True,
+            controls=list(view.controls.values()),
         )
 
     async def set_controls(self, controls: dict[str, JsonValue]) -> CameraControlsView:

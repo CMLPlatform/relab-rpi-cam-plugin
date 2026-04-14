@@ -54,3 +54,12 @@ class TestCameraControls:
 
         assert resp.status_code == 200
         assert resp.json()["supported"] is True
+
+    async def test_controls_capabilities_returns_200(self, client: AsyncClient) -> None:
+        """Test that control capabilities are exposed for UI helpers."""
+        resp = await client.get("/camera/controls/capabilities")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["supported"] is True
+        assert len(data["controls"]) >= 1

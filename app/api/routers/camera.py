@@ -4,7 +4,12 @@ from fastapi import APIRouter, HTTPException
 from relab_rpi_cam_models.camera import CameraStatusView
 
 from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.schemas.camera_controls import CameraControlsPatch, CameraControlsView, FocusControlRequest
+from app.api.schemas.camera_controls import (
+    CameraControlsCapabilities,
+    CameraControlsPatch,
+    CameraControlsView,
+    FocusControlRequest,
+)
 from app.api.services.camera_manager import CameraControlsNotSupportedError
 
 router = APIRouter(prefix="/camera", tags=["camera"])
@@ -18,7 +23,15 @@ async def get_camera_status(
     return await camera_manager.get_status()
 
 
-@router.get("/controls", summary="Get camera controls")
+@router.get(
+    "/controls",
+    summary="Get camera controls",
+    description=(
+        "Returns the backend-exposed camera controls along with any "
+        "latest observed values. Use this to discover what controls are "
+        "available on the current camera."
+    ),
+)
 async def get_camera_controls(
     camera_manager: CameraManagerDependency,
 ) -> CameraControlsView:
@@ -29,7 +42,25 @@ async def get_camera_controls(
         raise HTTPException(status_code=501, detail=str(exc)) from exc
 
 
-@router.patch("/controls", summary="Set camera controls")
+@router.get("/controls/capabilities", summary="Get camera control capabilities")
+async def get_camera_control_capabilities(
+    camera_manager: CameraManagerDependency,
+) -> CameraControlsCapabilities:
+    """Return a UI-friendly list of supported camera controls."""
+    try:
+        return await camera_manager.get_controls_capabilities()
+    except CameraControlsNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+
+@router.patch(
+    "/controls",
+    summary="Set camera controls",
+    description=(
+        "Apply backend-native camera controls. Control names are the "
+        "exact strings reported by /camera/controls."
+    ),
+)
 async def set_camera_controls(
     controls: CameraControlsPatch,
     camera_manager: CameraManagerDependency,
@@ -43,7 +74,11 @@ async def set_camera_controls(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.put("/focus", summary="Set camera focus")
+@router.put(
+    "/focus",
+    summary="Set camera focus",
+    description="Apply friendly focus controls (continuous, auto, or manual).",
+)
 async def set_camera_focus(
     focus: FocusControlRequest,
     camera_manager: CameraManagerDependency,

@@ -35,8 +35,10 @@ Pairing is automatic: set `PAIRING_BACKEND_URL` in your `.env`, start the plugin
 1. Enter the pairing code shown on `/setup` (or in logs) in the RELab app
 1. Visit `http://your-pi-ip:8018` to test
    - `/setup` — Pairing and status
-   - `/images/preview` — Snapshot preview for viewfinder polling, unavailable while streaming
+   - `/images/preview` — Snapshot preview for viewfinder polling
    - `/stream/watch` — YouTube viewer UI for an active YouTube stream
+   - `/camera/controls` — Discover/set camera controls (autofocus, exposure, etc.)
+   - `/camera/focus` — Friendly focus controls (continuous/auto/manual)
    - `/docs` — API reference
 
 If you use Docker Compose on the Pi, generate `compose.override.yml` with `./scripts/generate_compose_override.py`. The override targets the existing `app` service from `compose.yml`, so the device mappings merge into the plugin container cleanly.

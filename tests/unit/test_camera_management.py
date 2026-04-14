@@ -14,7 +14,13 @@ from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.dependencies import camera_management as camera_deps
 from app.api.exceptions import ActiveStreamError
-from app.api.schemas.camera_controls import CameraControlsPatch, CameraControlsView, FocusControlRequest, FocusMode
+from app.api.schemas.camera_controls import (
+    CameraControlsCapabilities,
+    CameraControlsPatch,
+    CameraControlsView,
+    FocusControlRequest,
+    FocusMode,
+)
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services.camera_backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.api.services.camera_manager import CameraControlsNotSupportedError, CameraManager
@@ -268,6 +274,9 @@ class TestCameraManagerControls:
         """Should return control capabilities from a controllable backend."""
         backend = FakeBackend()
         backend.get_controls = AsyncMock(return_value=CameraControlsView(supported=True))  # type: ignore[attr-defined]
+        backend.get_controls_capabilities = AsyncMock(  # type: ignore[attr-defined]
+            return_value=CameraControlsCapabilities(supported=True)
+        )
         backend.set_controls = AsyncMock()  # type: ignore[attr-defined]
         backend.set_focus = AsyncMock()  # type: ignore[attr-defined]
         manager = CameraManager(backend=backend)
@@ -281,6 +290,9 @@ class TestCameraManagerControls:
         """Should apply generic controls through a controllable backend."""
         backend = FakeBackend()
         backend.get_controls = AsyncMock()  # type: ignore[attr-defined]
+        backend.get_controls_capabilities = AsyncMock(  # type: ignore[attr-defined]
+            return_value=CameraControlsCapabilities(supported=True)
+        )
         backend.set_controls = AsyncMock(return_value=CameraControlsView(supported=True))  # type: ignore[attr-defined]
         backend.set_focus = AsyncMock()  # type: ignore[attr-defined]
         manager = CameraManager(backend=backend)
@@ -295,6 +307,9 @@ class TestCameraManagerControls:
         """Should apply friendly focus controls through a controllable backend."""
         backend = FakeBackend()
         backend.get_controls = AsyncMock()  # type: ignore[attr-defined]
+        backend.get_controls_capabilities = AsyncMock(  # type: ignore[attr-defined]
+            return_value=CameraControlsCapabilities(supported=True)
+        )
         backend.set_controls = AsyncMock()  # type: ignore[attr-defined]
         backend.set_focus = AsyncMock(return_value=CameraControlsView(supported=True))  # type: ignore[attr-defined]
         manager = CameraManager(backend=backend)
@@ -304,6 +319,22 @@ class TestCameraManagerControls:
 
         assert result.supported is True
         backend.set_focus.assert_awaited_once_with(request)
+
+    async def test_get_controls_capabilities_dispatches_to_backend(self) -> None:
+        """Should return UI-friendly capabilities from a controllable backend."""
+        backend = FakeBackend()
+        backend.get_controls = AsyncMock()  # type: ignore[attr-defined]
+        backend.set_controls = AsyncMock()  # type: ignore[attr-defined]
+        backend.set_focus = AsyncMock()  # type: ignore[attr-defined]
+        backend.get_controls_capabilities = AsyncMock(  # type: ignore[attr-defined]
+            return_value=CameraControlsCapabilities(supported=True)
+        )
+        manager = CameraManager(backend=backend)
+
+        result = await manager.get_controls_capabilities()
+
+        assert result.supported is True
+        backend.get_controls_capabilities.assert_awaited_once()
 
 
 class TestStreamService:

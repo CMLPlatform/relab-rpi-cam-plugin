@@ -14,7 +14,12 @@ from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 from relab_rpi_cam_models.images import ImageCaptureResponse, ImageCaptureStatus
 
 from app.api.exceptions import ActiveStreamError
-from app.api.schemas.camera_controls import CameraControlsPatch, CameraControlsView, FocusControlRequest
+from app.api.schemas.camera_controls import (
+    CameraControlsCapabilities,
+    CameraControlsPatch,
+    CameraControlsView,
+    FocusControlRequest,
+)
 from app.api.schemas.streaming import YoutubeStreamConfig
 from app.api.services.backend_factory import create_camera_backend
 from app.api.services.camera_backend import CameraBackend, ControllableCameraBackend, StreamingCameraBackend
@@ -197,6 +202,15 @@ class CameraManager:
         await self._acquire_lock()
         try:
             return await backend.get_controls()
+        finally:
+            self.lock.release()
+
+    async def get_controls_capabilities(self) -> CameraControlsCapabilities:
+        """Return UI-friendly control capabilities."""
+        backend = self._require_controllable_backend()
+        await self._acquire_lock()
+        try:
+            return await backend.get_controls_capabilities()
         finally:
             self.lock.release()
 
