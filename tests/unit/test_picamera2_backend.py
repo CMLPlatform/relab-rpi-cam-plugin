@@ -3,8 +3,11 @@
 from unittest.mock import MagicMock
 
 import pytest
-from libcamera import controls
-from pydantic import AnyUrl, SecretStr
+
+# ``libcamera`` is only installable on Raspberry Pi OS (ships via apt, not pip).
+# Skip this module entirely on dev hosts so the rest of the suite can run.
+controls = pytest.importorskip("libcamera").controls
+from pydantic import AnyUrl, SecretStr  # noqa: E402
 from relab_rpi_cam_models.camera import CameraMode
 from relab_rpi_cam_models.stream import StreamMode
 

@@ -48,6 +48,7 @@ class TestFfmpegOutput:
 
     def test_youtube_output_builds_rtmps_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The ffmpeg output string should target YouTube RTMPS with FLV muxing and AAC audio."""
+        pytest.importorskip("picamera2.outputs")
         config = YoutubeStreamConfig(
             stream_key=SecretStr("stream-key"),
             broadcast_key=SecretStr("broadcast-key"),
@@ -62,6 +63,7 @@ class TestFfmpegOutput:
 
     def test_silent_audio_output_orders_inputs_before_codecs(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The lavfi audio input must be declared before ffmpeg codec/output options."""
+        pytest.importorskip("picamera2.outputs")
         popen = MagicMock(return_value=MagicMock(stdin=MagicMock()))
         monkeypatch.setattr(stream_service.subprocess, "Popen", popen)
         monkeypatch.setattr(stream_service.Output, "start", MagicMock())

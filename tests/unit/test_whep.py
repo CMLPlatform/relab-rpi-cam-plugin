@@ -14,8 +14,10 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
+from relab_rpi_cam_models.whep import WhepOfferRequest
+
 from app.api.routers import whep as whep_mod
-from app.api.routers.whep import WhepOfferRequest, _post_offer_to_mediamtx
+from app.api.routers.whep import _post_offer_to_mediamtx
 
 
 class _Response:
