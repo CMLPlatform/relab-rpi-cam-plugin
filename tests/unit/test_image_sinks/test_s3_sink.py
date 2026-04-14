@@ -1,21 +1,34 @@
-"""Tests for S3CompatibleSink.
-
-``aioboto3`` is not a runtime dependency of the plugin — the sink imports it
-lazily inside ``put()``, and the standalone compose profile adds it via a
-MinIO-friendly install layer. Tests stub the import via ``sys.modules`` so the
-Pi suite never has to pull in ~30MB of boto3 transitively.
-"""
+"""Tests for S3CompatibleSink."""
 
 from __future__ import annotations
 
-import sys
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from app.api.services.image_sinks.base import ImageSinkError
 from app.api.services.image_sinks.s3_sink import S3CompatibleSink
+from tests.constants import (
+    DEFAULT_S3_REGION,
+    S3_BUCKET_ALREADY_EXISTS,
+    S3_BUCKET_ALREADY_OWNED_BY_YOU,
+    S3_BUCKET_NAME,
+    S3_CDN_IMAGE_ID,
+    S3_CDN_URL,
+    S3_IMAGE_BYTES,
+    S3_IMAGE_ID,
+    S3_MEDIA_TYPE,
+    S3_OBJECT_KEY,
+    S3_OBJECT_KEY_UNSORTED,
+    S3_PUBLIC_URL,
+    S3_UNSORTED_IMAGE_ID,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from typing import Self
 
 
 class _FakeS3Client:
@@ -23,30 +36,13 @@ class _FakeS3Client:
 
     def __init__(self) -> None:
         self.put_object = AsyncMock(return_value={"ETag": '"deadbeef"'})
+        self.create_bucket = AsyncMock(return_value={})
 
-    async def __aenter__(self) -> _FakeS3Client:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *_args: object) -> None:
         return None
-
-
-def _install_fake_aioboto3(*, client: _FakeS3Client | None = None) -> MagicMock:
-    """Install a fake ``aioboto3`` module so the sink's lazy import finds it."""
-    client = client or _FakeS3Client()
-    session_instance = SimpleNamespace(client=lambda *_args, **_kwargs: client)
-
-    fake_session_cls = MagicMock(return_value=session_instance)
-    fake_module = SimpleNamespace(Session=fake_session_cls)
-    sys.modules["aioboto3"] = fake_module
-    return fake_session_cls
-
-
-@pytest.fixture(autouse=True)
-def _cleanup_fake_aioboto3() -> None:
-    """Remove any fake ``aioboto3`` module after each test."""
-    yield
-    sys.modules.pop("aioboto3", None)
 
 
 def _make_sink(**overrides: str) -> S3CompatibleSink:
@@ -55,76 +51,81 @@ def _make_sink(**overrides: str) -> S3CompatibleSink:
         bucket=overrides.get("bucket", "rpi-cam"),
         access_key_id=overrides.get("access_key_id", "ak"),
         secret_access_key=overrides.get("secret_access_key", "sk"),
-        region=overrides.get("region", "us-east-1"),
+        region=overrides.get("region", DEFAULT_S3_REGION),
         public_url_template=overrides.get("public_url_template", "{endpoint}/{bucket}/{key}"),
     )
+
+
+@pytest.fixture
+def fake_s3_client() -> _FakeS3Client:
+    """Provide a fresh fake S3 client for each test."""
+    return _FakeS3Client()
+
+
+@pytest.fixture(autouse=True)
+def _patch_aioboto3(fake_s3_client: _FakeS3Client) -> Iterator[MagicMock]:
+    """Patch ``aioboto3.Session`` so no real AWS calls are made."""
+    session_instance = MagicMock()
+    session_instance.client.return_value = fake_s3_client
+    with patch("app.api.services.image_sinks.s3_sink.aioboto3") as mock_aioboto3:
+        mock_aioboto3.Session.return_value = session_instance
+        yield mock_aioboto3
 
 
 class TestS3CompatibleSink:
     """Happy-path + error translation + key layout + URL template."""
 
-    async def test_put_uploads_and_returns_public_url(self) -> None:
+    async def test_put_uploads_and_returns_public_url(self, fake_s3_client: _FakeS3Client) -> None:
         """The sink should PUT into the bucket and return the templated public URL."""
-        client = _FakeS3Client()
-        _install_fake_aioboto3(client=client)
-
         sink = _make_sink()
         result = await sink.put(
-            image_id="abc123",
-            image_bytes=b"jpeg-body",
+            image_id=S3_IMAGE_ID,
+            image_bytes=S3_IMAGE_BYTES,
             filename="abc123.jpg",
             capture_metadata={},
             upload_metadata={"product_id": 42},
         )
 
-        client.put_object.assert_awaited_once()
-        kwargs = client.put_object.await_args.kwargs
-        assert kwargs["Bucket"] == "rpi-cam"
-        assert kwargs["Key"] == "rpi-cam/42/abc123.jpg"
-        assert kwargs["Body"] == b"jpeg-body"
-        assert kwargs["ContentType"] == "image/jpeg"
+        fake_s3_client.put_object.assert_awaited_once()
+        kwargs = fake_s3_client.put_object.await_args_list[0].kwargs
+        assert kwargs["Bucket"] == S3_BUCKET_NAME
+        assert kwargs["Key"] == S3_OBJECT_KEY
+        assert kwargs["Body"] == S3_IMAGE_BYTES
+        assert kwargs["ContentType"] == S3_MEDIA_TYPE
 
-        assert result.image_id == "abc123"
-        assert str(result.image_url) == "http://minio.local:9000/rpi-cam/rpi-cam/42/abc123.jpg"
+        assert result.image_id == S3_IMAGE_ID
+        assert str(result.image_url) == S3_PUBLIC_URL
 
-    async def test_missing_product_id_routes_to_unsorted(self) -> None:
+    async def test_missing_product_id_routes_to_unsorted(self, fake_s3_client: _FakeS3Client) -> None:
         """If the upload_metadata has no product_id, the key goes under ``unsorted/``."""
-        client = _FakeS3Client()
-        _install_fake_aioboto3(client=client)
-
         sink = _make_sink()
         await sink.put(
-            image_id="img-no-product",
+            image_id=S3_UNSORTED_IMAGE_ID,
             image_bytes=b"jpeg",
             filename="img.jpg",
             capture_metadata={},
             upload_metadata={},  # no product_id
         )
 
-        kwargs = client.put_object.await_args.kwargs
-        assert kwargs["Key"] == "rpi-cam/unsorted/img-no-product.jpg"
+        kwargs = fake_s3_client.put_object.await_args_list[0].kwargs
+        assert kwargs["Key"] == S3_OBJECT_KEY_UNSORTED
 
     async def test_custom_public_url_template_for_cdn_fronted_bucket(self) -> None:
         """A custom template (e.g. for R2 custom domains) should be honoured."""
-        client = _FakeS3Client()
-        _install_fake_aioboto3(client=client)
-
         sink = _make_sink(public_url_template="https://cdn.example.com/{key}")
         result = await sink.put(
-            image_id="xyz",
+            image_id=S3_CDN_IMAGE_ID,
             image_bytes=b"jpeg",
             filename="xyz.jpg",
             capture_metadata={},
             upload_metadata={"product_id": 9},
         )
 
-        assert str(result.image_url) == "https://cdn.example.com/rpi-cam/9/xyz.jpg"
+        assert str(result.image_url) == S3_CDN_URL
 
-    async def test_put_object_failure_translates_to_image_sink_error(self) -> None:
+    async def test_put_object_failure_translates_to_image_sink_error(self, fake_s3_client: _FakeS3Client) -> None:
         """Any exception from aioboto3 should be wrapped as ``ImageSinkError``."""
-        client = _FakeS3Client()
-        client.put_object = AsyncMock(side_effect=RuntimeError("access denied"))
-        _install_fake_aioboto3(client=client)
+        fake_s3_client.put_object = AsyncMock(side_effect=RuntimeError("access denied"))
 
         sink = _make_sink()
         with pytest.raises(ImageSinkError, match="S3 upload failed"):
@@ -136,22 +137,38 @@ class TestS3CompatibleSink:
                 upload_metadata={"product_id": 1},
             )
 
-    async def test_missing_aioboto3_import_raises_image_sink_error(self) -> None:
-        """If ``aioboto3`` isn't installed, the sink surfaces a helpful error."""
-        # No fake module installed — the lazy import should actually fail.
-        sys.modules.pop("aioboto3", None)
-        # Also block it from finding the real module if it happens to be installed.
-        sys.modules["aioboto3"] = None  # type: ignore[assignment]
-
+    async def test_bucket_created_on_first_put(self, fake_s3_client: _FakeS3Client) -> None:
+        """``create_bucket`` should be called exactly once across multiple puts."""
         sink = _make_sink()
-        try:
-            with pytest.raises(ImageSinkError, match="aioboto3 is required"):
-                await sink.put(
-                    image_id="nope",
-                    image_bytes=b"jpeg",
-                    filename="nope.jpg",
-                    capture_metadata={},
-                    upload_metadata={},
-                )
-        finally:
-            sys.modules.pop("aioboto3", None)
+        await sink.put(
+            image_id="first",
+            image_bytes=b"jpeg",
+            filename="first.jpg",
+            capture_metadata={},
+            upload_metadata={},
+        )
+        await sink.put(
+            image_id="second",
+            image_bytes=b"jpeg",
+            filename="second.jpg",
+            capture_metadata={},
+            upload_metadata={},
+        )
+
+        fake_s3_client.create_bucket.assert_awaited_once()
+
+    async def test_bucket_already_exists_is_not_an_error(self, fake_s3_client: _FakeS3Client) -> None:
+        """``BucketAlreadyOwnedByYou`` / ``BucketAlreadyExists`` should be swallowed."""
+        for code in (S3_BUCKET_ALREADY_OWNED_BY_YOU, S3_BUCKET_ALREADY_EXISTS):
+            fake_s3_client.create_bucket = AsyncMock(
+                side_effect=ClientError({"Error": {"Code": code, "Message": ""}}, "CreateBucket")
+            )
+            sink = _make_sink()
+            # Should not raise.
+            await sink.put(
+                image_id="img",
+                image_bytes=b"jpeg",
+                filename="img.jpg",
+                capture_metadata={},
+                upload_metadata={},
+            )

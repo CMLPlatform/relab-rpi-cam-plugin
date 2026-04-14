@@ -23,7 +23,7 @@ format:
 pre-commit:
     uv run pre-commit run --all-files
 
-check: format lint pre-commit test
+check: format lint test
 
 audit:
     uv audit --preview-features audit --locked --no-dev

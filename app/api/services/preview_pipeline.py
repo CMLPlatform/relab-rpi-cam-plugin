@@ -1,6 +1,6 @@
 """Lores-stream preview pipeline: publishes to the local MediaMTX sidecar.
 
-Architecture (post-Phase-9):
+Architecture:
 
     picamera2 (lores 640x480) ──H264Encoder──FfmpegOutput──▶ rtsp://mediamtx/cam-preview
                                                                       │
@@ -15,8 +15,8 @@ first viewer. Simpler: the Pi lights up MediaMTX when it comes up, MediaMTX
 happily idles with a publisher and no subscribers, and the first LL-HLS
 viewer gets a live stream within ~1-2s.
 
-The ``ThermalGovernor`` (Phase 6B) still calls :meth:`set_bitrate` to swap
-the running encoder for a lower-bitrate one when the SoC runs hot.
+The ``ThermalGovernor`` still calls :meth:`set_bitrate` to swap the running
+encoder for a lower-bitrate one when the SoC runs hot.
 """
 
 from __future__ import annotations
@@ -64,9 +64,9 @@ def _build_ffmpeg_output(target_url: str) -> object:
 class PreviewPipelineManager:
     """Lifecycle manager for the lores-stream preview H264 encoder.
 
-    Post-Phase-9 this is a much thinner wrapper: the encoder is always-on
-    for the process lifetime. :meth:`start` / :meth:`stop` are idempotent
-    and :meth:`set_bitrate` swaps the live encoder without losing viewers.
+    The encoder is always-on for the process lifetime. :meth:`start` and
+    :meth:`stop` are idempotent and :meth:`set_bitrate` swaps the live
+    encoder without losing viewers.
     """
 
     def __init__(

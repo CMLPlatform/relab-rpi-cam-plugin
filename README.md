@@ -35,7 +35,7 @@ Pairing is automatic: set `PAIRING_BACKEND_URL` in your `.env`, start the plugin
 1. Enter the pairing code shown on `/setup` (or in logs) in the RELab app
 1. Visit `http://your-pi-ip:8018` to test
    - `/setup` — Pairing and status
-   - `/images/preview` — Snapshot preview for viewfinder polling
+   - `/hls/cam-preview/index.m3u8` — LL-HLS live preview (via the MediaMTX sidecar on :8888)
    - `/stream/watch` — YouTube viewer UI for an active YouTube stream
    - `/camera/controls` — Discover/set camera controls (autofocus, exposure, etc.)
    - `/camera/focus` — Friendly focus controls (continuous/auto/manual)

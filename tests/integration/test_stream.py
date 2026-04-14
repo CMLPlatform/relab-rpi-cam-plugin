@@ -1,14 +1,20 @@
 """Tests for streaming endpoints."""
 
+from unittest.mock import AsyncMock
+
+import pytest
 from httpx import AsyncClient
-from pydantic import SecretStr
+from pydantic import AnyUrl, SecretStr
 from relab_rpi_cam_models.stream import StreamMode
 
-from app.api.schemas.streaming import YoutubeStreamConfig
+from app.api.exceptions import ActiveStreamError
+from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services.camera_manager import CameraManager
+from app.api.services.stream_state import ActiveStreamState
 
 YOUTUBE_CONFIG_KEY = "youtube_config"
 VALID_BODY = {"stream_key": "secret-stream", "broadcast_key": "public-broadcast"}
+ENCODER_STUCK_MSG = "encoder stuck"
 
 
 class TestStreamStatus:
@@ -77,3 +83,55 @@ class TestStreamStop:
         resp = await client.delete("/stream")
         assert resp.status_code == 204
         assert not camera_manager.stream.is_active
+
+    async def test_stop_stream_returns_500_on_runtime_error(
+        self,
+        client: AsyncClient,
+        camera_manager: CameraManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A RuntimeError during shutdown should surface as an HTTP 500."""
+        camera_manager.stream.mode = StreamMode.YOUTUBE
+        monkeypatch.setattr(
+            camera_manager,
+            "stop_streaming",
+            AsyncMock(side_effect=RuntimeError(ENCODER_STUCK_MSG)),
+        )
+        resp = await client.delete("/stream")
+        assert resp.status_code == 500
+        assert ENCODER_STUCK_MSG in resp.json().get("detail", "")
+
+
+class TestStreamStartErrorPaths:
+    """``POST /stream`` should translate backend exceptions into HTTP errors."""
+
+    async def test_missing_youtube_config_returns_400(
+        self,
+        client: AsyncClient,
+        camera_manager: CameraManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``YoutubeConfigRequiredError`` from the backend -> 400."""
+        monkeypatch.setattr(
+            camera_manager,
+            "start_streaming",
+            AsyncMock(side_effect=YoutubeConfigRequiredError()),
+        )
+        resp = await client.post("/stream", json=VALID_BODY)
+        assert resp.status_code == 400
+
+    async def test_already_active_stream_returns_409(
+        self,
+        client: AsyncClient,
+        camera_manager: CameraManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``ActiveStreamError`` from the backend -> 409."""
+        active = ActiveStreamState(mode=StreamMode.YOUTUBE, url=AnyUrl("https://youtube.com/watch?v=abc"))
+        monkeypatch.setattr(
+            camera_manager,
+            "start_streaming",
+            AsyncMock(side_effect=ActiveStreamError(active)),
+        )
+        resp = await client.post("/stream", json=VALID_BODY)
+        assert resp.status_code == 409

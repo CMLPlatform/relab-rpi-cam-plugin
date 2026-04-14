@@ -1,4 +1,4 @@
-"""Tests for BackendPushSink — the Phase 6A backend push path behind the Phase 10 sink interface."""
+"""Tests for BackendPushSink — the direct Pi→backend push path behind the ImageSink interface."""
 
 from __future__ import annotations
 
@@ -11,6 +11,12 @@ from app.api.services.image_sinks import backend_sink as backend_sink_mod
 from app.api.services.image_sinks.backend_sink import BackendPushSink
 from app.api.services.image_sinks.base import ImageSinkError, StoredImage
 from app.utils.backend_client import BackendUploadError, UploadedImageInfo
+from tests.constants import (
+    BACKEND_PUSH_FILENAME,
+    BACKEND_PUSH_IMAGE_BYTES,
+    BACKEND_PUSH_IMAGE_ID,
+    BACKEND_PUSH_IMAGE_URL,
+)
 
 
 class TestBackendPushSink:
@@ -23,8 +29,8 @@ class TestBackendPushSink:
         """The sink should proxy every field to ``upload_image`` and return its result."""
         mock_upload = AsyncMock(
             return_value=UploadedImageInfo(
-                image_id="srv-abc",
-                image_url=AnyUrl("https://backend.example/images/abc.jpg"),
+                image_id=BACKEND_PUSH_IMAGE_ID,
+                image_url=AnyUrl(BACKEND_PUSH_IMAGE_URL),
             )
         )
         monkeypatch.setattr(backend_sink_mod, "upload_image", mock_upload)
@@ -39,13 +45,13 @@ class TestBackendPushSink:
         )
 
         assert isinstance(result, StoredImage)
-        assert result.image_id == "srv-abc"
-        assert str(result.image_url) == "https://backend.example/images/abc.jpg"
+        assert result.image_id == BACKEND_PUSH_IMAGE_ID
+        assert str(result.image_url) == BACKEND_PUSH_IMAGE_URL
 
         mock_upload.assert_awaited_once()
-        kwargs = mock_upload.await_args.kwargs
-        assert kwargs["image_bytes"] == b"jpeg-body"
-        assert kwargs["filename"] == "local-1.jpg"
+        kwargs = mock_upload.await_args_list[0].kwargs
+        assert kwargs["image_bytes"] == BACKEND_PUSH_IMAGE_BYTES
+        assert kwargs["filename"] == BACKEND_PUSH_FILENAME
         assert kwargs["capture_metadata"] == {"iso": 200}
         assert kwargs["upload_metadata"] == {"product_id": 7}
 

@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     # command arrives or the relay reconnects.
     preview_hibernate_after_s: int = 60 * 5  # Default: hibernate after 5 min idle
 
-    # Image sink selection (Phase 10A). ``auto`` infers from what's configured:
+    # Image sink selection. ``auto`` infers from what's configured:
     # ``pairing_backend_url`` → backend, ``s3_endpoint_url`` → s3, nothing → error.
     image_sink: Literal["backend", "s3", "auto"] = "auto"
     # S3-compatible sink config (required when image_sink=s3 or when auto-

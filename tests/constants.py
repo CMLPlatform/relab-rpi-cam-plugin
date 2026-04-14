@@ -3,33 +3,9 @@
 HTML_CONTENT_TYPE = "text/html"
 JPEG_CONTENT_TYPE = "image/jpeg"
 PNG_CONTENT_TYPE = "image/png"
-
-# Shared literals used across multiple test modules
-SDP_MID = "a=mid:0"
-SDP_ICE_UFRAG = "a=ice-ufrag:"
-SDP_ICE_LABEL = "a=ice-" + "pwd:"
-SDP_FINGERPRINT = "a=fingerprint:sha-256"
-SDP_RTPMAP = "a=rtpmap:96 H264/90000"
-
-BASE_HOST = "http://host.docker.internal:8889"
-LOCATION_REL = "/cam-preview/whep/abc"
-LOCATION_FULL = BASE_HOST + LOCATION_REL
-EXTERNAL_LOCATION = "http://external.example/cam-preview/whep/xyz"
-
-LOCATION_HEADER_TEXT = "Location header"
-HTTP_400_TEXT = "HTTP 400"
-ANSWER_SDP = "v=0\nanswer"
-MEDIA_UNREACHABLE = "MediaMTX unreachable"
-
-# Shared constants for FFmpeg command and audio checks used in unit tests
-FFMPEG_FLAG_FLV = "-f flv"
-FFMPEG_FLAG_SHORTEST = "-shortest"
-ANULLSRC_STEREO = "anullsrc=channel_layout=stereo:sample_rate=44100"
-NULLAUDIO_MONITOR = "nullaudio.monitor"
-HLS = "hls"
-MASTER_M3U8 = "master.m3u8"
-HTTP_UPLOAD_HLS = "http_upload_hls"
-RTMPS_BASE = "rtmps://a.rtmps.youtube.com:443/live2"
+HLS_M3U8_CONTENT_TYPE = "application/vnd.apple.mpegurl"
+HLS_MP4_CONTENT_TYPE = "video/mp4"
+HLS_PREVIEW_ENCODER_FRAGMENT = "preview encoder"
 
 # Sample image upload constants used in integration tests
 UPLOADED_STATUS = "uploaded"
@@ -40,6 +16,10 @@ SAMPLE_IMAGE_URL = "https://backend.example/images/a1b2c3d4.jpg"
 # Sample server-side upload values used by unit tests
 SAMPLE_SERVER_IMAGE_ID = "server-abc"
 SAMPLE_SERVER_IMAGE_URL = "https://backend.example/images/abc.jpg"
+BACKEND_PUSH_IMAGE_ID = "srv-abc"
+BACKEND_PUSH_IMAGE_URL = "https://backend.example/images/abc.jpg"
+BACKEND_PUSH_IMAGE_BYTES = b"jpeg-body"
+BACKEND_PUSH_FILENAME = "local-1.jpg"
 
 # Prometheus metric snapshot lines used across tests
 MET_CPU_18_5 = "rpi_cam_cpu_percent 18.5"
@@ -77,6 +57,41 @@ TIMESTAMP_KEY = "timestamp"
 PAIRING_REGISTER_TIMEOUT_LOG = "PAIRING REGISTER TIMEOUT | code=CODE1 retry_in_s=1"
 PAIRING_POLL_TIMEOUT_LOG = "PAIRING POLL TIMEOUT | code=CODE1 retry_in_s=3"
 TRACEBACK_TEXT = "Traceback"
+
+# Image sink / MediaMTX test literals
+IMAGE_SINK_BACKEND = "backend"
+IMAGE_SINK_S3 = "s3"
+IMAGE_SINK_AUTO = "auto"
+DEFAULT_S3_REGION = "us-east-1"
+S3_BUCKET_NAME = "rpi-cam"
+S3_OBJECT_KEY = "rpi-cam/42/abc123.jpg"
+S3_OBJECT_KEY_UNSORTED = "rpi-cam/unsorted/img-no-product.jpg"
+S3_PUBLIC_URL = "http://minio.local:9000/rpi-cam/rpi-cam/42/abc123.jpg"
+S3_CDN_URL = "https://cdn.example.com/rpi-cam/9/xyz.jpg"
+S3_IMAGE_BYTES = b"jpeg-body"
+S3_IMAGE_ID = "abc123"
+S3_UNSORTED_IMAGE_ID = "img-no-product"
+S3_CDN_IMAGE_ID = "xyz"
+S3_MEDIA_TYPE = "image/jpeg"
+S3_BUCKET_ALREADY_OWNED_BY_YOU = "BucketAlreadyOwnedByYou"
+S3_BUCKET_ALREADY_EXISTS = "BucketAlreadyExists"
+
+# MediaMTX test literals
+MEDIAMTX_PATCH_URL = "http://mediamtx:9997/v3/config/paths/patch/cam-hires"
+MEDIAMTX_RTMPS_URL = "rtmps://a.rtmps.youtube.com:443/live2/abcd-efgh-ijkl"
+MEDIAMTX_FFMPEG = "ffmpeg"
+MEDIAMTX_FFMPEG_COPY = "-c:v copy"
+MEDIAMTX_FFMPEG_ANULLSRC = "anullsrc"
+MEDIAMTX_MISSING_PATH_LOG = "missing path"
+MEDIAMTX_HTTP_500 = "HTTP 500"
+MEDIAMTX_UNREACHABLE = "unreachable"
+PICAMERA2_MAIN_STREAM_NAME = "main"
+PICAMERA2_LORES_STREAM_NAME = "lores"
+PICAMERA2_CAM_HIRES_PATH = "cam-hires"
+PICAMERA2_STARTUP_TIMEOUT = "startup timeout"
+PICAMERA2_CAMERA_NOT_INITIALIZED = "Camera backend has not been initialized"
+YOUTUBE_PUBLIC_URL = "https://youtube.com/watch?v=public-id"
+CAMERA_DEVICE_NOT_FOUND = "Camera device not found"
 
 # Compose override template samples
 COMPOSE_OVERRIDE_APP_ONE_DEVICE = 'services:\n  app:\n    devices:\n      - "/dev/video0:/dev/video0"\n'

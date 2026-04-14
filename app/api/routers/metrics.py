@@ -37,7 +37,7 @@ def render_snapshot(snapshot: TelemetrySnapshot) -> str:
     lines += _gauge("rpi_cam_disk_percent", "Disk utilisation on images volume (0-100).", snapshot.disk_percent)
     lines += _gauge(
         "rpi_cam_preview_sessions",
-        "Number of active WHEP preview subscribers on the local MediaMTX.",
+        "Number of active LL-HLS preview subscribers on the local MediaMTX.",
         float(snapshot.preview_sessions),
     )
     if snapshot.cpu_temp_c is not None:

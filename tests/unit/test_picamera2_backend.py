@@ -1,6 +1,7 @@
 """Tests for the Picamera2 backend implementation."""
 
-from unittest.mock import MagicMock
+from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import AnyUrl, SecretStr
@@ -28,7 +29,7 @@ class TestPicamera2Backend:
         """Opening again after the pipeline is running should not reconfigure."""
         backend = Picamera2Backend()
         camera = MagicMock()
-        backend._camera = camera
+        cast("Any", backend)._camera = camera
         backend.current_mode = CameraMode.PHOTO
 
         await backend.open(CameraMode.VIDEO)
@@ -68,7 +69,7 @@ class TestPicamera2Backend:
         camera.camera_properties = {"Model": "mock"}
         camera.capture_metadata.return_value = {"FrameDuration": 33_333}
         camera.capture_image.return_value = MagicMock()
-        backend._camera = camera
+        cast("Any", backend)._camera = camera
         backend.current_mode = CameraMode.PHOTO
 
         await backend.capture_image()
@@ -84,16 +85,15 @@ class TestPicamera2Backend:
 
     async def test_start_stream_uses_main_encoder(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """start_stream should attach an encoder to the persistent main stream and patch MediaMTX."""
-        from unittest.mock import AsyncMock  # noqa: PLC0415
-
         backend = Picamera2Backend()
         camera = MagicMock()
-        backend._camera = camera
+        cast("Any", backend)._camera = camera
         backend.current_mode = CameraMode.VIDEO
         # Stub the MediaMTX patch calls — the runtime client would otherwise
         # try to PATCH the localhost API which doesn't exist in unit tests.
-        backend._mediamtx.set_youtube_egress = AsyncMock()
-        backend._mediamtx.clear_egress = AsyncMock()
+        mediamtx = cast("Any", backend._mediamtx)
+        mediamtx.set_youtube_egress = AsyncMock()
+        mediamtx.clear_egress = AsyncMock()
 
         monkeypatch.setattr("app.api.services.picamera2_backend.H264Encoder", MagicMock)
         monkeypatch.setattr(
@@ -108,7 +108,7 @@ class TestPicamera2Backend:
         assert result.url == AnyUrl("https://youtube.com/watch?v=public-id")
         # The MediaMTX egress is configured BEFORE the encoder publishes — no
         # half-started state on failure.
-        backend._mediamtx.set_youtube_egress.assert_awaited_once_with("cam-hires", "good")
+        mediamtx.set_youtube_egress.assert_awaited_once_with("cam-hires", "good")
         camera.start_encoder.assert_called_once()
         assert camera.start_encoder.call_args.kwargs == {"name": "main"}
         assert backend._main_encoder is camera.start_encoder.call_args.args[0]
@@ -116,14 +116,13 @@ class TestPicamera2Backend:
 
     async def test_stop_stream_keeps_camera_running(self) -> None:
         """stop_stream must only detach the encoder — the camera pipeline stays up for stills."""
-        from unittest.mock import AsyncMock  # noqa: PLC0415
-
         backend = Picamera2Backend()
         camera = MagicMock()
         encoder = MagicMock()
-        backend._mediamtx.clear_egress = AsyncMock()
-        backend._camera = camera
-        backend._main_encoder = encoder
+        mediamtx = cast("Any", backend._mediamtx)
+        mediamtx.clear_egress = AsyncMock()
+        cast("Any", backend)._camera = camera
+        cast("Any", backend)._main_encoder = encoder
 
         await backend.stop_stream()
 
@@ -141,7 +140,7 @@ class TestPicamera2Backend:
             "ExposureTime": (1, 1_000_000, 10_000),
         }
         camera.capture_metadata.return_value = {"AfState": controls.AfStateEnum.Focused, "ExposureTime": 10_000}
-        backend._camera = camera
+        cast("Any", backend)._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         view = await backend.get_controls()
@@ -158,7 +157,7 @@ class TestPicamera2Backend:
         backend = Picamera2Backend()
         camera = MagicMock()
         camera.camera_controls = {"ExposureTime": (1, 1_000_000, 10_000)}
-        backend._camera = camera
+        cast("Any", backend)._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         with pytest.raises(ValueError, match="Unknown camera controls: Nope"):
@@ -172,7 +171,7 @@ class TestPicamera2Backend:
         camera = MagicMock()
         camera.camera_controls = {"AfMode": (0, 2, 1)}
         camera.capture_metadata.return_value = {"AfState": controls.AfStateEnum.Focused}
-        backend._camera = camera
+        cast("Any", backend)._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         await backend.set_controls({"AfMode": "continuous"})
@@ -185,7 +184,7 @@ class TestPicamera2Backend:
         camera = MagicMock()
         camera.camera_controls = {"AfMode": (0, 2, 1)}
         camera.capture_metadata.return_value = {}
-        backend._camera = camera
+        cast("Any", backend)._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         await backend.set_focus(FocusControlRequest(mode=FocusMode.CONTINUOUS))
@@ -198,7 +197,7 @@ class TestPicamera2Backend:
         camera = MagicMock()
         camera.camera_controls = {"AfMode": (0, 2, 1)}
         camera.capture_metadata.return_value = {}
-        backend._camera = camera
+        cast("Any", backend)._camera = camera
         backend.current_mode = CameraMode.VIDEO
 
         await backend.set_focus(FocusControlRequest(mode=FocusMode.AUTO, trigger_cycle=True))

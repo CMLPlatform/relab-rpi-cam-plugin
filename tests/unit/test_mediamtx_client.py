@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -9,6 +10,19 @@ import pytest
 
 from app.api.services import mediamtx_client as mediamtx_mod
 from app.api.services.mediamtx_client import MediaMTXAPIError, MediaMTXClient
+from tests.constants import (
+    MEDIAMTX_FFMPEG,
+    MEDIAMTX_FFMPEG_ANULLSRC,
+    MEDIAMTX_FFMPEG_COPY,
+    MEDIAMTX_HTTP_500,
+    MEDIAMTX_MISSING_PATH_LOG,
+    MEDIAMTX_PATCH_URL,
+    MEDIAMTX_RTMPS_URL,
+    MEDIAMTX_UNREACHABLE,
+)
+
+if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
 
 
 class _Response:
@@ -19,7 +33,7 @@ class _Response:
         self.text = text
 
 
-def _patch_client(response: _Response | Exception) -> object:
+def _patch_client(response: _Response | Exception) -> AbstractContextManager[MagicMock]:
     """Patch ``mediamtx_client.httpx.AsyncClient`` to return the fake response."""
     client = MagicMock()
     if isinstance(response, Exception):
@@ -45,11 +59,11 @@ class TestSetYoutubeEgress:
         mocked.patch.assert_awaited_once()
         url = mocked.patch.await_args.args[0]
         body = mocked.patch.await_args.kwargs["json"]
-        assert url == "http://mediamtx:9997/v3/config/paths/patch/cam-hires"
-        assert "rtmps://a.rtmps.youtube.com:443/live2/abcd-efgh-ijkl" in body["runOnReady"]
-        assert "ffmpeg" in body["runOnReady"]
-        assert "-c:v copy" in body["runOnReady"]
-        assert "anullsrc" in body["runOnReady"]
+        assert url == MEDIAMTX_PATCH_URL
+        assert MEDIAMTX_RTMPS_URL in body["runOnReady"]
+        assert MEDIAMTX_FFMPEG in body["runOnReady"]
+        assert MEDIAMTX_FFMPEG_COPY in body["runOnReady"]
+        assert MEDIAMTX_FFMPEG_ANULLSRC in body["runOnReady"]
         assert body["runOnReadyRestart"] is False
 
     async def test_404_is_treated_as_a_soft_warning(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -57,21 +71,23 @@ class TestSetYoutubeEgress:
         with _patch_client(_Response(404)), caplog.at_level("WARNING"):
             client = MediaMTXClient()
             await client.set_youtube_egress("ghost-path", "key")
-        assert "missing path" in caplog.text
+        assert MEDIAMTX_MISSING_PATH_LOG in caplog.text
 
     async def test_5xx_raises_mediamtx_api_error(self) -> None:
         """A 5xx surfaces as a ``MediaMTXAPIError`` so callers can bubble it up."""
-        with _patch_client(_Response(500, text="internal server error")), pytest.raises(MediaMTXAPIError) as excinfo:
+        with _patch_client(_Response(500, text="internal server error")):
             client = MediaMTXClient()
-            await client.set_youtube_egress("cam-hires", "key")
-        assert "HTTP 500" in str(excinfo.value)
+            with pytest.raises(MediaMTXAPIError) as excinfo:
+                await client.set_youtube_egress("cam-hires", "key")
+        assert MEDIAMTX_HTTP_500 in str(excinfo.value)
 
     async def test_network_error_wraps_as_mediamtx_api_error(self) -> None:
         """A connection failure surfaces as ``MediaMTXAPIError``."""
-        with _patch_client(httpx.ConnectError("refused")), pytest.raises(MediaMTXAPIError) as excinfo:
+        with _patch_client(httpx.ConnectError("refused")):
             client = MediaMTXClient()
-            await client.set_youtube_egress("cam-hires", "key")
-        assert "unreachable" in str(excinfo.value).lower()
+            with pytest.raises(MediaMTXAPIError) as excinfo:
+                await client.set_youtube_egress("cam-hires", "key")
+        assert MEDIAMTX_UNREACHABLE in str(excinfo.value).lower()
 
 
 class TestClearEgress:

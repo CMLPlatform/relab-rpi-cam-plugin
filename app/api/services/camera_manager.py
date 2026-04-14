@@ -5,9 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import time
 import uuid
-from io import BytesIO
 from typing import TYPE_CHECKING
 
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
@@ -38,7 +36,6 @@ if TYPE_CHECKING:
     from relab_rpi_cam_models.stream import StreamMode, StreamView
 
 logger = logging.getLogger(__name__)
-_PREVIEW_SIZE = (640, 480)
 
 
 class StreamingNotSupportedError(RuntimeError):
@@ -186,28 +183,6 @@ class CameraManager:
             image_url=stored.image_url,
             expires_at=stored.expires_at,
         )
-
-    async def capture_preview_jpeg(self) -> bytes:
-        """Capture a low-res JPEG for the polling-preview fallback.
-
-        The dominant preview path in the web UI is MediaMTX WHEP (Phase 6). This
-        method exists for native clients and as a diagnostic: it runs a regular
-        still capture and resizes. Because the backend pipeline is persistent,
-        no mode switch happens and the full path is ~10x faster than it used
-        to be.
-        """
-        started = time.perf_counter()
-        await self._acquire_lock()
-        try:
-            result = await self.backend.capture_image()
-        finally:
-            self.lock.release()
-
-        preview = result.image.resize(_PREVIEW_SIZE)
-        buf = BytesIO()
-        preview.save(buf, format="JPEG", quality=70)
-        logger.debug("Preview capture duration_ms=%.2f", (time.perf_counter() - started) * 1000)
-        return buf.getvalue()
 
     def _require_streaming_backend(self) -> StreamingCameraBackend:
         """Return the backend narrowed to StreamingCameraBackend, or raise."""

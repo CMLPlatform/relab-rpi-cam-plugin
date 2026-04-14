@@ -94,6 +94,27 @@ class TestStartStop:
         assert not manager.is_running
         camera.stop_encoder.assert_not_called()
 
+    async def test_start_timeout_is_wrapped_as_runtime_error(self) -> None:
+        """A slow encoder start should surface as a startup timeout."""
+        manager = PreviewPipelineManager()
+        camera = MagicMock()
+        camera.start_encoder.side_effect = TimeoutError
+
+        with pytest.raises(RuntimeError, match="startup timeout"):
+            await manager.start(camera)
+
+    async def test_stop_runtime_error_is_swallowed(self) -> None:
+        """A stop failure should be logged and cleared, not propagated."""
+        manager = PreviewPipelineManager()
+        camera = MagicMock()
+
+        await manager.start(camera)
+        camera.stop_encoder.side_effect = RuntimeError("already dead")
+
+        await manager.stop(camera)
+
+        assert not manager.is_running
+
 
 class TestSetBitrate:
     """Thermal governor support: set_bitrate reconfigures the live encoder."""
@@ -105,7 +126,7 @@ class TestSetBitrate:
 
         await manager.set_bitrate(camera, 200_000)
 
-        assert manager._bitrate == 200_000  # noqa: SLF001
+        assert manager._bitrate == 200_000
         camera.stop_encoder.assert_not_called()
         camera.start_encoder.assert_not_called()
 
@@ -124,7 +145,7 @@ class TestSetBitrate:
 
         await manager.set_bitrate(camera, 200_000)
 
-        assert manager._bitrate == 200_000  # noqa: SLF001
+        assert manager._bitrate == 200_000
         camera.stop_encoder.assert_called_once_with(old_encoder)
         camera.start_encoder.assert_called_once()
         # The new encoder should have its bitrate attribute set to the new value.

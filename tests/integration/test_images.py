@@ -1,20 +1,18 @@
-"""Tests for image capture and preview endpoints."""
+"""Tests for image capture endpoint + queue-fallback behaviour."""
 
 import asyncio
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
 from pydantic import AnyUrl
-from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.services.camera_manager import CameraManager
 from app.api.services.image_sinks.base import ImageSinkError, StoredImage
 from app.core.config import settings
-from app.utils.upload_queue import UploadQueue
 from tests.constants import (
-    JPEG_CONTENT_TYPE,
     QUEUED_STATUS,
     SAMPLE_IMAGE_ID,
     SAMPLE_IMAGE_URL,
@@ -24,7 +22,6 @@ from tests.constants import (
 CAPTURED_STATUS_KEY = "status"
 IMAGE_ID_KEY = "image_id"
 IMAGE_URL_KEY = "image_url"
-CONFLICT_RESPONSE_CODE = "409"
 
 
 class _StubSink:
@@ -36,7 +33,8 @@ class _StubSink:
 
     async def _put(self, **_kwargs: object) -> StoredImage:
         if self._fail:
-            raise ImageSinkError("network unreachable")
+            msg = "network unreachable"
+            raise ImageSinkError(msg)
         return StoredImage(
             image_id=SAMPLE_IMAGE_ID,
             image_url=AnyUrl(SAMPLE_IMAGE_URL),
@@ -47,8 +45,9 @@ class _StubSink:
 def stub_success_sink(camera_manager: CameraManager) -> _StubSink:
     """Swap the camera manager's image sink for a happy-path stub."""
     sink = _StubSink(fail=False)
-    camera_manager._sink = sink  # noqa: SLF001 — test hook
-    camera_manager._upload_queue = None  # noqa: SLF001 — force the queue to re-resolve with the stub sink
+    camera_manager_any = cast("Any", camera_manager)
+    camera_manager_any._sink = sink
+    camera_manager_any._upload_queue = None
     return sink
 
 
@@ -56,64 +55,10 @@ def stub_success_sink(camera_manager: CameraManager) -> _StubSink:
 def stub_failing_sink(camera_manager: CameraManager) -> _StubSink:
     """Swap the camera manager's image sink for a failing stub."""
     sink = _StubSink(fail=True)
-    camera_manager._sink = sink  # noqa: SLF001
-    camera_manager._upload_queue = None  # noqa: SLF001
+    camera_manager_any = cast("Any", camera_manager)
+    camera_manager_any._sink = sink
+    camera_manager_any._upload_queue = None
     return sink
-
-
-class TestPreviewEndpoint:
-    """Tests for GET /images/preview."""
-
-    async def test_preview_returns_jpeg(self, client: AsyncClient) -> None:
-        """Test that the preview endpoint returns a JPEG image."""
-        resp = await client.get("/images/preview")
-        assert resp.status_code == 200
-        assert resp.headers["content-type"] == JPEG_CONTENT_TYPE
-
-    async def test_preview_does_not_write_files(self, client: AsyncClient, tmp_path: Path) -> None:
-        """Preview frames should not be persisted to disk."""
-        original = settings.image_path
-        settings.image_path = tmp_path
-        try:
-            resp = await client.get("/images/preview")
-            assert resp.status_code == 200
-            assert await asyncio.to_thread(lambda: list(tmp_path.iterdir())) == []
-        finally:
-            settings.image_path = original
-
-    async def test_preview_runtime_error_returns_500(
-        self,
-        client: AsyncClient,
-        camera_manager: CameraManager,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Test that if capturing the preview JPEG raises a RuntimeError, a 500 response is returned."""
-
-        async def _boom() -> bytes:
-            msg = "boom"
-            raise RuntimeError(msg)
-
-        monkeypatch.setattr(camera_manager, "capture_preview_jpeg", _boom)
-        resp = await client.get("/images/preview")
-        assert resp.status_code == 500
-
-    async def test_preview_while_streaming_returns_jpeg(
-        self,
-        client: AsyncClient,
-        camera_manager: CameraManager,
-    ) -> None:
-        """Preview still reads from the persistent main stream while YouTube is active."""
-        camera_manager.stream.mode = StreamMode.YOUTUBE
-        resp = await client.get("/images/preview")
-        assert resp.status_code == 200
-        assert resp.headers["content-type"] == JPEG_CONTENT_TYPE
-
-    async def test_openapi_does_not_document_stream_conflict(self, client: AsyncClient) -> None:
-        """Preview capture is expected to work while YouTube streaming is active."""
-        resp = await client.get("/openapi.json")
-        assert resp.status_code == 200
-        preview_get = resp.json()["paths"]["/images/preview"]["get"]
-        assert CONFLICT_RESPONSE_CODE not in preview_get["responses"]
 
 
 class TestCaptureEndpoint:

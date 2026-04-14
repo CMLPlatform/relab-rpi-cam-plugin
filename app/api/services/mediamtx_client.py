@@ -16,9 +16,12 @@ patch, and path lookup returns 404 which we swallow.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING
 
 import httpx
+
+if TYPE_CHECKING:
+    from typing import Any
 
 logger = logging.getLogger(__name__)
 

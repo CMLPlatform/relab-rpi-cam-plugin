@@ -1,9 +1,9 @@
 """Background loop that hibernates the lores preview encoder when nothing's watching.
 
-Post-Phase-9 the lores H264 encoder is the Pi's only preview surface — it
-publishes RTSP to the local MediaMTX sidecar, which then serves LL-HLS to
-browsers and native clients via the backend's HLS proxy. Keeping the encoder
-running costs ~3% of a Pi 5 core, which is cheap enough to ignore for active
+The lores H264 encoder is the Pi's only preview surface — it publishes RTSP
+to the local MediaMTX sidecar, which then serves LL-HLS to browsers and
+native clients via the backend's HLS proxy. Keeping the encoder running
+costs ~3% of a Pi 5 core, which is cheap enough to ignore for active
 sessions but adds up over the lifetime of an idle device.
 
 The sleeper arbitrates between three signals to decide whether the encoder
@@ -14,8 +14,8 @@ should be running:
    us — the encoder goes to sleep until the relay comes back.
 2. **Relay idle timer.** If the relay is connected but hasn't seen any
    commands for ``preview_hibernate_after_s`` seconds, the encoder sleeps.
-   Any incoming command (including the HLS segment proxy calls we'll add
-   later in Phase 9) wakes it back up.
+   Any incoming command (including the HLS segment proxy calls) wakes it
+   back up.
 3. **Standalone mode.** When the plugin is not configured with a pairing
    backend at all (``settings.relay_enabled`` is false and pairing is not in
    progress), the sleeper stays idle and the encoder runs continuously so

@@ -1,6 +1,6 @@
 """Contract for pluggable image sinks.
 
-Post-Phase-10 the Pi has two ways to park a captured JPEG:
+The Pi has two ways to park a captured JPEG:
 
 1. ``BackendPushSink`` — push to the paired Relab backend via HTTPS + device
    JWT. This is the default for a camera paired to a user's Relab account.
@@ -16,13 +16,13 @@ don't care which one is configured. Swapping sinks is an env-var change.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pydantic import AnyUrl
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from datetime import datetime
 
 
 @dataclass(frozen=True)

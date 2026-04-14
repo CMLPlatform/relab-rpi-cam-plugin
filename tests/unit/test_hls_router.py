@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -10,6 +11,10 @@ from fastapi import HTTPException
 
 from app.api.routers import hls as hls_mod
 from app.api.routers.hls import proxy_hls
+from tests.constants import HLS_M3U8_CONTENT_TYPE, HLS_MP4_CONTENT_TYPE, HLS_PREVIEW_ENCODER_FRAGMENT
+
+if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
 
 
 class _Response:
@@ -26,7 +31,7 @@ class _Response:
         self.headers = headers or {}
 
 
-def _patch_httpx(response: _Response | Exception) -> object:
+def _patch_httpx(response: _Response | Exception) -> AbstractContextManager[MagicMock]:
     client = MagicMock()
     if isinstance(response, Exception):
         client.get = AsyncMock(side_effect=response)
@@ -46,14 +51,14 @@ class TestProxyHLS:
         response = _Response(
             200,
             content=playlist,
-            headers={"content-type": "application/vnd.apple.mpegurl"},
+            headers={"content-type": HLS_M3U8_CONTENT_TYPE},
         )
 
         with _patch_httpx(response):
             result = await proxy_hls(hls_path="cam-preview/index.m3u8")
 
         assert result.body == playlist
-        assert result.media_type == "application/vnd.apple.mpegurl"
+        assert result.media_type == HLS_M3U8_CONTENT_TYPE
 
     async def test_video_segment_returned_as_binary(self) -> None:
         """Binary segments (.mp4) come back with video/mp4 content-type."""
@@ -61,21 +66,21 @@ class TestProxyHLS:
         response = _Response(
             200,
             content=segment,
-            headers={"content-type": "video/mp4"},
+            headers={"content-type": HLS_MP4_CONTENT_TYPE},
         )
 
         with _patch_httpx(response):
             result = await proxy_hls(hls_path="cam-preview/segment0.mp4")
 
         assert result.body == segment
-        assert result.media_type == "video/mp4"
+        assert result.media_type == HLS_MP4_CONTENT_TYPE
 
     async def test_404_on_missing_stream(self) -> None:
         """MediaMTX 404 means the publisher hasn't attached yet."""
         with _patch_httpx(_Response(404)), pytest.raises(HTTPException) as excinfo:
             await proxy_hls(hls_path="cam-preview/index.m3u8")
         assert excinfo.value.status_code == 404
-        assert "preview encoder" in str(excinfo.value.detail)
+        assert HLS_PREVIEW_ENCODER_FRAGMENT in str(excinfo.value.detail)
 
     async def test_other_4xx_raises_502(self) -> None:
         """Anything other than 404 becomes a 502 upstream-error."""

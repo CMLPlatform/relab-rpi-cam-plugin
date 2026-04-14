@@ -1,11 +1,11 @@
 """Hardware-dependent business logic for live streams.
 
-Post-Phase-9 architecture: the Pi's main H264 encoder publishes to the local
-MediaMTX sidecar over RTSP, and MediaMTX handles the YouTube RTMPS egress via
-a ``runOnReady`` ffmpeg (configured at runtime by ``mediamtx_client``). The
-Pi no longer owns an outbound ffmpeg subprocess of its own — no silent-audio
-hack, no ``prctl`` PDEATHSIG dance, no custom subprocess supervision. Every
-streaming destination the plugin grows in future (PeerTube, S3 archive, local
+The Pi's main H264 encoder publishes to the local MediaMTX sidecar over RTSP,
+and MediaMTX handles the YouTube RTMPS egress via a ``runOnReady`` ffmpeg
+(configured at runtime by ``mediamtx_client``). The Pi doesn't own an
+outbound ffmpeg subprocess of its own — no silent-audio hack, no ``prctl``
+PDEATHSIG dance, no custom subprocess supervision. Every streaming
+destination the plugin grows in future (PeerTube, S3 archive, local
 recording) becomes a MediaMTX path patch with zero Pi-side changes.
 """
 

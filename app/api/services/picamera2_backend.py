@@ -7,7 +7,6 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from relab_rpi_cam_models.camera import CameraMode
-from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.exceptions import CameraInitializationError
 from app.api.schemas.camera_controls import (
@@ -38,6 +37,8 @@ from app.core.config import settings
 if TYPE_CHECKING:
     # libcamera's `controls` module isn't available to the typechecker
     # in all environments; treat it as Any for static checks.
+    from relab_rpi_cam_models.stream import StreamMode
+
     controls: Any
     from picamera2 import Picamera2
     from picamera2.encoders import H264Encoder
@@ -60,9 +61,10 @@ logger = logging.getLogger(__name__)
 
 # Main stream: full-resolution buffer used for stills and, when active, the
 # YouTube H264 encoder. Lores stream: low-resolution buffer reserved for the
-# preview H264 encoder (MediaMTX WHEP, Phase 6) — much cheaper on CPU than
-# encoding main, which matters because preview is the dominant use case while
-# YouTube streaming is rare.
+# preview H264 encoder that publishes RTSP to the local MediaMTX sidecar
+# (which in turn serves LL-HLS to browsers and native clients). Encoding the
+# lores buffer is much cheaper on CPU than encoding main, which matters
+# because preview is the dominant use case while YouTube streaming is rare.
 _MAIN_SIZE = (1920, 1080)
 _LORES_SIZE = (640, 480)
 
@@ -146,7 +148,7 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
     ) -> StreamStartResult:
         """Start a provider-backed stream on the main H264 encoder.
 
-        Two-step flow post-Phase-9:
+        Two-step flow:
 
         1. Patch the local MediaMTX ``cam-hires`` path with a ``runOnReady``
            that egresses to YouTube RTMPS. MediaMTX picks this up the moment a
@@ -157,7 +159,9 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
            keeps working.
         """
         validate_youtube_mode(mode, youtube_config)
-        assert youtube_config is not None  # narrowed by validate_youtube_mode
+        if youtube_config is None:
+            msg = "youtube_config must be provided for YouTube mode"
+            raise RuntimeError(msg)
 
         await self.open(CameraMode.VIDEO)
         camera = self._require_camera()

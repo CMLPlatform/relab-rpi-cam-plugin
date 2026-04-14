@@ -123,6 +123,86 @@ class TestCheckStreamDuration:
         mock_camera_manager.stop_streaming.assert_awaited_once()
 
 
+class TestCheckStreamHealth:
+    """Tests for check_stream_health — the liveness probe for the active stream."""
+
+    async def test_noop_when_no_stream_active(
+        self,
+        mock_camera_manager: SimpleNamespace,
+    ) -> None:
+        """No active stream: the probe returns immediately without touching anything."""
+        mock_camera_manager.stream.is_active = False
+        mock_camera_manager.get_stream_info = AsyncMock()
+
+        await camera_deps.check_stream_health()
+
+        mock_camera_manager.get_stream_info.assert_not_awaited()
+        mock_camera_manager.stop_streaming.assert_not_awaited()
+
+    async def test_stops_stream_when_get_info_returns_none(
+        self,
+        mock_camera_manager: SimpleNamespace,
+    ) -> None:
+        """Get-info reports no info (e.g. ffmpeg died) -> stop the stream for recovery."""
+        mock_camera_manager.stream.is_active = True
+        mock_camera_manager.get_stream_info = AsyncMock(return_value=None)
+
+        await camera_deps.check_stream_health()
+
+        mock_camera_manager.get_stream_info.assert_awaited_once()
+        mock_camera_manager.stop_streaming.assert_awaited_once()
+
+    async def test_tolerates_os_error_and_stops_stream(
+        self,
+        mock_camera_manager: SimpleNamespace,
+    ) -> None:
+        """OSError from get_stream_info should trigger a recovery stop."""
+        mock_camera_manager.stream.is_active = True
+        mock_camera_manager.get_stream_info = AsyncMock(side_effect=OSError("pipe closed"))
+
+        await camera_deps.check_stream_health()
+
+        mock_camera_manager.stop_streaming.assert_awaited_once()
+
+    async def test_tolerates_runtime_error_and_stops_stream(
+        self,
+        mock_camera_manager: SimpleNamespace,
+    ) -> None:
+        """RuntimeError from get_stream_info should also trigger a recovery stop."""
+        mock_camera_manager.stream.is_active = True
+        mock_camera_manager.get_stream_info = AsyncMock(side_effect=RuntimeError("crashed"))
+
+        await camera_deps.check_stream_health()
+
+        mock_camera_manager.stop_streaming.assert_awaited_once()
+
+    async def test_suppresses_error_from_recovery_stop(
+        self,
+        mock_camera_manager: SimpleNamespace,
+    ) -> None:
+        """If the recovery stop itself raises RuntimeError, the probe still returns cleanly."""
+        mock_camera_manager.stream.is_active = True
+        mock_camera_manager.get_stream_info = AsyncMock(side_effect=RuntimeError("crashed"))
+        mock_camera_manager.stop_streaming.side_effect = RuntimeError("cannot stop")
+
+        # Should not raise — contextlib.suppress handles it.
+        await camera_deps.check_stream_health()
+
+        mock_camera_manager.stop_streaming.assert_awaited_once()
+
+    async def test_healthy_stream_leaves_state_alone(
+        self,
+        mock_camera_manager: SimpleNamespace,
+    ) -> None:
+        """Healthy get_stream_info result: do not stop the stream."""
+        mock_camera_manager.stream.is_active = True
+        mock_camera_manager.get_stream_info = AsyncMock(return_value=SimpleNamespace(healthy=True))
+
+        await camera_deps.check_stream_health()
+
+        mock_camera_manager.stop_streaming.assert_not_awaited()
+
+
 class TestCameraManagerCleanup:
     """Tests for CameraManager.cleanup method."""
 
@@ -218,6 +298,7 @@ class TestCameraManagerCapture:
 
         # Stub sink that reports a successful upload without touching any real backend.
         stub_image_id = "a" * 32  # 32-char hex, matches ImageCaptureResponse.image_id pattern
+
         class _StubSink:
             put = AsyncMock(
                 return_value=StoredImage(

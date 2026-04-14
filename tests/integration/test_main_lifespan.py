@@ -35,7 +35,7 @@ def _stub_preview_sleeper(monkeypatch: pytest.MonkeyPatch) -> None:
     # handing it to the sleeper. In-process tests have no real camera, so
     # stub that out too.
     monkeypatch.setattr(main_mod.camera_manager, "setup_camera", AsyncMock())
-    main_mod.camera_manager.backend._camera = MagicMock()  # noqa: SLF001
+    cast("Any", main_mod.camera_manager.backend)._camera = MagicMock()
 
 
 class DummyTask:

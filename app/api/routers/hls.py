@@ -22,6 +22,7 @@ header-frame + binary-frame pair.
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, HTTPException, Response
@@ -47,10 +48,13 @@ _HLS_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=5.0, pool=2.0)
     },
 )
 async def proxy_hls(
-    hls_path: str = FastAPIPath(
-        description="MediaMTX-relative path, e.g. ``cam-preview/index.m3u8``",
-        pattern=r"^[a-zA-Z0-9_\-/\.]+$",
-    ),
+    hls_path: Annotated[
+        str,
+        FastAPIPath(
+            description="MediaMTX-relative path, e.g. ``cam-preview/index.m3u8``",
+            pattern=r"^[a-zA-Z0-9_\-/\.]+$",
+        ),
+    ],
 ) -> Response:
     """Fetch an LL-HLS resource from the local MediaMTX and return it verbatim."""
     target_url = f"{_MEDIAMTX_HLS_BASE}/{hls_path}"

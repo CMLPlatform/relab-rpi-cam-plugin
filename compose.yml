@@ -4,17 +4,17 @@
 # compose profiles so users opt in with a command-line flag instead of
 # duplicated compose files.
 #
-#   Paired mode (default — the plugin pushes captures to the Relab backend):
+#   Paired mode (default — the plugin pushes captures to the RElab backend):
 #     docker compose up -d
 #
-#   Standalone mode (no Relab backend — captures land in a local RustFS bucket):
+#   Standalone mode (no RElab backend — captures land in a local RustFS bucket):
 #     docker compose --profile standalone up -d
 #
 #   With remote observability shipping (Loki logs + optional Prometheus metrics):
 #     docker compose --profile observability-ship up -d
 #
 # Profiles combine freely: e.g. ``--profile standalone --profile observability-ship``
-# runs the MinIO sidecar AND ships logs to your central stack.
+# runs the RustFS sidecar AND ships logs to your central stack.
 
 services:
   app:
@@ -42,7 +42,7 @@ services:
         max-file: "3"
 
   mediamtx:
-    # MediaMTX sidecar: the single media seam for the plugin post-Phase-9.
+    # MediaMTX sidecar: the single media seam for the plugin.
     #
     #   - Ingest: RTSP on :8554 (lores cam-preview always, main cam-hires while
     #     a YouTube stream is active).
@@ -119,26 +119,6 @@ services:
     profiles:
       - standalone
 
-  rustfs-init:
-    # One-shot init container: creates the ``rpi-cam`` bucket on first boot
-    # via the MinIO ``mc`` CLI (compatible with any S3 endpoint), then exits.
-    # Only runs under the standalone profile alongside the RustFS sidecar.
-    image: minio/mc:RELEASE.2024-12-17T01-20-34Z
-    restart: "no"
-    depends_on:
-      rustfs:
-        condition: service_healthy
-    environment:
-      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
-      # RustFS refuses to start with an unset / short secret key, so the
-      # empty default here fails loudly only when the standalone profile is
-      # actually activated — paired-mode users don't need to set it.
-      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
-      BUCKET_NAME: ${S3_BUCKET:-rpi-cam}
-    entrypoint: >
-      /bin/sh -c " mc alias set local http://rustfs:9000 $$RUSTFS_ACCESS_KEY $$RUSTFS_SECRET_KEY; mc mb --ignore-existing local/$$BUCKET_NAME; echo 'standalone bucket ready: '$$BUCKET_NAME; "
-    profiles:
-      - standalone
 
 volumes:
   app_logs:

@@ -31,7 +31,7 @@ class TelemetrySnapshot(BaseModel):
     )
     preview_sessions: int = Field(
         default=0,
-        description="Number of active WHEP preview subscribers on the local MediaMTX instance.",
+        description="Number of active LL-HLS preview subscribers on the local MediaMTX instance.",
     )
     thermal_state: ThermalState = Field(description="Thermal governor classification for this snapshot.")
     current_preview_size: tuple[int, int] | None = Field(

@@ -25,11 +25,10 @@ RUN printf "Types: deb\nURIs: https://archive.raspberrypi.com/debian/\nSuites: t
 
 # Install dependencies (cached layer — copy lockfile first for better caching).
 # ``--all-extras`` installs every [project.optional-dependencies] group
-# (currently just ``s3`` → ``aioboto3``). The extras that the active image
-# sink doesn't use are lazy-imported and never load at runtime, so users who
-# stay in paired mode pay the disk cost (~50MB for boto3) but nothing else.
-# Keeping all extras in one image means the same artifact runs both paired
-# and standalone — one build, one tag, profile-driven at runtime.
+# (currently just ``s3`` → ``aioboto3``). aioboto3 is imported at module
+# level with a try/except so it's a no-op when absent, but keeping it in
+# the image means the same artifact runs both paired and standalone —
+# one build, one tag, profile-driven at runtime.
 COPY .python-version pyproject.toml uv.lock README.md ./
 COPY relab_rpi_cam_models/ relab_rpi_cam_models/
 RUN --mount=type=cache,target=/root/.cache/uv \

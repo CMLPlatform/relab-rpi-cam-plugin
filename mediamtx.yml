@@ -1,7 +1,7 @@
 # MediaMTX config for the RPi camera plugin.
 #
-# Post-Phase-9 architecture: MediaMTX is the single media seam for everything
-# the plugin does with H264 video. Flows:
+# MediaMTX is the single media seam for everything the plugin does with H264
+# video. Flows:
 #
 #   picamera2 (lores 640x480, ~500kbps) ──RTSP──▶ mediamtx:cam-preview
 #                                                      │
@@ -26,10 +26,11 @@
 logLevel: info
 logDestinations: [stdout]
 
-# Turn off listeners we don't use. WebRTC / RTMP / SRT are all gone post-Phase-9.
-# RTMP would be the YouTube ingest target normally, but we don't terminate RTMP
-# *ourselves* — MediaMTX originates an outbound RTMPS connection to YouTube via
-# its path ``runOnReady`` (configured at runtime).
+# Turn off listeners we don't use. WebRTC / RTMP / SRT aren't needed: the only
+# preview surface is LL-HLS. RTMP would be the YouTube ingest target normally,
+# but we don't terminate RTMP *ourselves* — MediaMTX originates an outbound
+# RTMPS connection to YouTube via its path ``runOnReady`` (configured at
+# runtime).
 rtmp: no
 webrtc: no
 srt: no
@@ -41,7 +42,7 @@ rtsp: yes
 rtspAddress: :8554
 rtspTransports: [tcp]
 
-# LL-HLS output — the single browser/native preview surface post-Phase-9.
+# LL-HLS output — the single browser/native preview surface.
 # - ``hlsVariant: lowLatency`` enables the LL-HLS extensions (CMAF fragments +
 #   HTTP/1.1 chunked transfer) for ~1-2s glass-to-glass.
 # - ``hlsSegmentCount: 7`` + ``hlsSegmentDuration: 200ms`` gives a ~1.4s buffer
@@ -76,8 +77,8 @@ pathDefaults:
 paths:
   cam-preview:
     # Lores preview stream. Published by the Pi app at startup and kept running
-    # for the lifetime of the process (Phase 9 Decision 2: always-on encoder —
-    # at ~500kbps and ~3% CPU, ref counting is ceremony).
+    # for the lifetime of the process. At ~500kbps and ~3% CPU the encoder is
+    # cheap enough that ref counting it would be more ceremony than savings.
   cam-hires:
     # Full-resolution stream, published by the Pi app only while a YouTube
     # stream is active. The YouTube RTMPS target is patched in at runtime via

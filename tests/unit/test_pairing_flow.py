@@ -26,6 +26,11 @@ PAIRING_FAILURE_LOG = "Pairing cycle failed"
 FINGERPRINT_2 = "FP2"
 LAN_SETUP_URL = "http://192.168.1.42:8018/setup"
 RELATIVE_SETUP_PATH = "/setup"
+PAIRING_STATE_ERROR = "error"
+PAIRING_RETRY_ERROR = "retry"
+PAIRING_HOST_ALIAS = "host.docker.internal"
+PAIRING_REGISTER_REFUSAL = "refusing anonymous camera registration"
+PAIRING_HTTP_500 = "HTTP 500"
 
 
 class FakeResponse:
@@ -72,6 +77,57 @@ class FakeClient:
     async def get(self, *_: object, **__: object) -> FakeResponse:
         """Return the next queued GET response."""
         return self._gets.pop(0)
+
+
+class TestPairingHelpers:
+    """Coverage for small helper branches."""
+
+    def test_clear_transient_pairing_state_resets_public_state(self) -> None:
+        """The transient state helper should clear the observable pairing fields."""
+        pairing_mod._state.code = "CODE"
+        pairing_mod._state.fingerprint = "FP"
+        cast("Any", pairing_mod._state).expires_at = object()
+        pairing_mod._state.error = "oops"
+
+        pairing_mod._clear_transient_pairing_state(status="error", error="retry")
+
+        assert pairing_mod._state.code is None
+        assert pairing_mod._state.fingerprint is None
+        assert pairing_mod._state.expires_at is None
+        assert pairing_mod._state.status == PAIRING_STATE_ERROR
+        assert pairing_mod._state.error == PAIRING_RETRY_ERROR
+
+    def test_log_pairing_connect_error_for_loopback_container_backend(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Loopback backends inside containers should emit the host alias guidance."""
+        monkeypatch.setattr(pairing_mod, "_is_running_in_container", lambda: True)
+        with caplog.at_level(logging.ERROR):
+            pairing_mod._log_pairing_connect_error(httpx.ConnectError("refused"), "http://localhost:8011")
+        assert PAIRING_HOST_ALIAS in caplog.text
+
+    def test_log_pairing_http_status_error_variants(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Register-specific 403s and generic failures should both be logged."""
+        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/register")
+        forbidden = httpx.HTTPStatusError(
+            "forbidden",
+            request=request,
+            response=httpx.Response(403, request=request, text="nope"),
+        )
+        generic = httpx.HTTPStatusError(
+            "bad",
+            request=request,
+            response=httpx.Response(500, request=request, text="boom"),
+        )
+
+        with caplog.at_level(logging.ERROR):
+            pairing_mod._log_pairing_http_status_error(forbidden)
+            pairing_mod._log_pairing_http_status_error(generic)
+
+        assert PAIRING_REGISTER_REFUSAL in caplog.text
+        assert PAIRING_HTTP_500 in caplog.text
 
 
 class TestRunPairing:

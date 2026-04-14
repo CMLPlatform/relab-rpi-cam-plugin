@@ -1524,7 +1524,7 @@ wheels = [
 
 [[package]]
 name = "relab-rpi-cam-models"
-version = "0.5.0"
+version = "0.2.0"
 source = { editable = "relab_rpi_cam_models" }
 dependencies = [
     { name = "pydantic" },
@@ -1547,13 +1547,9 @@ dependencies = [
     { name = "websockets" },
 ]
 
-[package.optional-dependencies]
-s3 = [
-    { name = "aioboto3" },
-]
-
 [package.dev-dependencies]
 dev = [
+    { name = "aioboto3" },
     { name = "commitizen" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -1562,7 +1558,11 @@ dev = [
     { name = "ruff" },
     { name = "ty" },
 ]
+s3 = [
+    { name = "aioboto3" },
+]
 test = [
+    { name = "aioboto3" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -1570,7 +1570,6 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aioboto3", marker = "extra == 's3'", specifier = ">=13.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.8" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "psutil", specifier = ">=5.9" },
@@ -1579,10 +1578,10 @@ requires-dist = [
     { name = "relab-rpi-cam-models", editable = "relab_rpi_cam_models" },
     { name = "websockets", specifier = ">=14.0" },
 ]
-provides-extras = ["s3"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aioboto3", specifier = ">=13.0" },
     { name = "commitizen", specifier = ">=4.8.3" },
     { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "pytest", specifier = ">=8.0" },
@@ -1591,7 +1590,9 @@ dev = [
     { name = "ruff", specifier = ">=0.9.6" },
     { name = "ty", specifier = ">=0.0.29" },
 ]
+s3 = [{ name = "aioboto3", specifier = ">=13.0" }]
 test = [
+    { name = "aioboto3", specifier = ">=13.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.25" },
     { name = "pytest-cov", specifier = ">=6.0" },

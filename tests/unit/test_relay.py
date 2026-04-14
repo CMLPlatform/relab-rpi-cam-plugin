@@ -19,6 +19,8 @@ RELAY_PRIVATE_KEY_PEM = "private-key"
 MESSAGE_ID = "msg-1"
 DETAIL = "oops"
 PONG_TYPE = "pong"
+RELAY_403_FRAGMENT = "Relay received 403"
+RELAY_COMMAND_ERROR = "boom"
 
 
 class TestRelayConfigured:
@@ -71,6 +73,22 @@ class TestSendError:
         assert payload["id"] == MESSAGE_ID
         assert payload["status"] == 503
         assert payload["data"]["detail"] == DETAIL
+
+
+class TestWebsocketConnect:
+    """Tests for the websocket context manager wrapper."""
+
+    async def test_closes_raw_websocket_on_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The wrapper should close the underlying websocket when the context exits."""
+        raw_ws = AsyncMock()
+        raw_ws.close = AsyncMock()
+        monkeypatch.setattr(relay_mod.websockets, "connect", AsyncMock(return_value=raw_ws))
+        monkeypatch.setattr(relay_mod, "build_device_assertion", lambda: "jwt")
+
+        async with relay_mod._websocket_connect("wss://example.com/ws") as ws:
+            assert ws is not None
+
+        raw_ws.close.assert_awaited_once()
 
 
 class TestReceiveLoop:
@@ -146,6 +164,31 @@ class TestHandleCommand:
             ws.send.assert_awaited_once()
             payload = json.loads(ws.send.call_args.args[0])
             assert payload["data"] == {"ok": True}
+
+    async def test_http_error_sends_503(self) -> None:
+        """Transport errors should be translated into a 503 response."""
+        http = AsyncMock()
+        http.request = AsyncMock(side_effect=httpx.ConnectError(RELAY_COMMAND_ERROR))
+        ws = AsyncMock()
+
+        await _handle_command(ws, http, {"id": "msg-3", "method": "GET", "path": "/broken"})
+
+        payload = json.loads(ws.send.call_args.args[0])
+        assert payload["status"] == 503
+        assert payload["data"]["detail"] == RELAY_COMMAND_ERROR
+
+    async def test_403_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A 403 from the local API should emit a warning."""
+
+        def _handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(403, json={"ok": True})
+
+        transport = httpx.MockTransport(_handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+            ws = AsyncMock()
+            with caplog.at_level("WARNING"):
+                await _handle_command(ws, http, {"id": "msg-4", "method": "GET", "path": "/forbidden"})
+        assert RELAY_403_FRAGMENT in caplog.text
 
 
 class TestRunRelay:

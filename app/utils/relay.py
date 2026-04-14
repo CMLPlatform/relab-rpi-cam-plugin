@@ -250,11 +250,7 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
         logger.warning("Relay received 403 from local API — check that local_relay_api_key is set correctly")
 
     content_type = response.headers.get("content-type", "")
-    is_binary = (
-        _BINARY_IMAGE in content_type
-        or _BINARY_OCTET in content_type
-        or _BINARY_VIDEO in content_type
-    )
+    is_binary = _BINARY_IMAGE in content_type or _BINARY_OCTET in content_type or _BINARY_VIDEO in content_type
 
     if is_binary:
         # Send JSON header first, then binary frame

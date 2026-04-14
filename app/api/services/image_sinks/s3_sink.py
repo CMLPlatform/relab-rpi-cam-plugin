@@ -14,7 +14,7 @@ CloudFront, etc.) and have the Pi return the fronted URL to the frontend.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import AnyUrl
 
@@ -23,9 +23,23 @@ from app.api.services.image_sinks.base import ImageSinkError, StoredImage
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    class _S3ClientProtocol(Protocol):
+        async def create_bucket(self, **kwargs: object) -> object: ...
+
+
+aioboto3: Any = None
+try:
+    import aioboto3 as _aioboto3
+except ImportError:
+    pass
+else:
+    aioboto3 = _aioboto3
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_KEY_PREFIX = "rpi-cam"
+_DEFAULT_REGION = "us-east-1"
+_BUCKET_ALREADY_CODES = {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}
 
 
 class S3CompatibleSink:
@@ -49,6 +63,7 @@ class S3CompatibleSink:
         self._region = region
         self._public_url_template = public_url_template
         self._key_prefix = key_prefix.strip("/")
+        self._bucket_ensured = False
 
     async def put(
         self,
@@ -60,21 +75,13 @@ class S3CompatibleSink:
         upload_metadata: Mapping[str, object],
     ) -> StoredImage:
         """Upload to S3 and return the public URL."""
-        # Lazy import: ``aioboto3`` is an optional dependency (see the ``[s3]``
-        # extra in pyproject.toml) — we don't want to pay its ~30MB install
-        # cost on deployments that use ``BackendPushSink``. Importing it here
-        # also keeps unit tests simple: the other sinks' tests don't need
-        # aioboto3 on their ``sys.path``.
-        try:
-            import aioboto3  # noqa: PLC0415
-        except ImportError as exc:
+        if aioboto3 is None:
             msg = (
                 "aioboto3 is required for S3CompatibleSink. "
-                "Install the extra with `uv sync --extra s3` "
-                "(or `pip install 'relab-rpi-cam-plugin[s3]'`), "
+                "Install the [s3] extra with `uv sync --group s3` "
                 "or switch to IMAGE_SINK=backend."
             )
-            raise ImageSinkError(msg) from exc
+            raise ImageSinkError(msg)
 
         key = self._build_object_key(image_id, upload_metadata)
 
@@ -87,19 +94,39 @@ class S3CompatibleSink:
                 aws_secret_access_key=self._secret_access_key,
                 region_name=self._region,
             ) as s3:
+                await self._ensure_bucket(s3)
                 await s3.put_object(
                     Bucket=self._bucket,
                     Key=key,
                     Body=image_bytes,
                     ContentType="image/jpeg",
                 )
-        except Exception as exc:  # noqa: BLE001 — aioboto3 surfaces a zoo of errors; flatten all of them.
+        except Exception as exc:
             msg = f"S3 upload failed for key {key!r}: {exc}"
             raise ImageSinkError(msg) from exc
 
         public_url = self._build_public_url(key)
         logger.info("Uploaded capture %s to S3 bucket %s (%s)", image_id, self._bucket, key)
         return StoredImage(image_id=image_id, image_url=AnyUrl(public_url))
+
+    async def _ensure_bucket(self, s3: _S3ClientProtocol) -> None:
+        """Create the bucket if it doesn't already exist (idempotent)."""
+        if self._bucket_ensured:
+            return
+        try:
+            kwargs: dict[str, object] = {"Bucket": self._bucket}
+            if self._region and self._region != _DEFAULT_REGION:
+                kwargs["CreateBucketConfiguration"] = {"LocationConstraint": self._region}
+            await s3.create_bucket(**kwargs)  # type: ignore[union-attr]
+            logger.info("Created S3 bucket %r at %s", self._bucket, self._endpoint_url)
+        except Exception as exc:
+            # Swallow "bucket already exists" errors from any S3-compatible server.
+            # Both codes appear across AWS S3 / MinIO / RustFS depending on ownership.
+            response = getattr(exc, "response", None)
+            code = (response or {}).get("Error", {}).get("Code", "")
+            if code not in _BUCKET_ALREADY_CODES:
+                raise
+        self._bucket_ensured = True
 
     def _build_object_key(
         self,

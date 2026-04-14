@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import AnyUrl
 
-from app.api.services.image_sinks.base import ImageSinkError, StoredImage
+from app.api.services.image_sinks.base import ImageSink, ImageSinkError, StoredImage
 from app.utils.upload_queue import UploadQueue, UploadQueueWorker
 
 if TYPE_CHECKING:
@@ -26,7 +26,8 @@ class _FakeSink:
 
     async def _put(self, **_kwargs: object) -> StoredImage:
         if self._fail:
-            raise ImageSinkError("fake sink is failing")
+            msg = "fake sink is failing"
+            raise ImageSinkError(msg)
         return StoredImage(image_id="srv-1", image_url=AnyUrl("https://example.com/img.jpg"))
 
 
@@ -66,7 +67,7 @@ class TestEnqueue:
         sink: _FakeSink,
     ) -> None:
         """Enqueue should move the jpg into the queue root and write a metadata sidecar."""
-        queue = UploadQueue(queue_root, sink=sink)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         entry = await queue.enqueue(
             image_id="abc123",
             image_path=sample_image,
@@ -88,7 +89,7 @@ class TestEnqueue:
     ) -> None:
         """Instantiating the queue should create both the root and the dead-letter subdir."""
         assert not await asyncio.to_thread(queue_root.exists)
-        UploadQueue(queue_root, sink=sink)
+        UploadQueue(queue_root, sink=cast("ImageSink", sink))
         assert await asyncio.to_thread(queue_root.is_dir)
         assert await asyncio.to_thread((queue_root / "dead").is_dir)
 
@@ -103,7 +104,7 @@ class TestIterPending:
         sink: _FakeSink,
     ) -> None:
         """Entries with earlier next_attempt_at should come first."""
-        queue = UploadQueue(queue_root, sink=sink)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
 
         # Enqueue one entry that's due now.
         await queue.enqueue(
@@ -128,7 +129,7 @@ class TestIterPending:
 
     def test_skips_orphan_metadata(self, queue_root: Path, sink: _FakeSink) -> None:
         """A .json without a matching .jpg should be cleaned up, not yielded."""
-        queue = UploadQueue(queue_root, sink=sink)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         orphan = queue_root / "orphan.json"
         orphan.write_text('{"image_id": "orphan"}')
         assert queue.iter_pending() == []
@@ -145,7 +146,7 @@ class TestDrainOnce:
         sink: _FakeSink,
     ) -> None:
         """When the sink succeeds, the queue entry should be deleted."""
-        queue = UploadQueue(queue_root, sink=sink)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         entry = await queue.enqueue(
             image_id="happy",
             image_path=sample_image,
@@ -168,7 +169,7 @@ class TestDrainOnce:
         failing_sink: _FakeSink,
     ) -> None:
         """A failed sink put should bump attempts and schedule a later retry."""
-        queue = UploadQueue(queue_root, sink=failing_sink)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", failing_sink))
         entry = await queue.enqueue(
             image_id="sad",
             image_path=sample_image,
@@ -192,7 +193,7 @@ class TestDrainOnce:
         sink: _FakeSink,
     ) -> None:
         """Entries with next_attempt_at in the future must be ignored this pass."""
-        queue = UploadQueue(queue_root, sink=sink)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         future = datetime.now(UTC) + timedelta(hours=1)
         (queue_root / "waiting.jpg").write_bytes(b"\xff\xd8")
         (queue_root / "waiting.json").write_text(
@@ -218,7 +219,7 @@ class TestDeadLetter:
         """After _MAX_ATTEMPTS consecutive failures the entry should move under dead/."""
         from app.utils import upload_queue as upload_queue_mod  # noqa: PLC0415
 
-        queue = UploadQueue(queue_root, sink=sink)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         entry = await queue.enqueue(
             image_id="doomed",
             image_path=sample_image,
@@ -227,7 +228,7 @@ class TestDeadLetter:
             upload_metadata={},
         )
 
-        max_attempts = upload_queue_mod._MAX_ATTEMPTS  # noqa: SLF001
+        max_attempts = upload_queue_mod._MAX_ATTEMPTS
         # Simulate attempts 1..(max_attempts - 1) — not yet dead.
         current = entry
         for attempt in range(1, max_attempts):
@@ -251,7 +252,7 @@ class TestUploadQueueWorker:
 
     async def test_start_then_stop_does_not_raise(self, queue_root: Path, sink: _FakeSink) -> None:
         """The worker should cleanly start and stop even with an empty queue."""
-        queue = UploadQueue(queue_root, sink=sink)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         worker = UploadQueueWorker(queue, poll_interval_s=0.01)
         worker.start()
         # Give the worker one tick to enter its loop.

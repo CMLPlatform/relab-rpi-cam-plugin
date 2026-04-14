@@ -1,5 +1,7 @@
 """Tests for stream service helpers."""
 
+from typing import cast
+
 import pytest
 from pydantic import AnyUrl, SecretStr
 from relab_rpi_cam_models.stream import StreamMode
@@ -24,10 +26,7 @@ class TestStreamUrls:
 
     def test_embed_url(self) -> None:
         """A public watch URL converts into the matching embed URL."""
-        assert (
-            stream_service.get_youtube_embed_url(AnyUrl("https://youtube.com/watch?v=broadcast-key"))
-            == EMBED_URL
-        )
+        assert stream_service.get_youtube_embed_url(AnyUrl("https://youtube.com/watch?v=broadcast-key")) == EMBED_URL
 
 
 class TestValidateYoutubeMode:
@@ -46,7 +45,7 @@ class TestValidateYoutubeMode:
                 return "fake"
 
         with pytest.raises(ValueError, match="Unsupported"):
-            stream_service.validate_youtube_mode(_FakeMode(), None)  # type: ignore[arg-type]
+            stream_service.validate_youtube_mode(cast("StreamMode", _FakeMode()), None)
 
     def test_valid_youtube_mode_is_noop(self) -> None:
         """Valid (mode, config) pairs return ``None`` without raising."""
@@ -56,21 +55,62 @@ class TestValidateYoutubeMode:
         )
         assert stream_service.validate_youtube_mode(StreamMode.YOUTUBE, config) is None
 
+    def test_invalid_stream_key_is_rejected(self) -> None:
+        """Stream keys must stay URL-safe."""
+        with pytest.raises(ValueError, match="stream key"):
+            YoutubeStreamConfig(
+                stream_key=SecretStr("bad key!"),
+                broadcast_key=SecretStr("broadcast-key"),
+            )
+
+    def test_invalid_broadcast_key_is_rejected(self) -> None:
+        """Broadcast keys must stay URL-safe too."""
+        with pytest.raises(ValueError, match="broadcast key"):
+            YoutubeStreamConfig(
+                stream_key=SecretStr("stream-key"),
+                broadcast_key=SecretStr("bad key!"),
+            )
+
+
+class _FakeFfmpegOutput:
+    """Lightweight stand-in for ``picamera2.outputs.FfmpegOutput``.
+
+    The real class is a ``picamera2`` subclass that spawns an ffmpeg
+    subprocess on start. For this test we only care about the arguments the
+    Pi passes to the constructor — we record them on ``output_filename`` to
+    match the real class's attribute name so the assertions stay accurate.
+    """
+
+    def __init__(self, output_filename: str) -> None:
+        self.output_filename = output_filename
+
+
+_FFMPEG_FLAG_COPY = "-c:v copy"
+_FFMPEG_FLAG_RTSP = "-f rtsp"
+_FFMPEG_FLAG_TCP = "-rtsp_transport tcp"
+_FFMPEG_ANULLSRC = "anullsrc"
+_FFMPEG_RTMPS = "rtmps"
+
 
 class TestHiresRtspOutput:
-    """``build_hires_rtsp_output`` returns an FfmpegOutput pointed at MediaMTX."""
+    """``build_hires_rtsp_output`` returns an FfmpegOutput pointed at MediaMTX.
 
-    def test_output_targets_mediamtx_cam_hires(self) -> None:
+    We stub ``FfmpegOutput`` with a recording class so the test runs identically
+    on macOS (where picamera2 isn't available) and on a Pi (where it is). The
+    goal is to lock in the ffmpeg command shape, which doesn't need real I/O.
+    """
+
+    def test_output_targets_mediamtx_cam_hires(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The output string publishes to MediaMTX's local RTSP cam-hires path."""
-        pytest.importorskip("picamera2.outputs")
+        monkeypatch.setattr(stream_service, "FfmpegOutput", _FakeFfmpegOutput)
 
-        output = stream_service.build_hires_rtsp_output()
+        output = cast("_FakeFfmpegOutput", stream_service.build_hires_rtsp_output())
 
         assert HIRES_RTSP_URL in output.output_filename
-        assert "-c:v copy" in output.output_filename
-        assert "-f rtsp" in output.output_filename
-        assert "-rtsp_transport tcp" in output.output_filename
-        # Post-Phase-9: no more silent-audio hack on the Pi. MediaMTX's
-        # ``runOnReady`` owns the YouTube egress (with its own audio track).
-        assert "anullsrc" not in output.output_filename
-        assert "rtmps" not in output.output_filename
+        assert _FFMPEG_FLAG_COPY in output.output_filename
+        assert _FFMPEG_FLAG_RTSP in output.output_filename
+        assert _FFMPEG_FLAG_TCP in output.output_filename
+        # No silent-audio hack on the Pi. MediaMTX's ``runOnReady`` owns the
+        # YouTube egress (with its own audio track).
+        assert _FFMPEG_ANULLSRC not in output.output_filename
+        assert _FFMPEG_RTMPS not in output.output_filename

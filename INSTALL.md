@@ -177,7 +177,9 @@ Verify camera is properly connected to the CSI port.
 ### Pairing code not showing
 
 - Ensure `PAIRING_BACKEND_URL` is set in `.env`
+
 - If the plugin runs in Docker, `http://localhost:8011` points at the plugin container itself, not your host machine. Use `http://host.docker.internal:8011`, your host's LAN IP, or the real HTTPS API URL instead.
+
 - If `PAIRING_BACKEND_URL=https://api-test.cml-relab.org` returns `403` during `/plugins/rpi-cam/pairing/register` or `/plugins/rpi-cam/ws/connect`, the request is likely being blocked by Cloudflare before it reaches FastAPI. Add a WAF/challenge bypass rule for both `api-test.cml-relab.org` and `api.cml-relab.org` covering the machine-facing RPi camera paths:
 
   ```text
@@ -193,7 +195,9 @@ Verify camera is properly connected to the CSI port.
   ```
 
   Set the action to skip or bypass the Cloudflare security feature issuing the challenge. In April 2026, `api-test.cml-relab.org` returned `cf-mitigated: challenge` on both the pairing register path and the WebSocket relay path.
+
 - Remove `~/.config/relab/relay_credentials.json` if it exists (pairing is skipped when credentials present)
+
 - Check `/setup` or look for the `PAIRING MODE` and `PAIRING READY` log lines
 
 ### Poor image quality

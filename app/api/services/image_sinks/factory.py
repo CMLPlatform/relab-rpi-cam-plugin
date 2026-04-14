@@ -26,16 +26,23 @@ class ImageSinkConfigError(RuntimeError):
     """Raised at startup when image sink configuration is incomplete or inconsistent."""
 
 
+_IMAGE_SINK_BACKEND = "backend"
+_IMAGE_SINK_S3 = "s3"
+_IMAGE_SINK_AUTO = "auto"
+
+
 def get_image_sink(settings: Settings) -> ImageSink:
     """Return the ``ImageSink`` implementation for the current settings."""
     choice = settings.image_sink
-    if choice == "backend":
+    if choice == _IMAGE_SINK_BACKEND:
         return _build_backend_sink(settings)
-    if choice == "s3":
+    if choice == _IMAGE_SINK_S3:
         return _build_s3_sink(settings)
-    if choice == "auto":
+    if choice == _IMAGE_SINK_AUTO:
         return _infer_sink(settings)
-    msg = f"Unknown image_sink={choice!r}. Set IMAGE_SINK=backend, s3, or auto."
+    msg = (
+        f"Unknown image_sink={choice!r}. Set IMAGE_SINK={_IMAGE_SINK_BACKEND}, {_IMAGE_SINK_S3}, or {_IMAGE_SINK_AUTO}."
+    )
     raise ImageSinkConfigError(msg)
 
 
