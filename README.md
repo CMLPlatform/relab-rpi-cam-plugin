@@ -119,19 +119,18 @@ The local API key serves **two independent use-cases**:
 
 | Use-case | Requires relay pairing? | What it does |
 | --- | --- | --- |
-| **Native app latency boost** | Yes | After relay pairing, the native RELab app fetches the key automatically through the relay and switches to Ethernet-direct when the Pi is on the same LAN — preview latency drops from ~2 s to ~0.4 s. No manual setup. |
+| **RELab app latency boost** | Yes | After relay pairing, the app fetches the key automatically through the relay and switches to Ethernet-direct when the Pi is on the same LAN — preview latency drops from ~2 s to ~0.4 s. No manual setup. Works in both the native app and modern browsers (Chrome/Edge). |
 | **Standalone / custom clients** | No | Call the camera API directly with `X-API-Key: <key>` — no relay needed. Useful for scripts, custom dashboards, or standalone mode (see below). |
 
 > **The local key does not replace relay pairing.** To register a camera in the RELab app you still need to complete the relay pairing flow (6-character code). The local key is for latency improvement once already paired, or for non-RELab access.
-> **Browser (web) limitation:** browsers block HTTP requests from HTTPS pages (mixed content policy). Direct Ethernet connection only works in the native iOS/Android app — the web version of RELab always uses the relay.
 
 ### Setup — zero configuration required
 
 Local mode is **enabled by default**. No `.env` changes are needed.
 
-On first startup the plugin auto-generates a local API key and persists it to the credentials file. When the native RELab app opens the camera detail screen and the camera is online, it automatically retrieves the key and candidate IP addresses through the relay and probes your local network. If the Pi is reachable via Ethernet, the app switches to direct mode silently — preview latency drops to ~0.4–0.8 s without any user action.
+On first startup the plugin auto-generates a local API key and persists it to the credentials file. When the RELab app opens the camera detail screen and the camera is online, it automatically retrieves the key and candidate IP addresses through the relay and probes your local network. If the Pi is reachable via Ethernet, the app switches to direct mode silently — preview latency drops to ~0.4–0.8 s without any user action.
 
-The RELab web frontend does not get this auto-switch: browsers served from HTTPS block requests to the Pi's HTTP API before they leave the page. Use the native app for automatic direct mode, or use the local key directly in your own client.
+This works in both the native app (iOS/Android) and modern Chromium-based browsers. The Pi sends `Access-Control-Allow-Private-Network: true` on all responses so Chrome's Private Network Access policy is satisfied as enforcement ramps up.
 
 To disable local mode entirely (opt-out):
 
