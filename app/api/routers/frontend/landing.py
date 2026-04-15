@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse
+from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.dependencies.camera_management import CameraManagerDependency
 from app.core.config import settings
 from app.core.templates_config import templates
-from relab_rpi_cam_models.stream import StreamMode
 
 router = APIRouter()
 

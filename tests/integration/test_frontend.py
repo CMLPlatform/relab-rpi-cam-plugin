@@ -8,6 +8,7 @@ from app.api.services.camera_manager import CameraManager
 from tests.constants import HTML_CONTENT_TYPE
 
 YOUTUBE_WATCH_URL = "https://youtube.com/watch?v=TEST_BROADCAST_KEY_123"
+YOUTUBE_DOMAIN = "youtube.com"
 
 
 class TestHomepage:
@@ -39,9 +40,8 @@ class TestHomepage:
     async def test_homepage_no_youtube_link_when_no_stream(
         self,
         client: AsyncClient,
-        camera_manager: CameraManager,
     ) -> None:
         """Homepage does not show a YouTube link when no stream is active."""
         resp = await client.get("/")
         assert resp.status_code == 200
-        assert "youtube.com" not in resp.text
+        assert YOUTUBE_DOMAIN not in resp.text

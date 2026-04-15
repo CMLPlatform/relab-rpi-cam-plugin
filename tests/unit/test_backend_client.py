@@ -69,6 +69,23 @@ class TestUploadImage:
         assert result.image_id == SAMPLE_SERVER_IMAGE_ID
         assert str(result.image_url) == SAMPLE_SERVER_IMAGE_URL
 
+    async def test_relative_image_url_is_prefixed_with_base_url(self) -> None:
+        """A relative image_url from the backend should be resolved against the pairing base URL."""
+        response = _fake_response(
+            200,
+            {"image_id": SAMPLE_SERVER_IMAGE_ID, "image_url": "/images/abc.jpg"},
+        )
+        with _patch_async_client(response):
+            result = await upload_image(
+                image_bytes=b"\xff\xd8fake-jpg",
+                filename="test.jpg",
+                capture_metadata={"width": 1920},
+                upload_metadata={"product_id": 1},
+            )
+
+        assert result.image_id == SAMPLE_SERVER_IMAGE_ID
+        assert str(result.image_url) == "https://backend.example/images/abc.jpg"
+
     async def test_http_error_wrapped_in_backend_upload_error(self) -> None:
         """An httpx transport error should surface as BackendUploadError."""
         client_instance = MagicMock()

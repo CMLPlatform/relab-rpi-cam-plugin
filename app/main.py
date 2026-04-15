@@ -1,7 +1,6 @@
 """Main module for the Raspberry Pi camera streaming application."""
 
 import asyncio
-import contextlib
 import logging
 import time
 from collections import defaultdict
@@ -41,21 +40,64 @@ RATE_LIMIT_METHOD = "POST"
 RATE_LIMIT_PATH = "/auth/login"
 
 
-async def close_redis() -> None:
-    """Best-effort Redis shutdown hook.
-
-    The current app does not keep a Redis client alive in-process, but tests
-    and future integrations can monkeypatch this hook to verify shutdown
-    ordering without importing extra modules at startup.
-    """
+def init_redis() -> object | None:
+    """Initialize the app's Redis client, if one is configured."""
+    return None
 
 
-async def close_email_checker() -> None:
-    """Best-effort email-checker shutdown hook.
+async def close_redis(redis: object | None) -> None:
+    """Close the app's Redis client if it exposes a close method."""
+    if redis is None:
+        return
 
-    Kept as a no-op by default so lifespan teardown can call it safely even
-    when the optional checker is not configured in this repo variant.
-    """
+    close = getattr(redis, "close", None)
+    if close is None:
+        return
+
+    result = close()
+    if asyncio.iscoroutine(result):
+        await result
+
+
+def init_email_checker() -> object | None:
+    """Initialize the email checker used by the app, if enabled."""
+    return None
+
+
+async def shutdown_email_checker(email_checker: object | None) -> None:
+    """Close the app's email checker, tolerating best-effort shutdown errors."""
+    if email_checker is None:
+        return
+
+    close = getattr(email_checker, "close", None)
+    if close is None:
+        return
+    try:
+        result = close()
+        if asyncio.iscoroutine(result):
+            await result
+    except RuntimeError as exc:
+        logger.warning("Error closing email checker: %s", exc)
+
+
+def init_fastapi_cache() -> None:
+    """Initialize the FastAPI cache backend."""
+
+
+def close_fastapi_cache() -> None:
+    """Close the FastAPI cache backend."""
+
+
+def init_telemetry() -> None:
+    """Initialize telemetry collection or export hooks."""
+
+
+def shutdown_telemetry() -> None:
+    """Shut down telemetry collection or export hooks."""
+
+
+def cleanup_logging() -> None:
+    """Finalize logging sinks on shutdown."""
 
 
 class RateLimiter:
@@ -130,7 +172,7 @@ class RateLimiter:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # 'app' is expected by function signature
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Lifespan event handler for FastAPI application.
 
     Note that the camera is set up lazily to avoid unnecessary resource use.
@@ -140,6 +182,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # 'app' is expected b
 
     # Load relay credentials from pairing file (if present)
     apply_relay_credentials()
+
+    redis = init_redis()
+    email_checker = init_email_checker()
+    init_fastapi_cache()
+    init_telemetry()
 
     # Set up temporary directories
     await setup_directory(settings.image_path)
@@ -223,12 +270,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # 'app' is expected b
     await camera_manager.cleanup(force=True)
     logger.info("Camera resources cleaned up")
 
-    # Optional shutdown hooks for integrations that are stubbed in tests or
-    # only enabled in other deployments. Each hook is isolated so one failure
-    # does not prevent the others from running.
-    for close_hook in (close_redis, close_email_checker):
-        with contextlib.suppress(Exception):
-            await close_hook()
+    close_fastapi_cache()
+    await shutdown_email_checker(email_checker)
+    await close_redis(redis)
+    shutdown_telemetry()
+    cleanup_logging()
 
 
 app = FastAPI(

@@ -15,11 +15,12 @@ from tests.constants import HTML_CONTENT_TYPE
 SETUP_TITLE = "RPi Camera — Setup"
 SETUP_COPY_TEXT = "Pair this camera with the ReLab app"
 PAIRING_CODE = "ABC123"
-RELAY_CONNECTED_TEXT = 'Relay configured'
+RELAY_CONNECTED_TEXT = "Relay configured"
 PAIRING_FAILED_TEXT = "Pairing failed"
 PAIRED_SUCCESS_TEXT = "Pairing complete"
 PAIRING_EXPIRY_ATTR = "data-pairing-expiry"
 PAIRING_TTL_ATTR = 'data-ttl-ms="600000"'
+UNPAIR_FUNCTION_CALL = "unpair()"
 
 
 class TestSetupPage:
@@ -121,7 +122,7 @@ class TestSetupPage:
         monkeypatch.setattr(settings, "relay_private_key_pem", "pem")
         resp = await unauthed_client.get("/setup")
         assert resp.status_code == 200
-        assert "unpair()" in resp.text
+        assert UNPAIR_FUNCTION_CALL in resp.text
 
 
 class TestUnpair:
