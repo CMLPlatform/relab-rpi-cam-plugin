@@ -260,8 +260,11 @@ body.setup-page p {
     align-items: center;
     justify-content: center;
     align-self: stretch;
+    flex: 0 0 64px;
+    width: 64px;
+    min-height: 64px;
     margin: 0;
-    padding: 0 13px;
+    padding: 0;
     border: 1px solid rgba(148, 163, 184, 0.2);
     border-radius: 20px;
     background: rgba(255, 255, 255, 0.7);
@@ -270,12 +273,54 @@ body.setup-page p {
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
+.setup-refresh-code-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+    flex: 0 0 64px;
+    width: 64px;
+    min-height: 64px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    border-radius: 20px;
+    background: rgba(37, 99, 235, 0.08);
+    color: #1d4ed8;
+    font-size: 0;
+    box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
+}
+
+.setup-copy-code-btn[data-feedback-state="copied"] {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.28);
+    color: #047857;
+    box-shadow: 0 12px 26px rgba(16, 185, 129, 0.14);
+}
+
+.setup-copy-code-btn[data-feedback-state="failed"] {
+    background: rgba(239, 68, 68, 0.11);
+    border-color: rgba(239, 68, 68, 0.24);
+    color: #b91c1c;
+    box-shadow: 0 12px 26px rgba(239, 68, 68, 0.12);
+}
+
 .setup-copy-code-btn:hover {
     background: rgba(255, 255, 255, 0.96);
     border-color: rgba(148, 163, 184, 0.32);
 }
 
+.setup-refresh-code-btn:hover {
+    background: rgba(37, 99, 235, 0.14);
+    border-color: rgba(37, 99, 235, 0.28);
+}
+
 .setup-copy-code-btn:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.35);
+    outline-offset: 2px;
+}
+
+.setup-refresh-code-btn:focus-visible {
     outline: 2px solid rgba(37, 99, 235, 0.35);
     outline-offset: 2px;
 }
@@ -284,6 +329,21 @@ body.setup-page p {
     width: 16px;
     height: 16px;
     fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    flex: none;
+}
+
+.setup-copy-code-btn[data-feedback-state="copied"] svg,
+.setup-copy-code-btn[data-feedback-state="failed"] svg {
+    width: 17px;
+    height: 17px;
+}
+
+.setup-refresh-code-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
     stroke: currentColor;
     stroke-width: 1.7;
     flex: none;
@@ -652,6 +712,12 @@ body.setup-page p {
 
     .setup-copy-code-btn {
         align-self: flex-start;
+        width: 64px;
+    }
+
+    .setup-refresh-code-btn {
+        align-self: flex-start;
+        width: 64px;
     }
 
     .pairing-progress {

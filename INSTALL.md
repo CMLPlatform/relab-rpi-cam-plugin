@@ -68,6 +68,8 @@ The simplest approach. No credential exchange required.
    - Browser UI: visit `http://your-pi-ip:8018/setup`
    - Headless over SSH/logs: watch for the `PAIRING READY` log line
 
+   If the code needs to be replaced, use the `Generate a new pairing code` button on `/setup`. It rotates the current code without removing relay credentials.
+
 1. **Pair in RELab app**\
    Go to Cameras > Add Camera and enter the pairing code.
 

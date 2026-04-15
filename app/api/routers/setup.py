@@ -18,6 +18,7 @@ from app.utils.pairing import (
     _normalize_pairing_backend_base_url,
     delete_relay_credentials,
     get_pairing_state,
+    reset_pairing_state,
     run_pairing,
 )
 from app.utils.relay import run_relay
@@ -121,5 +122,41 @@ async def unpair(request: Request) -> Response:
             logger.info("Unpairing complete — no pairing backend configured, staying idle")
 
     task = asyncio.create_task(_do_reset(), name="pairing_reset")
+    bg_tasks.add(task)
+    return Response(status_code=204)
+
+
+@router.post("/pairing/code/refresh", status_code=204)
+async def refresh_pairing_code(request: Request) -> Response:
+    """Rotate the active pairing code without deleting credentials.
+
+    Useful when the current code needs to be replaced quickly during setup.
+    The current pairing task is cancelled and a fresh one is started so the
+    setup page and logs show a new code.
+    """
+    bg_tasks: set[asyncio.Task[None]] = request.app.state.background_tasks
+
+    async def _on_paired() -> None:
+        task = asyncio.create_task(run_relay(), name="ws_relay")
+        bg_tasks.add(task)
+        logger.info("Re-paired — WebSocket relay restarted")
+
+    async def _do_refresh() -> None:
+        await asyncio.sleep(0.1)
+
+        reset_pairing_state()
+
+        for task in asyncio.all_tasks():
+            if task.get_name() == "pairing":
+                task.cancel()
+
+        if settings.pairing_backend_url and not settings.relay_enabled:
+            task = asyncio.create_task(run_pairing(_on_paired), name="pairing")
+            bg_tasks.add(task)
+            logger.info("Pairing code refreshed — pairing flow restarted")
+        else:
+            logger.info("Pairing code refreshed — no pairing backend configured")
+
+    task = asyncio.create_task(_do_refresh(), name="pairing_refresh")
     bg_tasks.add(task)
     return Response(status_code=204)

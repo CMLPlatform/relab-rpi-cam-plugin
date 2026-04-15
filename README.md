@@ -47,6 +47,8 @@ If you use Docker Compose on the Pi, generate `compose.override.yml` with `./scr
 
 For headless setup, the active 6-character pairing code is also printed to stdout in a boxed `PAIRING READY` banner, so you can read it over SSH, `docker compose logs`, or `journalctl` without opening the browser UI.
 
+If you need a fresh code during setup, open `/setup` and click the `Generate a new pairing code` button beside the current code. That rotates the code without unpairing the camera.
+
 By default, Docker Compose runs only the camera plugin. Inspect logs with:
 
 ```sh

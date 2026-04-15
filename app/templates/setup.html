@@ -25,6 +25,36 @@
       return ok;
     }
 
+    function pairingButtonFeedbackSvg(state) {
+      if (state === "copied") {
+        return `
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M20.25 6.75 9.75 17.25 3.75 11.25" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          <span class="sr-only">Copied</span>
+        `;
+      }
+      return `
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M15.75 8.25 8.25 15.75M8.25 8.25l7.5 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+        </svg>
+        <span class="sr-only">Copy failed</span>
+      `;
+    }
+
+    function setPairingButtonFeedback(button, state, label, title) {
+      if (!button) {
+        return;
+      }
+      if (!button.dataset.defaultHtml) {
+        button.dataset.defaultHtml = button.innerHTML;
+      }
+      button.dataset.feedbackState = state;
+      button.innerHTML = pairingButtonFeedbackSvg(state);
+      button.setAttribute("aria-label", label);
+      button.setAttribute("title", title);
+    }
+
     async function copyText(text, button) {
       const value = String(text || "").trim();
       let copied = false;
@@ -45,12 +75,42 @@
         const previousLabel = button.getAttribute("aria-label") || "Copy code";
         const previousTitle = button.getAttribute("title") || previousLabel;
         const nextLabel = copied ? "Copied pairing code" : "Copy pairing code failed";
-        button.setAttribute("aria-label", nextLabel);
-        button.setAttribute("title", nextLabel);
+        setPairingButtonFeedback(button, copied ? "copied" : "failed", nextLabel, nextLabel);
         window.setTimeout(() => {
+          if (button.dataset.defaultHtml) {
+            button.innerHTML = button.dataset.defaultHtml;
+          }
+          button.dataset.feedbackState = "";
           button.setAttribute("aria-label", previousLabel);
           button.setAttribute("title", previousTitle);
         }, 1200);
+      }
+    }
+
+    async function refreshPairingCode(button) {
+      const previousLabel = button ? (button.getAttribute("aria-label") || "Generate a new pairing code") : "";
+      const previousTitle = button ? (button.getAttribute("title") || previousLabel) : "";
+      if (button) {
+        button.disabled = true;
+        button.setAttribute("aria-label", "Refreshing pairing code…");
+        button.setAttribute("title", "Refreshing pairing code…");
+      }
+
+      try {
+        const resp = await fetch("/pairing/code/refresh", { method: "POST" });
+        if (!resp.ok) {
+          alert("Could not refresh the pairing code (" + resp.status + ").");
+          return;
+        }
+        window.setTimeout(() => window.location.reload(), 250);
+      } catch {
+        alert("Could not refresh the pairing code. Check your connection.");
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.setAttribute("aria-label", previousLabel);
+          button.setAttribute("title", previousTitle);
+        }
       }
     }
 
@@ -185,6 +245,19 @@
               <rect x="4.5" y="7.5" width="12" height="12" rx="2.25" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
             </svg>
             <span class="sr-only">Copy code</span>
+          </button>
+          <button
+            class="setup-refresh-code-btn"
+            type="button"
+            aria-label="Generate a new pairing code"
+            title="Generate a new pairing code"
+            onclick="refreshPairingCode(this)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M20.25 12a8.25 8.25 0 0 1-13.95 5.95M3.75 12A8.25 8.25 0 0 1 17.7 6.05" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              <path d="M17.7 6.05h-3.2M17.7 6.05v-3.2M3.75 17.95h3.2M3.75 17.95v3.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="sr-only">New code</span>
           </button>
         </div>
         <div class="pairing-meta">
