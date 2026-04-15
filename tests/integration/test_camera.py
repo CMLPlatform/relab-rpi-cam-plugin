@@ -36,6 +36,13 @@ class TestCameraStatus:
         assert data["stream"] is None
         assert data["last_image_url"] is None
 
+    async def test_snapshot_returns_jpeg(self, client: AsyncClient) -> None:
+        """Test that the snapshot endpoint returns a JPEG preview frame."""
+        resp = await client.get("/camera/snapshot")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("image/jpeg")
+        assert resp.content[:2] == b"\xff\xd8"
+
 
 class TestCameraControls:
     """Tests for camera controls endpoints."""
