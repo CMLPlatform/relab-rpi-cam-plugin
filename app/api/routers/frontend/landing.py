@@ -1,27 +1,25 @@
-"""Home page and login form router."""
+"""Home page router."""
 
-from typing import Annotated
+from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
-from app.api.dependencies.auth import get_auth_status
+from app.api.dependencies.camera_management import CameraManagerDependency
 from app.core.config import settings
 from app.core.templates_config import templates
+from relab_rpi_cam_models.stream import StreamMode
 
 router = APIRouter()
 
 
 @router.get("/")
-async def homepage(request: Request, logged_in: Annotated[bool, Depends(get_auth_status)]) -> HTMLResponse:
+async def homepage(request: Request, camera_manager: CameraManagerDependency) -> HTMLResponse:
     """Render homepage."""
-    return templates.TemplateResponse(request, "homepage.html", {"logged_in": logged_in})
-
-
-@router.get("/login")
-async def login_form(request: Request, redirect_url: Annotated[str, Query(alias="redirect_url")] = "/") -> HTMLResponse:
-    """Render the login form."""
-    return templates.TemplateResponse(request, "login.html", {"redirect_url": redirect_url})
+    youtube_url: str | None = None
+    if camera_manager.stream.mode == StreamMode.YOUTUBE and camera_manager.stream.url:
+        youtube_url = str(camera_manager.stream.url)
+    return templates.TemplateResponse(request, "homepage.html", {"youtube_url": youtube_url})
 
 
 @router.get("/favicon.ico")

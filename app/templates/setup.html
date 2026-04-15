@@ -65,7 +65,7 @@
   <section class="setup-hero">
     <div class="setup-eyebrow">Raspberry Pi Camera</div>
     <h1>Setup</h1>
-    <div style="margin-top: 12px;">
+    <div>
       <a href="{{ url_for('homepage') }}" class="btn">Home</a>
     </div>
     <p>Pair this camera with the ReLab app without typing relay credentials by hand.</p>
@@ -116,15 +116,19 @@
 
   <section class="setup-status">
     <div class="setup-status-grid">
+      {% if relay_enabled %}
+        <div class="status-chip status-chip--live">Relay configured</div>
+      {% else %}
+        <div class="status-chip status-chip--muted">Not configured</div>
+      {% endif %}
       <h2>Connection</h2>
       {% if relay_enabled %}
-        <p>WebSocket relay: <span class="online">connected</span></p>
         <table>
           <tr><td>Backend URL</td><td><code>{{ relay_backend_url or 'not set' }}</code></td></tr>
-          <tr><td>Camera ID</td><td>{% if relay_camera_id %}<em>set</em>{% else %}<em>not set</em>{% endif %}</td></tr>
+          <tr><td>Camera ID</td><td>{% if relay_camera_id %}<code>{{ relay_camera_id }}</code>{% else %}<em>not set</em>{% endif %}</td></tr>
         </table>
       {% else %}
-        <p>WebSocket relay: <span class="offline">not configured</span></p>
+        <p>WebSocket relay credentials have not been configured yet.</p>
       {% endif %}
     </div>
   </section>
