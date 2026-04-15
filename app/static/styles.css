@@ -332,6 +332,24 @@ body.setup-page p {
     margin: 0;
 }
 
+/* Camera preview player */
+.preview-video {
+    width: 100%;
+    aspect-ratio: 4/3;
+    border-radius: 12px;
+    background: #0f172a;
+    display: block;
+}
+
+.preview-video:not([src]) {
+    display: none;
+}
+
+.preview-message {
+    font-size: 0.9rem;
+    color: #475569;
+}
+
 @media (max-width: 740px) {
     .setup-shell {
         width: min(100vw - 24px, 960px);

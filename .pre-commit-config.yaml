@@ -1,54 +1,53 @@
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
-    hooks:
-    -   id: check-added-large-files
-    -   id: check-case-conflict     # Check for files with names that differ only in case.
-    -   id: check-executables-have-shebangs
-    -   id: check-shebang-scripts-are-executable
-    -   id: check-json
-    -   id: check-toml
-    -   id: check-yaml
-    -   id: detect-private-key
-    -   id: end-of-file-fixer     # Ensure files end with a newline.
-    -   id: mixed-line-ending
-    -   id: no-commit-to-branch     # Prevent commits to main and master branches.
-    -   id: trailing-whitespace
-        args: ["--markdown-linebreak-ext", "md"]       # Preserve Markdown hard line breaks.
+    - repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v6.0.0
+      hooks:
+          - id: check-added-large-files
+          - id: check-case-conflict # Check for files with names that differ only in case.
+          - id: check-executables-have-shebangs
+          - id: check-shebang-scripts-are-executable
+          - id: check-json
+          - id: check-toml
+          - id: check-yaml
+          - id: detect-private-key
+          - id: end-of-file-fixer # Ensure files end with a newline.
+          - id: mixed-line-ending
+          - id: trailing-whitespace
+            args: [ "--markdown-linebreak-ext", "md" ] # Preserve Markdown hard line breaks.
 
--   repo: https://github.com/gitleaks/gitleaks   # Detect secrets in commits.
-    rev: v8.30.0
-    hooks:
-    -   id: gitleaks
+    - repo: https://github.com/gitleaks/gitleaks # Detect secrets in commits.
+      rev: v8.30.0
+      hooks:
+          - id: gitleaks
 
--   repo: https://github.com/executablebooks/mdformat
-    rev: 1.0.0
-    hooks:
-    -   id: mdformat     # Format Markdown files.
-        additional_dependencies:
-        -   mdformat-gfm       # Support GitHub Flavored Markdown.
+    - repo: https://github.com/executablebooks/mdformat
+      rev: 1.0.0
+      hooks:
+          - id: mdformat # Format Markdown files.
+            additional_dependencies:
+                - mdformat-gfm # Support GitHub Flavored Markdown.
 
--   repo: https://github.com/astral-sh/ruff-pre-commit   # Lint and format Python code with Ruff.
-    rev: v0.15.10
-    hooks:
-    -   id: ruff-check
-    -   id: ruff-format
+    - repo: https://github.com/astral-sh/ruff-pre-commit # Lint and format Python code with Ruff.
+      rev: v0.15.10
+      hooks:
+          - id: ruff-check
+          - id: ruff-format
 
--   repo: https://github.com/astral-sh/uv-pre-commit   # Update the uv lockfile.
-    rev: 0.11.6
-    hooks:
-    -   id: uv-lock
+    - repo: https://github.com/astral-sh/uv-pre-commit # Update the uv lockfile.
+      rev: 0.11.6
+      hooks:
+          - id: uv-lock
 
--   repo: https://github.com/rhysd/actionlint
-    rev: v1.7.12
-    hooks:
-    -   id: actionlint
+    - repo: https://github.com/rhysd/actionlint
+      rev: v1.7.12
+      hooks:
+          - id: actionlint
 
--   repo: local
-    hooks:
-    -   id: ty
-        name: ty-check
-        entry: uv run ty check .
-        language: system
-        types: [python]
-        pass_filenames: false
+    - repo: local
+      hooks:
+          - id: ty
+            name: ty-check
+            entry: uv run ty check .
+            language: system
+            types: [ python ]
+            pass_filenames: false

@@ -4,11 +4,11 @@ from fastapi import APIRouter, Depends
 
 from app.api.dependencies.auth import verify_request
 from app.api.routers import auth, camera, hls, images, metrics, stream, telemetry
-from app.api.routers.frontend import landing, stream_viewer
+from app.api.routers.frontend import landing
 
 router = APIRouter()
 
-for r in [auth.router, stream_viewer.router, landing.router]:
+for r in [auth.router, landing.router]:
     router.include_router(r, include_in_schema=False)
 
 # /metrics is intentionally unauthenticated — see app/api/routers/metrics.py.
