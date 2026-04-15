@@ -13,7 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from relab_rpi_cam_models.camera import CameraMode
+from starlette.datastructures import MutableHeaders
 from starlette.responses import Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.__version__ import version
 from app.api.dependencies.camera_management import (
@@ -299,6 +301,42 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
     allow_headers=["Content-Type", "Authorization", "Accept", settings.auth_key_name],
 )
+
+
+class _PrivateNetworkAccessMiddleware:
+    """Add Access-Control-Allow-Private-Network: true to every response.
+
+    Chrome's Private Network Access (PNA) spec requires this header on both
+    preflight and regular responses when an HTTPS page fetches resources from a
+    private-network host (e.g. a LAN IP).  Without it, once Chrome enforces PNA
+    fully, requests from ``https://app.cml-relab.org`` to the Pi's HTTP API will
+    be blocked.  Browsers currently warn (``Local Network Access detected``) but
+    do not block — this header suppresses the warnings and future-proofs the app.
+
+    Must be registered AFTER CORSMiddleware so it wraps it (last added =
+    outermost in Starlette's middleware stack), ensuring the header is appended
+    to CORS preflight (OPTIONS) responses as well as regular responses.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not settings.local_mode_enabled:
+            await self.app(scope, receive, send)
+            return
+
+        async def _send_with_pna(message: object) -> None:
+            if isinstance(message, dict) and message.get("type") == "http.response.start":
+                headers = MutableHeaders(scope=message)  # type: ignore[arg-type]
+                headers.append("Access-Control-Allow-Private-Network", "true")
+            await send(message)  # type: ignore[arg-type]
+
+        await self.app(scope, receive, _send_with_pna)
+
+
+if settings.local_mode_enabled:
+    app.add_middleware(_PrivateNetworkAccessMiddleware)
 
 
 # Exception handlers
