@@ -26,7 +26,9 @@ Supports **Raspberry Pi 5/4** with **Camera Module 3/v2**, running on Raspberry 
 
 The plugin connects to the RELab backend via **WebSocket relay**. The Pi opens an outbound connection to the backend — no public IP address or port forwarding is required.
 
-Pairing is automatic: set `PAIRING_BACKEND_URL` in your `.env`, start the plugin, and enter the 6-character code in the RELab app. The Pi generates an asymmetric key pair locally, registers the public key with the backend, and keeps the private key on-device. No API key is ever copied manually.
+Pairing is automatic in the native RELab app: set `PAIRING_BACKEND_URL` in your `.env`, start the plugin, and enter the 6-character code in the RELab app. The Pi generates an asymmetric key pair locally, registers the public key with the backend, and keeps the private key on-device. No API key is ever copied manually.
+
+The browser-based RELab frontend is different: if it is served over HTTPS, modern browsers block `fetch()` calls to the Pi's plain HTTP API as mixed content. That means the web frontend cannot auto-probe or switch a camera into direct mode; this direct-connection path is for the native app or for manual clients that call the Pi directly.
 
 ## Getting Started
 
@@ -115,7 +117,7 @@ The local API key serves **two independent use-cases**:
 
 | Use-case | Requires relay pairing? | What it does |
 | --- | --- | --- |
-| **Latency boost in RELab** | Yes | After relay pairing, the RELab app fetches the key automatically through the relay and switches to Ethernet-direct when the Pi is on the same LAN — preview latency drops from ~2 s to ~0.4 s. No manual setup. |
+| **Native app latency boost** | Yes | After relay pairing, the native RELab app fetches the key automatically through the relay and switches to Ethernet-direct when the Pi is on the same LAN — preview latency drops from ~2 s to ~0.4 s. No manual setup. |
 | **Standalone / custom clients** | No | Call the camera API directly with `X-API-Key: <key>` — no relay needed. Useful for scripts, custom dashboards, or standalone mode (see below). |
 
 > **The local key does not replace relay pairing.** To register a camera in the RELab app you still need to complete the relay pairing flow (6-character code). The local key is for latency improvement once already paired, or for non-RELab access.
@@ -124,7 +126,9 @@ The local API key serves **two independent use-cases**:
 
 Local mode is **enabled by default**. No `.env` changes are needed.
 
-On first startup the plugin auto-generates a local API key and persists it to the credentials file. When the RELab app opens the camera detail screen and the camera is online, it automatically retrieves the key and candidate IP addresses through the relay and probes your local network. If the Pi is reachable via Ethernet, the app switches to direct mode silently — preview latency drops to ~0.4–0.8 s without any user action.
+On first startup the plugin auto-generates a local API key and persists it to the credentials file. When the native RELab app opens the camera detail screen and the camera is online, it automatically retrieves the key and candidate IP addresses through the relay and probes your local network. If the Pi is reachable via Ethernet, the app switches to direct mode silently — preview latency drops to ~0.4–0.8 s without any user action.
+
+The RELab web frontend does not get this auto-switch: browsers served from HTTPS block requests to the Pi's HTTP API before they leave the page. Use the native app for automatic direct mode, or use the local key directly in your own client.
 
 To disable local mode entirely (opt-out):
 

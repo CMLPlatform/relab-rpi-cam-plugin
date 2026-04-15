@@ -22,7 +22,6 @@ header-frame + binary-frame pair.
 from __future__ import annotations
 
 import logging
-from ipaddress import ip_address
 from typing import Annotated
 
 import httpx
@@ -33,6 +32,7 @@ from pydantic import AfterValidator
 from app.api.dependencies.camera_management import CameraManagerDependency
 from app.api.services.camera_manager import CameraManager
 from app.api.services.preview_pipeline import PreviewPipelineManager, get_preview_pipeline_manager
+from app.utils.network import is_local_client
 from app.utils.relay_state import mark_hls_activity
 
 logger = logging.getLogger(__name__)
@@ -53,20 +53,12 @@ def _no_traversal(v: str) -> str:
 _MEDIAMTX_HLS_BASE = "http://host.docker.internal:8888"
 _HLS_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=5.0, pool=2.0)
 _PREVIEW_HLS_PREFIX = "cam-preview/"
-_LOCALHOST_NAME = "localhost"
-
 PreviewPipelineDependency = Annotated[PreviewPipelineManager, Depends(get_preview_pipeline_manager)]
 
 
 def _is_local_client(host: str | None) -> bool:
     """Return whether an unauthenticated HLS request came from a local network."""
-    if not host:
-        return False
-    try:
-        client_ip = ip_address(host)
-    except ValueError:
-        return host == _LOCALHOST_NAME
-    return client_ip.is_loopback or client_ip.is_private or client_ip.is_link_local
+    return is_local_client(host)
 
 
 async def _wake_preview_encoder(

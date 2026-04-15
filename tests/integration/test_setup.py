@@ -3,30 +3,35 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import patch
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
 
 from app.api.routers import setup as setup_router
-from app.core.config import settings
+from app.core.config import DEFAULT_PAIRING_BACKEND_URL, settings
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, HTML_CONTENT_TYPE
 
 SETUP_TITLE = "RPi Camera — Setup"
-SETUP_COPY_TEXT = "Pair this camera with the ReLab app"
-PAIRING_URL_DEBUG_TEXT = "Pairing URL and debugging"
-PAIRING_BACKEND_URL_TEXT = "Pairing backend URL"
+SETUP_COPY_TEXT = "Pair the camera. Open details only when needed."
+PAIRING_URL_DEBUG_TEXT = "Pairing details"
+PAIRING_BACKEND_URL_TEXT = "URL"
 DEFAULT_BACKEND_PRESET_TEXT = "Default RELab backend"
 PAIRING_BACKEND_URL_VALUE = "https://api.cml-relab.org"
 REACHABLE_TEXT = "Reachable"
 NOT_REACHABLE_TEXT = "Not reachable"
-HOW_TO_CHANGE_TEXT = "How to change it"
+HOW_TO_CHANGE_TEXT = "Edit"
+CHANGE_IT_TEXT = "Edit"
 PAIRING_CODE = "ABC123"
 PAIRED_TEXT = "Paired"
 PAIRING_FAILED_TEXT = "Pairing failed"
-PAIRED_SUCCESS_TEXT = "paired successfully and is connecting to the backend now"
+PAIRED_SUCCESS_TEXT = "Connecting now."
 THIS_IP_PLACEHOLDER = "&lt;this-ip&gt;"
+COPY_PAIRING_CODE_LABEL = "Copy pairing code"
+LATENCY_BOOST_TEXT = "Native RELab app latency boost"
+STANDALONE_CLIENTS_TEXT = "Standalone / non-ReLab clients"
+LOCAL_KEY_WARNING_TEXT = "The local key does not let you register this camera in the ReLab app."
+LOCAL_KEY_NOTE_TEXT = "Automatic direct mode only works in the native RELab app; browsers served over HTTPS cannot probe this Pi's HTTP API because of mixed-content blocking."
 PAIRING_EXPIRY_ATTR = "data-pairing-expiry"
 PAIRING_TTL_ATTR = 'data-ttl-ms="600000"'
 UNPAIR_FUNCTION_CALL = "unpair()"
@@ -39,6 +44,12 @@ class TestSetupPage:
     def _default_pairing_backend_reachability(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Keep setup-page tests deterministic without making real network calls."""
         monkeypatch.setattr(setup_router, "_pairing_backend_reachable", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            setup_router,
+            "get_pairing_state",
+            lambda: SimpleNamespace(status="idle", code=None, error=None, expires_at=None),
+        )
+        monkeypatch.setattr(settings, "pairing_backend_url", DEFAULT_PAIRING_BACKEND_URL)
         monkeypatch.setattr(settings, "relay_backend_url", "")
         monkeypatch.setattr(settings, "relay_camera_id", "")
         monkeypatch.setattr(settings, "relay_key_id", "")
@@ -49,6 +60,7 @@ class TestSetupPage:
         resp = await unauthed_client.get("/setup")
         assert resp.status_code == 200
         assert HTML_CONTENT_TYPE in resp.headers["content-type"]
+        assert 'http-equiv="refresh"' not in resp.text
 
     async def test_setup_page_contains_title(self, unauthed_client: AsyncClient) -> None:
         """Test that the setup page contains the correct title."""
@@ -69,10 +81,11 @@ class TestSetupPage:
         assert PAIRING_URL_DEBUG_TEXT in resp.text
         assert PAIRING_BACKEND_URL_TEXT in resp.text
         assert DEFAULT_BACKEND_PRESET_TEXT in resp.text
-        assert HOW_TO_CHANGE_TEXT in resp.text
+        assert CHANGE_IT_TEXT in resp.text
         assert PAIRING_BACKEND_URL_VALUE in resp.text
         assert REACHABLE_TEXT in resp.text
         assert NOT_REACHABLE_TEXT not in resp.text
+        assert "click to open" in resp.text
 
     async def test_setup_page_shows_pairing_help_when_backend_is_unreachable(
         self,
@@ -83,7 +96,7 @@ class TestSetupPage:
         monkeypatch.setattr(setup_router, "_pairing_backend_reachable", AsyncMock(return_value=False))
         resp = await unauthed_client.get("/setup")
         assert NOT_REACHABLE_TEXT in resp.text
-        assert "No relay is active yet" in resp.text
+        assert "No relay yet. Pairing keeps retrying." in resp.text
 
     async def test_setup_page_shows_pairing_status(
         self,
@@ -105,7 +118,8 @@ class TestSetupPage:
         assert PAIRING_CODE in resp.text
         assert PAIRING_EXPIRY_ATTR in resp.text
         assert PAIRING_TTL_ATTR in resp.text
-        assert "Enter this code in the ReLab app" in resp.text
+        assert "Enter this code in ReLab." in resp.text
+        assert COPY_PAIRING_CODE_LABEL in resp.text
         assert PAIRED_TEXT not in resp.text
 
     async def test_setup_page_shows_pairing_error(
@@ -151,6 +165,21 @@ class TestSetupPage:
         assert resp.status_code == 200
         assert UNPAIR_FUNCTION_CALL in resp.text
         assert PAIRING_BACKEND_URL_TEXT in resp.text
+
+    async def test_setup_page_keeps_local_access_collapsed_by_default(
+        self,
+        unauthed_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Local access should not open by default."""
+        monkeypatch.setattr(settings, "local_api_key", "test-local-api-key")
+        resp = await unauthed_client.get("/setup")
+        assert resp.status_code == 200
+        assert '<details class="setup-advanced" open' not in resp.text
+        assert LATENCY_BOOST_TEXT in resp.text
+        assert STANDALONE_CLIENTS_TEXT in resp.text
+        assert LOCAL_KEY_WARNING_TEXT in resp.text
+        assert LOCAL_KEY_NOTE_TEXT in resp.text
 
     async def test_setup_page_falls_back_to_this_ip_placeholder_when_no_mdns_name(
         self,

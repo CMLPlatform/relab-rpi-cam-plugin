@@ -119,16 +119,9 @@ def _log_startup_banner() -> None:
     the current operating mode, the setup page URL, and a hint for retrieving
     the local API key from the command line.
     """
-    import socket as _socket
-
-    try:
-        hostname = _socket.gethostname()
-    except OSError:
-        hostname = "localhost"
-
     base_url = urlparse(str(settings.base_url))
     setup_port = base_url.port or 8018
-    setup_url = f"http://{hostname}.local:{setup_port}/setup"
+    setup_url = f"http://<this-ip>:{setup_port}/setup"
 
     if settings.relay_enabled:
         mode_line = f"PAIRED      camera_id={settings.relay_camera_id}"
@@ -138,6 +131,8 @@ def _log_startup_banner() -> None:
         mode_line = "IDLE        set PAIRING_BACKEND_URL in .env to enable pairing"
 
     local_key_hint = "run:  just show-key" if settings.local_api_key else "not yet generated"
+    pairing_hint = "pairing code will appear below in a boxed log banner" if settings.pairing_backend_url else None
+    pairing_hint_line = f"  Note     : {pairing_hint}\n" if pairing_hint else ""
 
     sep = "═" * 54
     banner = (
@@ -145,6 +140,7 @@ def _log_startup_banner() -> None:
         f"  ReLab RPi Camera  v{version}\n"
         f"  Setup    : {setup_url}\n"
         f"  Mode     : {mode_line}\n"
+        f"{pairing_hint_line}"
         f"  Local key: {local_key_hint}\n"
         f"{sep}"
     )
