@@ -1,5 +1,6 @@
 """Camera management dependencies for FastAPI."""
 
+import contextlib
 import logging
 from datetime import UTC, datetime
 from typing import Annotated
@@ -22,12 +23,6 @@ def get_camera_manager() -> CameraManager:
 CameraManagerDependency = Annotated[CameraManager, Depends(get_camera_manager)]
 
 
-async def camera_to_standby() -> None:
-    """Close camera instance if there is no active stream."""
-    if not camera_manager.stream.is_active:
-        await camera_manager.cleanup()
-
-
 async def check_stream_duration() -> None:
     """Stop streams that exceed maximum duration."""
     if (
@@ -39,3 +34,24 @@ async def check_stream_duration() -> None:
             await camera_manager.stop_streaming()
         except RuntimeError as e:
             logger.exception("Failed to stop stream when exceeding max duration", exc_info=e)
+
+
+async def check_stream_health() -> None:
+    """Monitor stream health: verify the stream is still active and recording.
+
+    If the stream becomes unhealthy (e.g., ffmpeg crashed), stops the stream
+    to allow recovery on next start request.
+    """
+    if not camera_manager.stream.is_active:
+        return
+
+    try:
+        # Try to get stream info — this will fail if camera is not recording properly
+        stream_info = await camera_manager.get_stream_info()
+        if stream_info is None:
+            logger.warning("Stream info became unavailable; stopping stream")
+            await camera_manager.stop_streaming()
+    except (OSError, RuntimeError) as e:
+        logger.warning("Stream health check failed: %s. Stopping stream for recovery.", e)
+        with contextlib.suppress(RuntimeError):
+            await camera_manager.stop_streaming()

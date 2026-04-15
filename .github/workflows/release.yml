@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+# Do not cancel in-progress releases
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # commitizen needs full history to find the last tag
+
+      - name: Bump version
+        id: cz
+        uses: commitizen-tools/commitizen-action@0.26.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push version bump and tag
+        if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
+        run: git push --follow-tags
+
+      - name: Create GitHub release
+        if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ steps.cz.outputs.next_version }}" --title "${{ steps.cz.outputs.next_version }}" --generate-notes

@@ -1,0 +1,73 @@
+loki.source.file "app_logs" {
+  targets = [
+    {
+      __path__ = "/var/log/app/*.log",
+    },
+  ]
+  forward_to = [loki.process.app.receiver]
+
+  file_match {
+    enabled     = true
+    sync_period = "10s"
+  }
+}
+
+loki.process "app" {
+  stage.json {
+    expressions = {
+      level     = "level",
+      timestamp = "timestamp",
+    }
+  }
+
+  stage.timestamp {
+    source = "timestamp"
+    format = "RFC3339"
+  }
+
+  stage.static_labels {
+    values = {
+      job      = "rpi-cam-plugin",
+      instance = sys.env("OBSERVABILITY_INSTANCE"),
+    }
+  }
+
+  stage.labels {
+    values = {
+      level = "",
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+  }
+}
+
+// --- Metrics pipeline (optional) ---------------------------------------------
+// Scrapes the plugin's /metrics endpoint and forwards to a Prometheus-compatible
+// remote_write receiver. The whole pipeline no-ops cleanly when
+// PROMETHEUS_REMOTE_WRITE_URL is empty: prometheus.scrape still runs but the
+// remote_write sink drops samples if its url is blank.
+
+prometheus.scrape "rpi_cam" {
+  targets = [
+    {
+      __address__ = "app:8018",
+      __metrics_path__ = "/metrics",
+      instance    = sys.env("OBSERVABILITY_INSTANCE"),
+      job         = "rpi-cam-plugin",
+    },
+  ]
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.remote_write "local" {
+  endpoint {
+    url = sys.env("PROMETHEUS_REMOTE_WRITE_URL")
+  }
+}
