@@ -53,6 +53,10 @@ The seam is split intentionally now:
 - **Private device contract**: shared `relab_rpi_cam_models` DTOs cover
   pairing, relay envelopes, local-access bootstrap, and Pi-initiated upload acks
 
+The uv workspace link to `relab_rpi_cam_models` in this repo is a local
+development convenience only. The release contract for other repos and
+deployments is the published PyPI package version.
+
 Bootstrap precedence is explicit:
 
 1. env-backed `Settings`

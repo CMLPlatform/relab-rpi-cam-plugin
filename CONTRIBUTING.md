@@ -145,6 +145,10 @@ Shared cross-repo contract DTOs live in the `relab_rpi_cam_models` package. Keep
 1. Update version in `relab_rpi_cam_models/pyproject.toml`
 1. Rebuild the main project's lock file: `uv lock --upgrade relab-rpi-cam-models`
 
+The workspace source override is for local co-development only. Treat the
+published `relab-rpi-cam-models` package version as the actual cross-repo
+contract baseline.
+
 ## Before Submitting a PR
 
 1. **Run tests**: `uv run pytest tests`
@@ -185,6 +189,14 @@ The same ownership rule applies to orchestration code:
 
 - `PairingService` is the only production pairing entrypoint
 - `RelayService` is the only production relay entrypoint
+
+Contract ownership follows the same boundary:
+
+- backend OpenAPI is the only frontend/public contract
+- `relab_rpi_cam_models` is the private backend<->plugin device seam
+- frontend code should not import private seam DTOs directly
+- new cross-repo device payloads go into the shared models package first,
+  rather than being duplicated into backend/plugin by hand
 
 ### Connection
 
