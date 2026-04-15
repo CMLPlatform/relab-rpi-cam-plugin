@@ -1,7 +1,9 @@
 """Tests for setup page endpoints."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
@@ -106,3 +108,52 @@ class TestSetupPage:
         )
         resp = await unauthed_client.get("/setup")
         assert PAIRED_SUCCESS_TEXT in resp.text
+
+    async def test_setup_page_shows_unpair_button_when_relay_enabled(
+        self,
+        unauthed_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Unpair button is visible when relay credentials are configured."""
+        monkeypatch.setattr(settings, "relay_backend_url", "wss://example.com/ws")
+        monkeypatch.setattr(settings, "relay_camera_id", "cam-1")
+        monkeypatch.setattr(settings, "relay_key_id", "key-1")
+        monkeypatch.setattr(settings, "relay_private_key_pem", "pem")
+        resp = await unauthed_client.get("/setup")
+        assert resp.status_code == 200
+        assert "unpair()" in resp.text
+
+
+class TestUnpair:
+    """Tests for DELETE /pairing/credentials."""
+
+    async def test_unpair_returns_204(self, unauthed_client: AsyncClient) -> None:
+        """Endpoint returns 204 No Content immediately."""
+        with (
+            patch("app.api.routers.setup.delete_relay_credentials"),
+            patch("app.api.routers.setup.clear_runtime_relay_credentials"),
+            patch("app.api.routers.setup.asyncio.sleep"),
+        ):
+            resp = await unauthed_client.delete("/pairing/credentials")
+            await asyncio.sleep(0)  # let the background task run
+        assert resp.status_code == 204
+
+    async def test_unpair_deletes_credentials_and_clears_settings(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """Credentials file is deleted and runtime settings are cleared after the brief delay."""
+        deleted: list[bool] = []
+        cleared: list[bool] = []
+
+        with (
+            patch("app.api.routers.setup.delete_relay_credentials", side_effect=lambda: deleted.append(True)),
+            patch("app.api.routers.setup.clear_runtime_relay_credentials", side_effect=lambda: cleared.append(True)),
+            patch("app.api.routers.setup.asyncio.sleep"),  # skip the 0.1s delay
+        ):
+            resp = await unauthed_client.delete("/pairing/credentials")
+            await asyncio.sleep(0)  # yield so the background task executes
+
+        assert resp.status_code == 204
+        assert deleted == [True]
+        assert cleared == [True]

@@ -39,11 +39,13 @@ h1 {
     background: #0056b3;
 }
 
-.btn.logout {
+.btn.logout,
+.btn--danger {
     background: #dc3545;
 }
 
-.btn.logout:hover {
+.btn.logout:hover,
+.btn--danger:hover {
     background: #c82333;
 }
 
