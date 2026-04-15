@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import socket
 
+import psutil
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -40,28 +41,22 @@ class LocalAccessInfo(BaseModel):
 
 
 def _get_candidate_urls() -> list[str]:
-    """Return all non-loopback IPv4 base URLs for this host."""
+    """Return all non-loopback IPv4 base URLs for this host.
+
+    Uses psutil.net_if_addrs() to enumerate every network interface so that
+    Ethernet LAN addresses (e.g. eth0: 192.168.x.x) are included alongside the
+    primary WiFi/outbound address.  The hostname-based approach used by
+    socket.getaddrinfo() is unreliable on Linux — it typically resolves to only
+    one interface and misses secondary ones.
+    """
     ips: set[str] = set()
 
-    # Primary outbound interface — the IP the system would use to reach the internet.
-    # Works even on air-gapped setups because connect() doesn't actually send packets.
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))
-            ips.add(s.getsockname()[0])
-    except OSError:
-        pass
-
-    # All IPs bound to this hostname
-    try:
-        for _fam, _typ, _proto, _name, addr in socket.getaddrinfo(
-            socket.gethostname(), None, socket.AF_INET
-        ):
-            ip: str = addr[0]
-            if not ip.startswith("127."):
-                ips.add(ip)
-    except OSError:
-        pass
+    # Enumerate every network interface via psutil — the only reliable way to
+    # capture all IPs when the Pi has both WiFi and Ethernet active.
+    for _iface, addrs in psutil.net_if_addrs().items():
+        for addr in addrs:
+            if addr.family == socket.AF_INET and not addr.address.startswith("127."):
+                ips.add(addr.address)
 
     return [f"http://{ip}:{_API_PORT}" for ip in sorted(ips)]
 
