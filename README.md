@@ -121,6 +121,7 @@ The local API key serves **two independent use-cases**:
 | **Standalone / custom clients** | No | Call the camera API directly with `X-API-Key: <key>` — no relay needed. Useful for scripts, custom dashboards, or standalone mode (see below). |
 
 > **The local key does not replace relay pairing.** To register a camera in the RELab app you still need to complete the relay pairing flow (6-character code). The local key is for latency improvement once already paired, or for non-RELab access.
+> **Browser (web) limitation:** browsers block HTTP requests from HTTPS pages (mixed content policy). Direct Ethernet connection only works in the native iOS/Android app — the web version of RELab always uses the relay.
 
 ### Setup — zero configuration required
 
