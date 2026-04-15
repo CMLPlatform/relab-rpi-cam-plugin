@@ -19,6 +19,7 @@ from app.utils.pairing import _CREDENTIALS_FILE, load_relay_credentials
 BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
 _HTTPS_SCHEME = "https"
 _RELAY_AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
+DEFAULT_PAIRING_BACKEND_URL = "https://api.cml-relab.org"
 logger = logging.getLogger(__name__)
 
 
@@ -140,7 +141,7 @@ class Settings(BaseSettings):
 
     # Pairing: set this to the backend's HTTP(S) API URL to enable zero-config pairing.
     # When set and relay credentials are absent, the RPi enters pairing mode on boot.
-    pairing_backend_url: str = ""  # https://your-backend/api
+    pairing_backend_url: str = DEFAULT_PAIRING_BACKEND_URL
     pairing_register_timeout_retry_s: int = 1  # Delay before retrying a timed-out pairing register request
     pairing_poll_interval_s: int = 3  # Delay between pairing poll requests and after poll timeouts
 

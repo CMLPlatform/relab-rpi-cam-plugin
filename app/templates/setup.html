@@ -103,14 +103,39 @@
     <p>Pair this camera with the ReLab app without typing relay credentials by hand.</p>
   </section>
 
-  {% if pairing.status in ('waiting', 'registering') and pairing.code %}
-    <section class="setup-panel">
-      <div class="setup-copy">
+  <section class="setup-status">
+    <div class="setup-status-grid">
+      {% if relay_enabled or pairing.status == status_paired %}
+        <div class="status-chip status-chip--success">Paired</div>
+      {% elif pairing.status in ('waiting', 'registering') and pairing.code %}
         <div class="status-chip status-chip--live">Pairing ready</div>
-        <h2>Enter this code in ReLab</h2>
-        <p>
-          Go to <strong>Cameras &rarr; Add Camera</strong> in the ReLab app, then enter the code below.
-        </p>
+      {% elif pairing.status == status_error %}
+        <div class="status-chip status-chip--muted">Needs attention</div>
+      {% else %}
+        <div class="status-chip status-chip--muted">Not connected</div>
+      {% endif %}
+
+      <h2>Connection status</h2>
+
+      {% if relay_enabled %}
+        <p class="online">The camera is paired and the relay is connected.</p>
+        <div>
+          <button class="btn btn--danger" onclick="unpair()">Unpair</button>
+        </div>
+        <table style="margin-top:8px">
+          <tr>
+            <td>Relay backend</td>
+            <td><code>{{ relay_backend_url or 'not set' }}</code></td>
+          </tr>
+          <tr>
+            <td>Camera ID</td>
+            <td>{% if relay_camera_id %}<code>{{ relay_camera_id }}</code>{% else %}<em>not set</em>{% endif %}</td>
+          </tr>
+        </table>
+      {% elif pairing.status == status_paired %}
+        <p class="online">The camera is paired successfully and is connecting to the backend now.</p>
+      {% elif pairing.status in ('waiting', 'registering') and pairing.code %}
+        <p class="online">Enter this code in the ReLab app to finish pairing.</p>
         <div class="pairing-code">{{ pairing.code }}</div>
         <div class="pairing-meta">
           <span
@@ -126,53 +151,57 @@
           </div>
           <span>Keep this page open until the app claims the code.</span>
         </div>
-      </div>
-    </section>
-  {% elif pairing.status == status_paired %}
-    <section class="setup-status">
-      <div class="setup-status-grid">
-        <div class="status-chip status-chip--success">Paired</div>
-        <h2>Pairing complete</h2>
-        <p class="online">The camera is paired successfully and is connecting to the backend now.</p>
-      </div>
-    </section>
-  {% elif pairing.status == status_error %}
-    <section class="setup-status">
-      <div class="setup-status-grid">
-        <div class="status-chip status-chip--muted">Retrying</div>
-        <h2>Pairing issue</h2>
+      {% elif pairing.status == status_error %}
         <p class="offline">{{ pairing.error or 'Pairing error — retrying…' }}</p>
-      </div>
-    </section>
-  {% endif %}
+      {% else %}
+        <p class="offline">No relay is active yet. The device will keep trying to pair automatically.</p>
+      {% endif %}
 
-  <section class="setup-status">
-    <div class="setup-status-grid">
-      {% if relay_enabled %}
-        <div class="status-chip status-chip--live">Relay configured</div>
-      {% else %}
-        <div class="status-chip status-chip--muted">Not configured</div>
-      {% endif %}
-      <h2>Connection</h2>
-      {% if relay_enabled %}
-        <div>
-          <button class="btn btn--danger" onclick="unpair()">Unpair</button>
-        </div>
-        <details style="margin-top:4px">
-          <summary style="cursor:pointer;font-size:0.85em;opacity:0.6">Connection details</summary>
-          <table style="margin-top:8px">
-            <tr><td>Backend URL</td><td><code>{{ relay_backend_url or 'not set' }}</code></td></tr>
-            <tr><td>Camera ID</td><td>{% if relay_camera_id %}<code>{{ relay_camera_id }}</code>{% else %}<em>not set</em>{% endif %}</td></tr>
-          </table>
-        </details>
-      {% else %}
-        <p>WebSocket relay has not been configured. To pair this camera:</p>
-        <ol style="margin:8px 0 0 20px;line-height:1.7">
-          <li>Add <code>PAIRING_BACKEND_URL=https://api.cml-relab.org</code> to your <code>.env</code> file.</li>
-          <li>Restart the plugin (<code>docker compose restart app</code>).</li>
-          <li>This page will show a pairing code to enter in the ReLab app.</li>
-        </ol>
-      {% endif %}
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;font-size:0.9em;opacity:0.7">Pairing URL and debugging</summary>
+        <table style="margin-top:8px">
+          <tr>
+            <td>Pairing backend URL</td>
+            <td><code>{{ pairing_backend_url }}</code></td>
+          </tr>
+          <tr>
+            <td>Backend preset</td>
+            <td>
+              {% if pairing_backend_url == default_pairing_backend_url %}
+                <span class="online">Default RELab backend</span>
+              {% else %}
+                <span class="offline">Custom backend</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td>How to change it</td>
+            <td>
+              Set <code>PAIRING_BACKEND_URL=...</code> in <code>.env</code> or your Compose environment,
+              then restart the app with <code>docker compose restart app</code>.
+            </td>
+          </tr>
+          <tr>
+            <td>Backend status</td>
+            <td>
+              {% if pairing_backend_reachable %}
+                <span class="online">Reachable</span>
+              {% else %}
+                <span class="offline">Not reachable</span>
+              {% endif %}
+              {% if pairing.status == status_error %}
+                <span style="display:block;margin-top:4px">
+                  {{ pairing.error or 'Pairing backend reachable, but pairing is failing.' }}
+                </span>
+              {% elif not relay_enabled and pairing_backend_reachable %}
+                <span style="display:block;margin-top:4px">
+                  The backend responds, so the camera should enter pairing mode automatically on startup.
+                </span>
+              {% endif %}
+            </td>
+          </tr>
+        </table>
+      </details>
     </div>
   </section>
 
@@ -185,27 +214,11 @@
       {% else %}
         <div class="status-chip status-chip--muted">Local mode disabled</div>
       {% endif %}
-      <h2>Direct Connection</h2>
+      <h2>Local access</h2>
       <p>
-        The local API key enables two use-cases:
-      </p>
-      <ul style="margin:4px 0 8px 20px;line-height:1.8">
-        <li>
-          <strong>Latency boost (relay-paired cameras):</strong> once paired, the ReLab app
-          receives this key automatically through the relay. Connect an Ethernet cable and the
-          app silently switches to direct access — preview latency drops from ~2 s to ~0.4 s.
-          No manual setup required.
-        </li>
-        <li>
-          <strong>Standalone / non-ReLab clients:</strong> use this key directly with an
-          <code>X-API-Key</code> header to call the camera API without going through the relay
-          at all. Useful for scripts, custom dashboards, or standalone mode.
-        </li>
-      </ul>
-      <p style="font-size:0.85em;opacity:0.7;margin-bottom:8px">
-        ⚠ The local key does <strong>not</strong> let you register this camera in the ReLab app.
-        Registration requires relay pairing (the 6-character code in the <em>Connection</em>
-        section above).
+        Connect an Ethernet cable (or USB-C to Ethernet adapter) between this camera and your
+        desktop. The ReLab app automatically receives the local API key through the relay and
+        configures direct access — no manual setup required.
       </p>
       {% if local_api_key %}
         <table>
@@ -222,32 +235,19 @@
           <tr>
             <td>HLS preview</td>
             <td>
-              {% if primary_ip %}
-                <code>http://{{ primary_ip }}:8888/cam-preview/index.m3u8</code>
-              {% elif mdns_name %}
-                <code>http://{{ mdns_name }}:8888/cam-preview/index.m3u8</code>
-              {% else %}
-                <code>http://&lt;pi-ip&gt;:8888/cam-preview/index.m3u8</code>
-              {% endif %}
+              <code>http://{{ connection_host }}:8888/cam-preview/index.m3u8</code>
             </td>
           </tr>
           <tr>
             <td>API</td>
             <td>
-              {% if primary_ip %}
-                <code>http://{{ primary_ip }}:8018</code>
-              {% elif mdns_name %}
-                <code>http://{{ mdns_name }}:8018</code>
-              {% else %}
-                <code>http://&lt;pi-ip&gt;:8018</code>
-              {% endif %}
+              <code>http://{{ connection_host }}:8018</code>
             </td>
           </tr>
         </table>
         <p style="font-size:0.85em;opacity:0.7">
-          For relay-paired cameras this key is delivered automatically — you never need to copy
-          it unless you are writing your own client or using standalone mode.
-          The WebSocket relay keeps running in parallel; remote access is unaffected.
+          Only needed for manual setup or non-ReLab clients (<code>X-API-Key</code> header).
+          The WebSocket relay keeps running in parallel — remote access is unaffected.
         </p>
       {% endif %}
     </div>
