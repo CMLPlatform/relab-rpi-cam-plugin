@@ -24,6 +24,7 @@ router = APIRouter(tags=["local-access"])
 
 _API_PORT = 8018
 _MEDIA_PORT = 8888
+_DOCKERISH_INTERFACE_PREFIXES = ("docker", "veth", "br-", "virbr", "tap", "tun", "zt")
 
 
 class LocalAccessInfo(BaseModel):
@@ -49,16 +50,27 @@ def _get_candidate_urls() -> list[str]:
     socket.getaddrinfo() is unreliable on Linux — it typically resolves to only
     one interface and misses secondary ones.
     """
-    ips: set[str] = set()
+    prioritized_ips: list[tuple[int, str]] = []
 
     # Enumerate every network interface via psutil — the only reliable way to
     # capture all IPs when the Pi has both WiFi and Ethernet active.
-    for _iface, addrs in psutil.net_if_addrs().items():
+    for iface, addrs in psutil.net_if_addrs().items():
         for addr in addrs:
-            if addr.family == socket.AF_INET and not addr.address.startswith("127."):
-                ips.add(addr.address)
+            if addr.family != socket.AF_INET or addr.address.startswith("127."):
+                continue
+            prioritized_ips.append((_interface_priority(iface), addr.address))
 
-    return [f"http://{ip}:{_API_PORT}" for ip in sorted(ips)]
+    return [f"http://{ip}:{_API_PORT}" for _priority, ip in sorted(prioritized_ips)]
+
+
+def _interface_priority(iface: str) -> int:
+    """Prefer physical LAN interfaces over Docker and tunnel interfaces."""
+    normalized = iface.lower()
+    if normalized.startswith(_DOCKERISH_INTERFACE_PREFIXES):
+        return 100
+    if normalized.startswith(("eth", "en", "wlan", "wl")):
+        return 0
+    return 10
 
 
 def _get_mdns_name() -> str | None:
