@@ -126,7 +126,7 @@ class CameraManager:
         a successful synchronous upload the local file is deleted. On failure the
         file is moved into the upload queue for exponential-backoff retry.
         """
-        upload_meta = dict(upload_metadata or {})
+        upload_meta = upload_metadata or {}
 
         await self._acquire_lock()
         try:
