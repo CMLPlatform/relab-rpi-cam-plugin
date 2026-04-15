@@ -19,10 +19,18 @@
 
 {% block extra_scripts %}
   <script>
-    async function unpair() {
-      if (!confirm("Unpair this camera? It will disconnect from the backend and re-enter pairing mode.")) return;
+    function unpair() {
+      document.getElementById("unpair-dialog").showModal();
+    }
+
+    async function confirmUnpair() {
+      const dialog = document.getElementById("unpair-dialog");
+      const btn = document.getElementById("unpair-confirm-btn");
+      btn.disabled = true;
+      btn.textContent = "Unpairing…";
       try {
         const resp = await fetch("/pairing/credentials", { method: "DELETE" });
+        dialog.close();
         if (resp.ok) {
           // Small delay so the background reset task can run before the reload.
           // The task sleeps 100 ms then clears credentials and restarts pairing.
@@ -31,7 +39,11 @@
           alert("Unpair failed (" + resp.status + "). Try again.");
         }
       } catch {
+        dialog.close();
         alert("Unpair request failed. Check your connection.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Unpair";
       }
     }
   </script>
@@ -154,7 +166,12 @@
           </table>
         </details>
       {% else %}
-        <p>WebSocket relay credentials have not been configured yet.</p>
+        <p>WebSocket relay has not been configured. To pair this camera:</p>
+        <ol style="margin:8px 0 0 20px;line-height:1.7">
+          <li>Add <code>PAIRING_BACKEND_URL=https://api.cml-relab.org</code> to your <code>.env</code> file.</li>
+          <li>Restart the plugin (<code>docker compose restart app</code>).</li>
+          <li>This page will show a pairing code to enter in the ReLab app.</li>
+        </ol>
       {% endif %}
     </div>
   </section>
@@ -186,8 +203,30 @@
               </button>
             </td>
           </tr>
-          <tr><td>HLS preview</td><td><code>http://&lt;this-ip&gt;:8888/cam-preview/index.m3u8</code></td></tr>
-          <tr><td>API</td><td><code>http://&lt;this-ip&gt;:8018</code></td></tr>
+          <tr>
+            <td>HLS preview</td>
+            <td>
+              {% if primary_ip %}
+                <code>http://{{ primary_ip }}:8888/cam-preview/index.m3u8</code>
+              {% elif mdns_name %}
+                <code>http://{{ mdns_name }}:8888/cam-preview/index.m3u8</code>
+              {% else %}
+                <code>http://&lt;pi-ip&gt;:8888/cam-preview/index.m3u8</code>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td>API</td>
+            <td>
+              {% if primary_ip %}
+                <code>http://{{ primary_ip }}:8018</code>
+              {% elif mdns_name %}
+                <code>http://{{ mdns_name }}:8018</code>
+              {% else %}
+                <code>http://&lt;pi-ip&gt;:8018</code>
+              {% endif %}
+            </td>
+          </tr>
         </table>
         <p style="font-size:0.85em;opacity:0.7">
           Only needed for manual setup or non-ReLab clients (<code>X-API-Key</code> header).
@@ -196,5 +235,13 @@
       {% endif %}
     </div>
   </section>
+  <dialog id="unpair-dialog" style="border:1px solid #ccc;border-radius:8px;padding:24px;max-width:380px;box-shadow:0 4px 24px rgba(0,0,0,0.15)">
+    <h3 style="margin-top:0">Unpair this camera?</h3>
+    <p style="margin-bottom:20px">It will disconnect from the backend and re-enter pairing mode. You can re-pair it at any time.</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="document.getElementById('unpair-dialog').close()" style="background:#6c757d">Cancel</button>
+      <button class="btn btn--danger" id="unpair-confirm-btn" onclick="confirmUnpair()">Unpair</button>
+    </div>
+  </dialog>
 </main>
 {% endblock %}

@@ -137,7 +137,7 @@ body.setup-page p {
 }
 
 .setup-shell {
-    width: min(720px, calc(100vw - 32px));
+    width: min(560px, calc(100vw - 32px));
     margin: 0 auto;
     padding: 36px 0 48px;
     display: grid;
@@ -155,7 +155,7 @@ body.setup-page p {
 }
 
 .setup-hero {
-    padding: 24px 28px;
+    padding: 20px 22px;
 }
 
 .setup-hero h1 {
@@ -165,7 +165,7 @@ body.setup-page p {
 
 .setup-hero p {
     color: #475569;
-    max-width: 64ch;
+    max-width: 52ch;
 }
 
 .setup-eyebrow {
@@ -285,7 +285,7 @@ body.setup-page p {
 }
 
 .setup-status {
-    padding: 20px 24px;
+    padding: 16px 18px;
 }
 
 .setup-status-grid {
@@ -337,10 +337,18 @@ body.setup-page p {
 
 /* Camera preview player */
 .preview-video {
-    width: min(100%, 420px);
+    width: min(100%, 360px);
     aspect-ratio: 4/3;
     border-radius: 12px;
     background: #0f172a;
+    display: block;
+}
+
+.capture-preview {
+    width: min(100%, 320px);
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 12px;
     display: block;
 }
 
@@ -355,7 +363,7 @@ body.setup-page p {
 
 @media (max-width: 740px) {
     .setup-shell {
-        width: min(100vw - 24px, 720px);
+        width: min(100vw - 24px, 560px);
         padding-top: 18px;
     }
 

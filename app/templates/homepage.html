@@ -114,6 +114,23 @@
     </div>
   </section>
 
+  <section class="setup-status">
+    <div class="setup-status-grid">
+      <div class="status-chip status-chip--muted">Recent capture</div>
+      <h2>Last Image</h2>
+      {% if last_image_url %}
+        <a href="{{ last_image_url }}" target="_blank" rel="noopener">{{ last_image_url }}</a>
+        <img
+          class="capture-preview"
+          src="{{ last_image_url }}"
+          alt="Latest captured image"
+        />
+      {% else %}
+        <p>No image has been captured yet.</p>
+      {% endif %}
+    </div>
+  </section>
+
   {% if youtube_url %}
   <section class="setup-status">
     <div class="setup-status-grid">

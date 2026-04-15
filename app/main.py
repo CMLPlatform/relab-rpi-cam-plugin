@@ -132,7 +132,7 @@ def _log_startup_banner() -> None:
     elif settings.pairing_backend_url:
         mode_line = "PAIRING     waiting for code to be claimed in the ReLab app"
     else:
-        mode_line = "IDLE        no pairing backend configured"
+        mode_line = "IDLE        set PAIRING_BACKEND_URL in .env to enable pairing"
 
     local_key_hint = "run:  just show-key" if settings.local_api_key else "not yet generated"
 

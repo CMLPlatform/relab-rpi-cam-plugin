@@ -17,9 +17,17 @@ router = APIRouter()
 async def homepage(request: Request, camera_manager: CameraManagerDependency) -> HTMLResponse:
     """Render homepage."""
     youtube_url: str | None = None
+    last_image_url = camera_manager.last_image_url
     if camera_manager.stream.mode == StreamMode.YOUTUBE and camera_manager.stream.url:
         youtube_url = str(camera_manager.stream.url)
-    return templates.TemplateResponse(request, "homepage.html", {"youtube_url": youtube_url})
+    return templates.TemplateResponse(
+        request,
+        "homepage.html",
+        {
+            "youtube_url": youtube_url,
+            "last_image_url": last_image_url,
+        },
+    )
 
 
 @router.get("/favicon.ico")
