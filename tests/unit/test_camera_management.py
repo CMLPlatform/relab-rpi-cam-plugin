@@ -324,6 +324,8 @@ class TestCameraManagerCapture:
         assert response.metadata.camera_properties.camera_model == MOCK_CAMERA
         assert response.image_id == stub_image_id
         backend.capture_image.assert_awaited_once()
+        status = await manager.get_status()
+        assert str(status.last_image_url) == EXAMPLE_IMAGE_URL
 
 
 class TestCameraManagerStopStreaming:
@@ -361,6 +363,7 @@ class TestCameraManagerGetStatus:
 
         assert status.current_mode is None
         assert status.stream is None
+        assert status.last_image_url is None
 
 
 class TestCameraManagerControls:

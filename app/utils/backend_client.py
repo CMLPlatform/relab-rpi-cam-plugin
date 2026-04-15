@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 _UPLOAD_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=5.0)
 _UPLOAD_ENDPOINT_TEMPLATE = "/plugins/rpi-cam/cameras/{camera_id}/image-upload"
+_SELF_UNPAIR_ENDPOINT_TEMPLATE = "/plugins/rpi-cam/cameras/{camera_id}/self"
+_SELF_UNPAIR_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
 
 
 class BackendUploadError(RuntimeError):
@@ -104,3 +106,50 @@ async def upload_image(
         raise BackendUploadError(msg_2) from exc
 
     return UploadedImageInfo(image_id=image_id, image_url=image_url)
+
+
+async def notify_self_unpair() -> None:
+    """Tell the backend to delete this camera's registration.
+
+    Called when the operator unpairs via the local /setup page. This is
+    best-effort — if the backend is unreachable the camera will remain in the
+    backend's database until the operator deletes it manually from the app.
+    Any error is logged as a warning, never raised, so the local unpair always
+    completes regardless of backend connectivity.
+    """
+    if not settings.pairing_backend_url:
+        logger.debug("notify_self_unpair: no PAIRING_BACKEND_URL, skipping")
+        return
+    if not settings.relay_enabled:
+        logger.debug("notify_self_unpair: relay credentials missing, skipping")
+        return
+
+    base_url = settings.pairing_backend_url.rstrip("/")
+    endpoint = _SELF_UNPAIR_ENDPOINT_TEMPLATE.format(camera_id=settings.relay_camera_id)
+    url = f"{base_url}{endpoint}"
+
+    try:
+        assertion = build_device_assertion()
+    except (ValueError, TypeError) as exc:
+        logger.warning("notify_self_unpair: could not mint device assertion: %s", exc)
+        return
+
+    headers = {"Authorization": f"Bearer {assertion}"}
+    try:
+        async with httpx.AsyncClient(timeout=_SELF_UNPAIR_TIMEOUT) as client:
+            response = await client.delete(url, headers=headers)
+        if response.status_code in (204, 200, 404):
+            logger.info(
+                "notify_self_unpair: backend acknowledged unpair of camera %s",
+                settings.relay_camera_id,
+            )
+        else:
+            logger.warning(
+                "notify_self_unpair: backend returned HTTP %d — camera may remain registered",
+                response.status_code,
+            )
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "notify_self_unpair: network error reaching backend (%s) — camera may remain registered",
+            exc,
+        )
