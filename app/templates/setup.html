@@ -26,12 +26,12 @@
     }
 
     function pairingButtonFeedbackSvg(state) {
-      if (state === "copied") {
+      if (state === "copied" || state === "success") {
         return `
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M20.25 6.75 9.75 17.25 3.75 11.25" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
           </svg>
-          <span class="sr-only">Copied</span>
+          <span class="sr-only">${state === "success" ? "Refreshed" : "Copied"}</span>
         `;
       }
       return `
@@ -99,17 +99,48 @@
       try {
         const resp = await fetch("/pairing/code/refresh", { method: "POST" });
         if (!resp.ok) {
+          if (button) {
+            setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
+            window.setTimeout(() => {
+              if (button.dataset.defaultHtml) {
+                button.innerHTML = button.dataset.defaultHtml;
+              }
+              button.dataset.feedbackState = "";
+              button.setAttribute("aria-label", previousLabel);
+              button.setAttribute("title", previousTitle);
+            }, 1200);
+          }
           alert("Could not refresh the pairing code (" + resp.status + ").");
           return;
         }
-        window.setTimeout(() => window.location.reload(), 250);
+        if (button) {
+          setPairingButtonFeedback(button, "success", "Pairing code refreshed", "Pairing code refreshed");
+          window.setTimeout(() => {
+            if (button.dataset.defaultHtml) {
+              button.innerHTML = button.dataset.defaultHtml;
+            }
+            button.dataset.feedbackState = "";
+            button.setAttribute("aria-label", previousLabel);
+            button.setAttribute("title", previousTitle);
+          }, 1200);
+        }
+        window.setTimeout(() => window.location.reload(), 700);
       } catch {
+        if (button) {
+          setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
+          window.setTimeout(() => {
+            if (button.dataset.defaultHtml) {
+              button.innerHTML = button.dataset.defaultHtml;
+            }
+            button.dataset.feedbackState = "";
+            button.setAttribute("aria-label", previousLabel);
+            button.setAttribute("title", previousTitle);
+          }, 1200);
+        }
         alert("Could not refresh the pairing code. Check your connection.");
       } finally {
         if (button) {
           button.disabled = false;
-          button.setAttribute("aria-label", previousLabel);
-          button.setAttribute("title", previousTitle);
         }
       }
     }
