@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import uuid
+from io import BytesIO
 from typing import TYPE_CHECKING
 
 from pydantic import AnyUrl
@@ -192,6 +193,29 @@ class CameraManager:
             image_url=stored.image_url,
             expires_at=stored.expires_at,
         )
+
+    async def capture_snapshot_jpeg(self) -> bytes:
+        """Capture a low-resolution preview frame as JPEG bytes.
+
+        Prefer the lores stream when the hardware backend exposes it; fall back
+        to a normal still capture on backends that do not keep a persistent
+        preview buffer available in tests or on non-Picamera2 hardware.
+        """
+        await self._acquire_lock()
+        try:
+            backend_camera = self.backend.camera
+            if backend_camera is not None:
+                await self.backend.open(CameraMode.VIDEO)
+                frame = await asyncio.to_thread(backend_camera.capture_image, "lores")
+            else:
+                result = await self.backend.capture_image()
+                frame = result.image
+        finally:
+            self.lock.release()
+
+        buffer = BytesIO()
+        await asyncio.to_thread(frame.save, buffer, format="JPEG", quality=82, optimize=True)
+        return buffer.getvalue()
 
     def _require_streaming_backend(self) -> StreamingCameraBackend:
         """Return the backend narrowed to StreamingCameraBackend, or raise."""
