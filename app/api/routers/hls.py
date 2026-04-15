@@ -31,9 +31,11 @@ from pydantic import AfterValidator
 
 from app.api.dependencies.camera_management import CameraManagerDependency
 from app.api.services.camera_manager import CameraManager
-from app.api.services.preview_pipeline import PreviewPipelineManager, get_preview_pipeline_manager
+from app.api.services.preview_pipeline import PreviewPipelineManager
+from app.core.runtime import get_request_runtime
+from app.utils.logging import build_log_extra
 from app.utils.network import is_local_client
-from app.utils.relay_state import mark_hls_activity
+from app.utils.relay_state import RelayRuntimeState
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +55,20 @@ def _no_traversal(v: str) -> str:
 _MEDIAMTX_HLS_BASE = "http://localhost:8888"
 _HLS_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=5.0, pool=2.0)
 _PREVIEW_HLS_PREFIX = "cam-preview/"
-PreviewPipelineDependency = Annotated[PreviewPipelineManager, Depends(get_preview_pipeline_manager)]
+
+
+def get_preview_pipeline(request: Request) -> PreviewPipelineManager:
+    """Resolve the preview pipeline from the request runtime."""
+    return get_request_runtime(request).preview_pipeline
+
+
+def get_relay_state(request: Request) -> RelayRuntimeState:
+    """Resolve relay activity state from the request runtime."""
+    return get_request_runtime(request).relay_state
+
+
+PreviewPipelineDependency = Annotated[PreviewPipelineManager, Depends(get_preview_pipeline)]
+RelayStateDependency = Annotated[RelayRuntimeState, Depends(get_relay_state)]
 
 
 def _is_local_client(host: str | None) -> bool:
@@ -80,7 +95,7 @@ async def _wake_preview_encoder(
     except RuntimeError as exc:
         # Leave the response path to report MediaMTX's current state. The next
         # playlist poll will retry after the sleeper has seen the HLS activity.
-        logger.warning("Failed to wake preview encoder for HLS request: %s", exc)
+        logger.warning("Failed to wake preview encoder for HLS request: %s", exc, extra=build_log_extra())
 
 
 @router.get(
@@ -104,6 +119,7 @@ async def proxy_hls(
     ],
     camera_manager: CameraManagerDependency,
     pipeline: PreviewPipelineDependency,
+    relay_state: RelayStateDependency,
 ) -> Response:
     """Fetch an LL-HLS resource from the local MediaMTX and return it verbatim."""
     if not _is_local_client(request.client.host if request.client else None):
@@ -111,7 +127,7 @@ async def proxy_hls(
 
     # Record viewer intent before hitting MediaMTX. If the encoder is asleep,
     # the first playlist request is exactly the signal that should wake it.
-    mark_hls_activity()
+    relay_state.mark_hls_activity()
     await _wake_preview_encoder(hls_path=hls_path, camera_manager=camera_manager, pipeline=pipeline)
 
     # Confine user input to the path component only — scheme and host come from
@@ -121,7 +137,7 @@ async def proxy_hls(
         async with httpx.AsyncClient(timeout=_HLS_TIMEOUT) as client:
             response = await client.get(target_url)
     except httpx.HTTPError as exc:
-        logger.warning("MediaMTX HLS unreachable: %s", exc)
+        logger.warning("MediaMTX HLS unreachable: %s", exc, extra=build_log_extra())
         raise HTTPException(status_code=503, detail=f"MediaMTX HLS unreachable: {exc}") from exc
 
     if response.status_code == 404:

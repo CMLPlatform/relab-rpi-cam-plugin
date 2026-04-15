@@ -3,13 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (() => {
+      const storageKey = "relab-theme";
+      const themeStorage = window["localStorage"];
+      const storedTheme = themeStorage ? themeStorage.getItem(storageKey) : null;
+      const preferredTheme = storedTheme || "auto";
+      const resolvedTheme = preferredTheme === "auto"
+        ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+        : preferredTheme;
+
+      document.documentElement.dataset.themePreference = preferredTheme;
+      document.documentElement.dataset.theme = resolvedTheme;
+    })();
+  </script>
   {% block head_extra %}{% endblock %}
   <title>{% block title %}RELab RPi Camera{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
   {% block extra_scripts %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
-  {% block body %}{% endblock %}
+  <div class="site-backdrop" aria-hidden="true"></div>
+  <div class="site-wash" aria-hidden="true"></div>
+  <div class="site-frame">
+    <header class="site-header">
+      <a href="{{ url_for('homepage') }}" class="site-header__brand" aria-label="RELab RPi Camera home">
+        <img
+          src="{{ url_for('static', path='logo.png') }}"
+          alt="RELab logo"
+          class="site-header__logo"
+          width="64"
+          height="64"
+        />
+        <div class="site-header__brand-copy">
+          <span class="site-header__eyebrow">Reverse Engineering Lab</span>
+          <span class="site-header__title">Raspberry Pi Camera</span>
+        </div>
+      </a>
+      <div class="site-header__controls">
+        {% block site_header_nav %}{% endblock %}
+        <label class="theme-control" for="theme-select">
+          <span class="theme-control__label">Theme</span>
+          <select id="theme-select" class="theme-control__select" data-theme-select>
+            <option value="auto">Auto</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </div>
+    </header>
+    {% block body %}{% endblock %}
+  </div>
+  <script src="{{ url_for('static', path='site.js') }}" defer></script>
 </body>
 </html>

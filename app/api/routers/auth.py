@@ -7,8 +7,9 @@ from fastapi import APIRouter, Form, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import AfterValidator
 
-from app.api.dependencies.auth import _is_authorized, create_session, delete_session
+from app.api.dependencies.auth import _is_authorized, create_session, delete_session, reload_authorized_hashes
 from app.core.config import settings
+from app.core.runtime import get_request_runtime
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -21,12 +22,14 @@ def _local_path_only(v: str) -> str:
 
 @router.post("/login")
 async def login(
+    request: Request,
     response: Response,
     api_key: Annotated[str, Form()],
     redirect_url: Annotated[str, AfterValidator(_local_path_only), Form()] = "/",
 ) -> RedirectResponse:
     """Validate an API key and create a browser session."""
-    if not _is_authorized(api_key):
+    authorized_api_keys = reload_authorized_hashes(get_request_runtime(request).runtime_state)
+    if not _is_authorized(api_key, authorized_api_keys):
         raise HTTPException(status_code=403, detail="Invalid API Key")
     session_token = create_session()
     response = RedirectResponse(url=redirect_url, status_code=303)

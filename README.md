@@ -16,11 +16,55 @@ Device-side software for automated image capture on Raspberry Pi, integrated wit
 The plugin runs a lightweight FastAPI server on your Raspberry Pi that:
 
 - Captures images from the connected camera module
-- Exposes low-resolution snapshot previews for live viewfinder polling
+- Publishes a low-latency LL-HLS preview through the local MediaMTX sidecar
 - Connects to the RELab platform via WebSocket relay
 - Exposes a REST API for manual testing and integration
 
 Supports **Raspberry Pi 5/4** with **Camera Module 3/v2**, running on Raspberry Pi OS (64-bit) with Python 3.13+.
+
+## Architecture
+
+The plugin is organized around a small runtime container that owns the long-lived
+process services for the app:
+
+- **FastAPI control plane**: HTTP routes, setup UI, auth, and local-access helpers
+- **Camera service**: capture, stream, focus/controls, upload fallback queue
+- **Preview/media path**: Picamera2 lores encoder -> MediaMTX -> LL-HLS proxy
+- **Relay/pairing path**: runtime-owned pairing state/service, outbound WebSocket relay service, local-access bootstrap
+- **Background services**: upload queue drain, preview sleeper, thermal governor, stream health checks
+
+Request flow is: router -> application service -> backend/adapter. Runtime-owned
+background services use the same camera manager and preview pipeline instances as
+the HTTP paths, so lifecycle and cleanup stay centralized in the app lifespan.
+Relay activity and pairing state are also runtime-owned now, so preview wake/
+hibernate logic and setup-page state do not depend on module-level globals.
+`PairingService` and `RelayService` are the only production orchestration
+entrypoints for those flows.
+
+Static configuration still comes from `app.core.config.Settings`, but live
+mutable process state now lives in `app.core.runtime_state.RuntimeState`
+through `AppRuntime`. Relay credentials, local API keys, and derived auth
+snapshots are runtime-owned, then rehydrated from the persisted credentials
+file on the next boot.
+
+The seam is split intentionally now:
+
+- **Public contract**: the RELab backend owns the app-facing API and OpenAPI
+- **Private device contract**: shared `relab_rpi_cam_models` DTOs cover
+  pairing, relay envelopes, local-access bootstrap, and Pi-initiated upload acks
+
+Bootstrap precedence is explicit:
+
+1. env-backed `Settings`
+1. persisted credentials file
+1. generated first-boot defaults for local-only secrets
+
+## Supported Modes
+
+- **Paired relay mode**: outbound WebSocket relay to the RELab backend
+- **Local direct mode**: Ethernet/LAN access with `X-API-Key` auth
+- **Backend upload mode**: captures pushed back to the RELab backend
+- **S3 upload mode**: captures written to a configured S3-compatible bucket
 
 ## Connection
 
@@ -64,6 +108,11 @@ OBSERVABILITY_INSTANCE=pi-01
 ```
 
 Without the profile, logs are still written to Docker logs and the 7-day rotating `app_logs` volume. Local Loki/Grafana is not bundled with this plugin; use your platform's central observability stack when you need fleet log browsing.
+
+Tracing is opt-in. When `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT`
+are set, the plugin instruments FastAPI and httpx and propagates request/relay
+trace context across the backend -> plugin boundary. This repo does not bundle
+or configure a full OTLP pipeline; that remains an environment concern.
 
 For platform management and operation, see the [RELab camera guide](https://docs.cml-relab.org/user-guides/rpi-cam/).
 
@@ -117,10 +166,10 @@ runs the RustFS sidecar *and* ships logs to your central Loki.
 
 The local API key serves **two independent use-cases**:
 
-| Use-case | Requires relay pairing? | What it does |
-| --- | --- | --- |
-| **RELab app latency boost** | Yes | After relay pairing, the app fetches the key automatically through the relay and switches to Ethernet-direct when the Pi is on the same LAN — preview latency drops from ~2 s to ~0.4 s. No manual setup. Works in both the native app and modern browsers (Chrome/Edge). |
-| **Standalone / custom clients** | No | Call the camera API directly with `X-API-Key: <key>` — no relay needed. Useful for scripts, custom dashboards, or standalone mode (see below). |
+| Use-case                        | Requires relay pairing? | What it does                                                                                                                                                                                                                                                              |
+| ------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RELab app latency boost**     | Yes                     | After relay pairing, the app fetches the key automatically through the relay and switches to Ethernet-direct when the Pi is on the same LAN — preview latency drops from ~2 s to ~0.4 s. No manual setup. Works in both the native app and modern browsers (Chrome/Edge). |
+| **Standalone / custom clients** | No                      | Call the camera API directly with `X-API-Key: <key>` — no relay needed. Useful for scripts, custom dashboards, or standalone mode (see below).                                                                                                                            |
 
 > **The local key does not replace relay pairing.** To register a camera in the RELab app you still need to complete the relay pairing flow (6-character code). The local key is for latency improvement once already paired, or for non-RELab access.
 
@@ -155,7 +204,7 @@ To print the key from an SSH session:
 
 ```sh
 just show-key
-# or without just:
+# or without just, if the app is already running:
 python3 -c "import json,pathlib; print(json.loads((pathlib.Path.home()/'.config/relab/relay_credentials.json').read_text()).get('local_api_key',''))"
 ```
 

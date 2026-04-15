@@ -4,6 +4,12 @@
 
 {% block body_class %}setup-page{% endblock %}
 
+{% block site_header_nav %}
+  <nav class="site-header__nav" aria-label="Primary">
+    <a href="{{ url_for('homepage') }}" class="btn btn--ghost">Home</a>
+  </nav>
+{% endblock %}
+
 {% block head_extra %}
 {% endblock %}
 
@@ -246,9 +252,6 @@
   <section class="setup-hero">
     <div class="setup-eyebrow">Raspberry Pi Camera</div>
     <h1>Setup</h1>
-    <div>
-      <a href="{{ url_for('homepage') }}" class="btn">Home</a>
-    </div>
     <p>Pair, refresh, or unpair from this page.</p>
   </section>
 

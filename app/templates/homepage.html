@@ -4,6 +4,13 @@
 
 {% block body_class %}setup-page{% endblock %}
 
+{% block site_header_nav %}
+  <nav class="site-header__nav" aria-label="Primary">
+    <a href="{{ url_for('setup_page') }}" class="btn btn--ghost">Setup</a>
+    <a href="{{ url_for('swagger_ui_html') }}" class="btn btn--ghost">API Docs</a>
+  </nav>
+{% endblock %}
+
 {% block extra_scripts %}
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
   <script>
@@ -91,10 +98,7 @@
 <main class="setup-shell">
   <section class="setup-hero">
     <div class="setup-eyebrow">Reverse Engineering Lab</div>
-    <div style="display: flex; align-items: center; gap: 16px;">
-      <img src="{{ url_for('static', path='/logo.png') }}" alt="RELab Logo" style="width: 64px; flex-shrink: 0;" />
-      <h1>Raspberry Pi Camera</h1>
-    </div>
+    <h1>Raspberry Pi Camera</h1>
     <p>Remotely capture images and stream video from a Raspberry Pi camera. For more info on RELab, visit the <a href="https://github.com/CMLplatform/relab" target="_blank">GitHub page</a>.</p>
     <div>
       <a href="{{ url_for('setup_page') }}" class="btn">Setup</a>

@@ -28,5 +28,5 @@ def repeat_task(
 
             await asyncio.sleep(seconds)
 
-    # Create and return task; caller is responsible for retention
-    return asyncio.create_task(_loop())
+    # Create and return task; caller is responsible for retention.
+    return asyncio.create_task(_loop(), name=task_name)

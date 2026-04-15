@@ -27,8 +27,6 @@ if TYPE_CHECKING:
     from PIL.Image import Image as PilImage
     from relab_rpi_cam_models.camera import CameraMode
     from relab_rpi_cam_models.stream import StreamMode
-else:
-    PilImage = object
 
 
 @dataclass(frozen=True)

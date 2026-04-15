@@ -33,6 +33,7 @@ from app.api.services.stream import (
     validate_youtube_mode,
 )
 from app.core.config import settings
+from app.utils.logging import build_log_extra
 
 if TYPE_CHECKING:
     # libcamera's `controls` module isn't available to the typechecker
@@ -212,7 +213,7 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
             try:
                 await self._mediamtx.clear_egress("cam-hires")
             except MediaMTXAPIError as exc:
-                logger.warning("Failed to clear MediaMTX YouTube egress: %s", exc)
+                logger.warning("Failed to clear MediaMTX YouTube egress: %s", exc, extra=build_log_extra())
 
     async def get_stream_metadata(self) -> tuple[dict, dict]:
         """Return metadata for the active stream."""

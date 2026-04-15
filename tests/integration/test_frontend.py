@@ -16,6 +16,13 @@ from tests.constants import EXAMPLE_IMAGE_URL, HTML_CONTENT_TYPE, YOUTUBE_TEST_B
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
 HLS_ROUTE_PATH = "/hls/{hls_path:path}"
+DEFAULT_CSP = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+FRAME_OPTIONS_DENY = "DENY"
+SETUP_CSP_INLINE = "'unsafe-inline'"
+SETUP_CSP_CDN = "https://cdn.jsdelivr.net"
+THEME_SELECT_MARKER = "data-theme-select"
+LOGO_SRC = "/static/logo.png"
+SITE_JS_SRC = "/static/site.js"
 
 
 class TestHomepage:
@@ -26,6 +33,21 @@ class TestHomepage:
         resp = await unauthed_client.get("/")
         assert resp.status_code == 200
         assert HTML_CONTENT_TYPE in resp.headers["content-type"]
+
+    async def test_homepage_sets_relaxed_csp_for_embedded_preview_assets(self, unauthed_client: AsyncClient) -> None:
+        """The landing page CSP should allow its inline script and hls.js dependency."""
+        resp = await unauthed_client.get("/")
+        assert resp.headers["x-frame-options"] == FRAME_OPTIONS_DENY
+        assert SETUP_CSP_CDN in resp.headers["content-security-policy"]
+        assert SETUP_CSP_INLINE in resp.headers["content-security-policy"]
+
+    async def test_homepage_renders_shared_header_assets_and_theme_control(self, unauthed_client: AsyncClient) -> None:
+        """The landing page should expose the shared brand header and theme chooser."""
+        resp = await unauthed_client.get("/")
+        assert resp.status_code == 200
+        assert THEME_SELECT_MARKER in resp.text
+        assert LOGO_SRC in resp.text
+        assert SITE_JS_SRC in resp.text
 
     async def test_favicon_returns_ico(self, unauthed_client: AsyncClient) -> None:
         """Test that the favicon route returns an ICO file."""
@@ -91,3 +113,20 @@ class TestHomepage:
         hls_route_any = cast("Any", hls_route)
         dependency_calls = [dependency.call for dependency in hls_route_any.dependant.dependencies]
         assert verify_request not in dependency_calls
+
+    async def test_hls_preview_route_sets_default_csp(self, unauthed_client: AsyncClient) -> None:
+        """API-style routes should use the tighter default CSP."""
+        upstream = MagicMock()
+        upstream.status_code = 200
+        upstream.content = HLS_PLAYLIST.encode()
+        upstream.headers = {"content-type": "application/vnd.apple.mpegurl"}
+
+        http_client = MagicMock()
+        http_client.get = AsyncMock(return_value=upstream)
+        http_client.__aenter__ = AsyncMock(return_value=http_client)
+        http_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
+            resp = await unauthed_client.get("/hls/cam-preview/index.m3u8")
+
+        assert resp.headers["content-security-policy"] == DEFAULT_CSP

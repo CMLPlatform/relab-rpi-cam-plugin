@@ -10,16 +10,21 @@ from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
 from typing import Literal, cast
+from urllib.parse import urlparse
 
-from pydantic import HttpUrl, field_validator
+from pydantic import HttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.runtime_state import RuntimeState
 from app.utils.pairing import _CREDENTIALS_FILE, load_relay_credentials
 
 # Set the project base directory and .env file
 BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
 _HTTPS_SCHEME = "https"
 _RELAY_AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
+_IMAGE_SINK_AUTO = "auto"
+_IMAGE_SINK_BACKEND = "backend"
+_IMAGE_SINK_S3 = "s3"
 DEFAULT_PAIRING_BACKEND_URL = "https://api.cml-relab.org"
 logger = logging.getLogger(__name__)
 
@@ -33,7 +38,7 @@ class Settings(BaseSettings):
         HttpUrl("http://localhost:8000"),
         HttpUrl("https://cml-relab.org"),
     ]
-    authorized_api_keys: list[str] = []  # API keys from users of the main API
+    authorized_api_keys: list[str] = []  # Bootstrap-only auth keys from env/.env
     camera_device_num: int = 0  # Camera device number (usually 0 or 1)
 
     # Initialize the settings configuration from the .env file
@@ -86,13 +91,18 @@ class Settings(BaseSettings):
     # Debug mode
     debug: bool = False
 
+    # Observability / tracing
+    otel_enabled: bool = False
+    otel_service_name: str = "relab-rpi-cam-plugin"
+    otel_exporter_otlp_endpoint: str = ""
+
     # Local (direct Ethernet / USB-C) mode
     # The plugin always auto-generates a persistent local_api_key on startup (saved to the
     # credentials JSON). The key is delivered to the frontend automatically via the relay's
     # /local-access-info endpoint — no manual copying required.
     # Set LOCAL_MODE_ENABLED=false to disable local API access entirely (opt-out).
     local_mode_enabled: bool = True
-    local_api_key: str = ""  # Auto-generated on first startup, persisted to credentials JSON
+    local_api_key: str = ""  # Bootstrap-only local API key seed; runtime-owned after startup
     # Extra CORS origins allowed for direct-connect clients, e.g. "http://192.168.1.42"
     # Accepts a JSON array string or comma-separated list (same format as authorized_api_keys).
     local_allowed_origins: list[str] = []
@@ -120,7 +130,7 @@ class Settings(BaseSettings):
     relay_auth_scheme: str = "device_assertion"
     relay_key_id: str = ""
     relay_private_key_pem: str = ""
-    local_relay_api_key: str = ""
+    local_relay_api_key: str = ""  # Bootstrap-only relay-local auth key seed; runtime-owned after startup
 
     @property
     def relay_enabled(self) -> bool:
@@ -204,35 +214,109 @@ class Settings(BaseSettings):
             return False
         return bool(v)
 
+    @model_validator(mode="after")
+    def _validate_runtime_bootstrap_config(self) -> "Settings":
+        relay_fields = (
+            self.relay_backend_url,
+            self.relay_camera_id,
+            self.relay_key_id,
+            self.relay_private_key_pem,
+        )
+        if any(relay_fields) and not all(relay_fields):
+            msg = (
+                "Relay bootstrap config must set RELAY_BACKEND_URL, RELAY_CAMERA_ID, "
+                "RELAY_KEY_ID, and RELAY_PRIVATE_KEY_PEM together or leave them all unset."
+            )
+            raise ValueError(msg)
+        if self.relay_backend_url and self.relay_auth_scheme != _RELAY_AUTH_SCHEME_DEVICE_ASSERTION:
+            msg = "RELAY_AUTH_SCHEME must be device_assertion when relay bootstrap credentials are configured."
+            raise ValueError(msg)
+        if self.image_sink == _IMAGE_SINK_BACKEND and not self.pairing_backend_url:
+            msg = "IMAGE_SINK=backend requires PAIRING_BACKEND_URL."
+            raise ValueError(msg)
+        if self.image_sink == _IMAGE_SINK_S3:
+            missing = [
+                name
+                for name, value in (
+                    ("S3_ENDPOINT_URL", self.s3_endpoint_url),
+                    ("S3_BUCKET", self.s3_bucket),
+                    ("S3_ACCESS_KEY_ID", self.s3_access_key_id),
+                    ("S3_SECRET_ACCESS_KEY", self.s3_secret_access_key),
+                )
+                if not value
+            ]
+            if missing:
+                msg = f"IMAGE_SINK=s3 requires {', '.join(missing)}."
+                raise ValueError(msg)
+        return self
+
 
 # Create a settings instance that can be imported throughout the app
 settings: Settings = Settings()
 
 
-def apply_relay_credentials() -> None:
-    """Load relay credentials from pairing JSON file (written by pairing flow).
+def _is_running_in_container() -> bool:
+    return Path("/.dockerenv").exists()
+
+
+def _uses_loopback_host(url: str) -> bool:
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return parsed.hostname in {"127.0.0.1", "localhost"}
+
+
+def _set_authorized_api_keys(runtime_state: RuntimeState, keys: Iterable[str]) -> None:
+    """Replace authorized API keys on runtime state."""
+    runtime_state.replace_authorized_api_keys(set(dict.fromkeys(keys)))
+
+
+def _add_authorized_api_key(runtime_state: RuntimeState, key: str) -> None:
+    """Atomically add an authorized API key to runtime state."""
+    if key in runtime_state.authorized_api_keys:
+        return
+    _set_authorized_api_keys(runtime_state, {*runtime_state.authorized_api_keys, key})
+
+
+def apply_relay_credentials(runtime_state: RuntimeState) -> None:
+    """Load relay credentials from persisted bootstrap state when env config is absent.
 
     Should be called once during application startup (lifespan), not at import time.
     """
     logger.info("Relay credentials path resolved to %s", _CREDENTIALS_FILE)
+    if runtime_state.relay_enabled:
+        logger.info(
+            "Relay bootstrap credentials already present from static config; skipping persisted relay credentials"
+        )
+        return
     creds = load_relay_credentials()
     if creds:
         set_runtime_relay_credentials(
+            runtime_state=runtime_state,
             relay_backend_url=str(creds.get("relay_backend_url", "")),
             relay_camera_id=str(creds.get("relay_camera_id", "")),
             relay_auth_scheme=str(creds.get("relay_auth_scheme", "device_assertion")),
             relay_key_id=str(creds.get("relay_key_id", "")),
             relay_private_key_pem=str(creds.get("relay_private_key_pem", "")),
         )
+        if runtime_state.relay_backend_url.startswith("ws://"):
+            logger.warning("Relay runtime is using unencrypted ws:// transport. Switch to wss:// in production.")
 
 
-def clear_runtime_relay_credentials() -> None:
-    """Zero out all relay credential fields in the runtime settings."""
-    settings.relay_backend_url = ""
-    settings.relay_camera_id = ""
-    settings.relay_auth_scheme = ""
-    settings.relay_key_id = ""
-    settings.relay_private_key_pem = ""
+def resolve_image_sink_choice(app_settings: Settings = settings) -> str:
+    """Resolve the effective image sink choice without instantiating it."""
+    if app_settings.image_sink != _IMAGE_SINK_AUTO:
+        return app_settings.image_sink
+    if app_settings.s3_endpoint_url:
+        return _IMAGE_SINK_S3
+    if app_settings.pairing_backend_url:
+        return _IMAGE_SINK_BACKEND
+    return "unconfigured"
+
+
+def clear_runtime_relay_credentials(runtime_state: RuntimeState) -> None:
+    """Zero out all relay credential fields in runtime state."""
+    runtime_state.clear_relay_credentials()
 
 
 def _persist_local_api_key(key: str) -> None:
@@ -274,7 +358,7 @@ def _persist_local_api_key(key: str) -> None:
     logger.info("local_api_key persisted to %s", _CREDENTIALS_FILE)
 
 
-def apply_local_mode() -> None:
+def apply_local_mode(runtime_state: RuntimeState, app_settings: Settings = settings) -> None:
     """Load or generate the local API key on startup.
 
     Always runs regardless of ``local_mode_enabled`` so the key exists for
@@ -287,7 +371,7 @@ def apply_local_mode() -> None:
     ``apply_relay_credentials()``, so credentials are fully loaded first.
     """
     # Priority: env-provided > credentials file > auto-generate
-    local_api_key = settings.local_api_key
+    local_api_key = runtime_state.local_api_key or app_settings.local_api_key
     if not local_api_key:
         creds = load_relay_credentials()
         local_api_key = str(creds.get("local_api_key", "")) if creds else ""
@@ -297,15 +381,16 @@ def apply_local_mode() -> None:
         _persist_local_api_key(local_api_key)
         logger.info("Local mode: generated new API key and persisted to credentials file")
 
-    settings.local_api_key = local_api_key
-    if settings.local_mode_enabled and local_api_key not in settings.authorized_api_keys:
-        settings.authorized_api_keys.append(local_api_key)
+    runtime_state.set_local_api_key(local_api_key)
+    if app_settings.local_mode_enabled:
+        _add_authorized_api_key(runtime_state, local_api_key)
         logger.info("Local mode active — direct connection API key loaded")
     else:
-        logger.info("Local API key generated (local_mode_enabled=False — direct auth disabled)")
+        logger.info("Local API key loaded (local_mode_enabled=False — direct auth disabled)")
 
 
 def set_runtime_relay_credentials(
+    runtime_state: RuntimeState,
     *,
     relay_backend_url: str,
     relay_camera_id: str,
@@ -314,17 +399,30 @@ def set_runtime_relay_credentials(
     relay_private_key_pem: str,
 ) -> None:
     """Apply relay credentials at runtime and refresh dependent auth state."""
-    settings.relay_backend_url = relay_backend_url
-    settings.relay_camera_id = relay_camera_id
-    settings.relay_auth_scheme = relay_auth_scheme
-    settings.relay_key_id = relay_key_id
-    settings.relay_private_key_pem = relay_private_key_pem
+    runtime_state.set_relay_credentials(
+        relay_backend_url=relay_backend_url,
+        relay_camera_id=relay_camera_id,
+        relay_auth_scheme=relay_auth_scheme,
+        relay_key_id=relay_key_id,
+        relay_private_key_pem=relay_private_key_pem,
+    )
+    _add_authorized_api_key(runtime_state, runtime_state.local_relay_api_key)
 
-    # Use a local-only key for relayed loopback calls into this FastAPI app.
-    if not settings.local_relay_api_key:
-        settings.local_relay_api_key = f"LOCAL_{secrets.token_urlsafe(32)}"
-    if settings.local_relay_api_key not in settings.authorized_api_keys:
-        settings.authorized_api_keys.append(settings.local_relay_api_key)
 
-    # No longer refresh a module-level auth cache here; the auth
-    # dependency reads `settings.authorized_api_keys` dynamically.
+def bootstrap_runtime_state(runtime_state: RuntimeState, app_settings: Settings = settings) -> None:
+    """Apply runtime bootstrap precedence and emit startup-facing config logs."""
+    apply_relay_credentials(runtime_state)
+    apply_local_mode(runtime_state, app_settings)
+    logger.info("Image sink resolved to %s", resolve_image_sink_choice(app_settings))
+    if not app_settings.local_mode_enabled and runtime_state.local_api_key:
+        logger.warning(
+            "LOCAL_MODE_ENABLED=false but a local API key exists; the key remains available for relay bootstrap only."
+        )
+    if (
+        app_settings.pairing_backend_url
+        and _uses_loopback_host(app_settings.pairing_backend_url)
+        and _is_running_in_container()
+    ):
+        logger.warning(
+            "PAIRING_BACKEND_URL uses loopback inside a container; pairing will rewrite it to host.docker.internal."
+        )

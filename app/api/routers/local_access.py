@@ -13,10 +13,10 @@ import logging
 import socket
 
 import psutil
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, Request
 
-from app.core.config import settings
+from app.core.runtime import get_request_runtime
+from relab_rpi_cam_models import LocalAccessInfo
 
 logger = logging.getLogger(__name__)
 
@@ -25,21 +25,6 @@ router = APIRouter(tags=["local-access"])
 _API_PORT = 8018
 _MEDIA_PORT = 8888
 _DOCKERISH_INTERFACE_PREFIXES = ("docker", "veth", "br-", "virbr", "tap", "tun", "zt")
-
-
-class LocalAccessInfo(BaseModel):
-    """Payload returned by GET /local-access-info."""
-
-    local_api_key: str
-    """The locally-generated API key accepted by direct connections to this Pi."""
-
-    candidate_urls: list[str]
-    """FastAPI base URLs to probe, e.g. ["http://192.168.1.100:8018"].
-    The frontend tries each in parallel; the first that responds wins."""
-
-    mdns_name: str | None
-    """Optional mDNS hostname hint if one is available."""
-
 
 def _get_candidate_urls() -> list[str]:
     """Return all non-loopback IPv4 base URLs for this host.
@@ -88,15 +73,16 @@ def _get_mdns_name() -> str | None:
 
 
 @router.get("/local-access-info", summary="Get local direct-connection info")
-async def get_local_access_info() -> LocalAccessInfo:
+async def get_local_access_info(request: Request) -> LocalAccessInfo:
     """Return local API key and candidate IP URLs for direct (Ethernet/USB-C) access.
 
     Called by the backend through the WebSocket relay when the user opens the
     camera detail screen.  The response is forwarded to the authenticated frontend
     user so the app can auto-configure local mode without manual key copying.
     """
+    runtime = get_request_runtime(request)
     return LocalAccessInfo(
-        local_api_key=settings.local_api_key,
+        local_api_key=runtime.runtime_state.local_api_key,
         candidate_urls=_get_candidate_urls(),
         mdns_name=_get_mdns_name(),
     )

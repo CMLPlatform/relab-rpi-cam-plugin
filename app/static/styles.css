@@ -1,4 +1,12 @@
 /* Shared styles for RELab RPI Cam Plugin UI */
+html {
+    color-scheme: light;
+}
+
+html[data-theme="dark"] {
+    color-scheme: dark;
+}
+
 body {
     font-family: system-ui;
     background-color: #f5f5f5;
@@ -35,8 +43,24 @@ h1 {
     display: inline-block;
 }
 
+.btn--ghost {
+    margin: 0;
+    padding: 10px 16px;
+    border: 1px solid var(--setup-border);
+    border-radius: 999px;
+    background: var(--setup-surface);
+    color: var(--setup-text);
+    font-size: 0.95rem;
+    box-shadow: var(--setup-shadow);
+    backdrop-filter: blur(16px);
+}
+
 .btn:hover {
     background: #0056b3;
+}
+
+.btn--ghost:hover {
+    background: var(--setup-surface-strong);
 }
 
 .btn.logout,
@@ -117,11 +141,11 @@ h1 {
 
 /* Setup page styles */
 body.setup-page {
-    --setup-bg: #f6f8fc;
-    --setup-surface: rgba(255, 255, 255, 0.82);
-    --setup-surface-strong: rgba(255, 255, 255, 0.92);
-    --setup-border: rgba(148, 163, 184, 0.2);
-    --setup-text: #0f172a;
+    --setup-bg: #f4f7fc;
+    --setup-surface: rgba(252, 254, 255, 0.8);
+    --setup-surface-strong: rgba(255, 255, 255, 0.9);
+    --setup-border: rgba(78, 104, 136, 0.18);
+    --setup-text: #0d1829;
     --setup-muted: #475569;
     --setup-soft: rgba(15, 23, 42, 0.04);
     --setup-soft-strong: rgba(15, 23, 42, 0.08);
@@ -132,19 +156,155 @@ body.setup-page {
     --setup-radius-lg: 22px;
     --setup-radius-md: 16px;
     --setup-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+    --site-background-image:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 30%),
+        url("/static/logo.png");
+    --site-background-wash:
+        linear-gradient(180deg, rgba(244, 247, 252, 0.92) 0%, rgba(238, 243, 250, 0.86) 100%);
     max-width: none;
     margin: 0;
     min-height: 100vh;
     padding: 0;
     line-height: 1.6;
     display: block;
-    background:
-        radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 30%),
-        radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 28%),
-        radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.08), transparent 22%),
-        linear-gradient(180deg, var(--setup-bg) 0%, #eef3fa 100%);
+    position: relative;
+    isolation: isolate;
+    background: var(--setup-bg);
     color: var(--setup-text);
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html[data-theme="dark"] body.setup-page {
+    --setup-bg: #09111d;
+    --setup-surface: rgba(8, 18, 32, 0.7);
+    --setup-surface-strong: rgba(10, 22, 39, 0.84);
+    --setup-border: rgba(96, 165, 250, 0.2);
+    --setup-text: #edf6ff;
+    --setup-muted: #bfd1e6;
+    --setup-soft: rgba(191, 209, 230, 0.08);
+    --setup-soft-strong: rgba(191, 209, 230, 0.12);
+    --setup-shadow: 0 22px 64px rgba(2, 6, 23, 0.36);
+    --site-background-image:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.18), transparent 34%),
+        url("/static/logo.png");
+    --site-background-wash:
+        linear-gradient(180deg, rgba(6, 13, 24, 0.88) 0%, rgba(9, 17, 29, 0.92) 100%);
+}
+
+.site-backdrop,
+.site-wash {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+}
+
+.site-backdrop {
+    z-index: -2;
+    background-image: var(--site-background-image);
+    background-position: center, center;
+    background-repeat: no-repeat, no-repeat;
+    background-size: auto, cover;
+    filter: blur(20px) saturate(1.05);
+    transform: scale(1.04);
+    opacity: 0.34;
+}
+
+.site-wash {
+    z-index: -1;
+    background: var(--site-background-wash);
+}
+
+.site-frame {
+    width: 100%;
+}
+
+.site-header {
+    width: min(1120px, calc(100vw - 24px));
+    margin: 0 auto;
+    padding: 18px 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.site-header__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    text-decoration: none;
+    color: var(--setup-text);
+}
+
+.site-header__logo {
+    width: 52px;
+    height: 52px;
+    flex: none;
+    object-fit: contain;
+}
+
+.site-header__brand-copy {
+    display: grid;
+    gap: 2px;
+}
+
+.site-header__eyebrow {
+    color: var(--setup-accent-strong);
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.site-header__title {
+    color: var(--setup-text);
+    font-size: 1rem;
+    font-weight: 750;
+    letter-spacing: -0.03em;
+}
+
+.site-header__controls,
+.site-header__nav {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.theme-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--setup-border);
+    border-radius: 999px;
+    background: var(--setup-surface);
+    box-shadow: var(--setup-shadow);
+    backdrop-filter: blur(16px);
+}
+
+.theme-control__label {
+    color: var(--setup-muted);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.theme-control__select {
+    border: 0;
+    background: transparent;
+    color: var(--setup-text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.theme-control__select:focus {
+    outline: none;
+}
+
+.theme-control__select option {
+    color: #0f172a;
 }
 
 body.setup-page h1,
@@ -157,7 +317,7 @@ body.setup-page p {
 .setup-shell {
     width: min(880px, calc(100vw - 24px));
     margin: 0 auto;
-    padding: 24px 0 56px;
+    padding: 16px 0 56px;
     display: grid;
     gap: 18px;
 }
@@ -238,6 +398,10 @@ body.setup-page p {
 .setup-copy p,
 .setup-status p {
     color: var(--setup-muted);
+}
+
+body.setup-page a {
+    color: inherit;
 }
 
 .status-chip {
@@ -594,7 +758,7 @@ body.setup-page p {
 }
 
 .pairing-countdown {
-    color: #0f172a;
+    color: var(--setup-text);
     font-weight: 800;
 }
 
@@ -751,7 +915,7 @@ body.setup-page p {
     font-weight: 700;
     width: 180px;
     word-break: normal;
-    color: #0f172a;
+    color: var(--setup-text);
 }
 
 .setup-status tr:last-child td {
@@ -858,6 +1022,22 @@ body.setup-page p {
 }
 
 @media (max-width: 740px) {
+    .site-header {
+        width: min(100vw - 14px, 560px);
+        padding-top: 12px;
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .site-header__controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .site-header__nav {
+        justify-content: flex-start;
+    }
+
     .setup-shell {
         width: min(100vw - 14px, 560px);
         padding-top: 10px;

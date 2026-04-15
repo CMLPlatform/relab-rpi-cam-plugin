@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from app.utils.logging import build_log_extra
+
 if TYPE_CHECKING:
     from typing import Any
 
@@ -97,6 +99,7 @@ class MediaMTXClient:
             logger.warning(
                 "MediaMTX patch on missing path %r — is it pre-declared in mediamtx.yml?",
                 path,
+                extra=build_log_extra(),
             )
             return
         if response.status_code >= 400:

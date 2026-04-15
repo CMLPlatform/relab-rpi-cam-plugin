@@ -1,5 +1,6 @@
 """Tests for camera management dependencies and orchestration."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import FastAPI, Request
 from PIL import Image
 from pydantic import AnyUrl, SecretStr
 from relab_rpi_cam_models.camera import CameraMode
@@ -24,12 +26,16 @@ from app.api.schemas.camera_controls import (
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services.camera_backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.api.services.camera_manager import CameraControlsNotSupportedError, CameraManager
+from app.api.services.image_sinks.base import StoredImage
 from app.api.services.stream_service import StreamService
 from app.core.config import settings
+from app.core.runtime import AppRuntime
 from tests.constants import EXAMPLE_IMAGE_URL, YOUTUBE_WATCH_URL_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+    from relab_rpi_cam_models.stream import StreamView
 
 YOUTUBE_PROVIDER = "youtube"
 MOCK_CAMERA = "mock-camera"
@@ -65,16 +71,42 @@ class FakeBackend:
         self.current_mode = mode
 
 
+@dataclass
+class ProbeStreamState:
+    """Small mutable stream-state stub for dependency tests."""
+
+    is_active: bool = False
+    started_at: datetime | None = None
+    mode: object | None = None
+
+
+class ProbeCameraManager(CameraManager):
+    """Typed camera-manager probe for dependency helpers."""
+
+    def __init__(self) -> None:
+        super().__init__(backend=cast("StreamingCameraBackend", FakeBackend()))
+        self.stream_probe = ProbeStreamState()
+        self.stop_streaming_mock = AsyncMock()
+        self.get_stream_info_mock = AsyncMock(return_value=None)
+
+    @property
+    def stream(self) -> ProbeStreamState:
+        """Return mutable stream state for tests."""
+        return self.stream_probe
+
+    async def stop_streaming(self) -> None:
+        """Delegate to the stop-stream mock."""
+        await self.stop_streaming_mock()
+
+    async def get_stream_info(self) -> "StreamView | None":
+        """Delegate to the get-stream-info mock."""
+        return await self.get_stream_info_mock()
+
+
 @pytest.fixture
-def mock_camera_manager(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    """Return a patched camera manager with async mocks."""
-    mgr = SimpleNamespace(
-        stream=SimpleNamespace(is_active=False, started_at=None),
-        cleanup=AsyncMock(),
-        stop_streaming=AsyncMock(),
-    )
-    monkeypatch.setattr(camera_deps, "camera_manager", mgr)
-    return mgr
+def mock_camera_manager() -> ProbeCameraManager:
+    """Return a typed camera-manager probe with async mocks."""
+    return ProbeCameraManager()
 
 
 class TestCheckStreamDuration:
@@ -82,7 +114,7 @@ class TestCheckStreamDuration:
 
     async def test_stops_overdue_stream(
         self,
-        mock_camera_manager: SimpleNamespace,
+        mock_camera_manager: ProbeCameraManager,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Should stop the stream if it has been active longer than the configured maximum duration."""
@@ -90,13 +122,38 @@ class TestCheckStreamDuration:
         mock_camera_manager.stream.is_active = True
         mock_camera_manager.stream.started_at = datetime.now(UTC) - timedelta(seconds=20)
 
-        await camera_deps.check_stream_duration()
+        await camera_deps.check_stream_duration(mock_camera_manager)
 
-        mock_camera_manager.stop_streaming.assert_awaited_once()
+        mock_camera_manager.stop_streaming_mock.assert_awaited_once()
+
+
+class TestGetCameraManager:
+    """Tests for runtime-aware camera manager resolution."""
+
+    def test_prefers_request_runtime_camera_manager(self) -> None:
+        """Request-scoped runtime should override the legacy compatibility manager."""
+        app = FastAPI()
+        runtime = AppRuntime(camera_manager=cast("CameraManager", SimpleNamespace(name="runtime-manager")))
+        app.state.runtime = runtime
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/camera",
+                "headers": [],
+                "query_string": b"",
+                "client": ("127.0.0.1", 1234),
+                "server": ("testserver", 80),
+                "scheme": "http",
+                "app": app,
+            },
+        )
+
+        assert camera_deps.get_camera_manager(request) is runtime.camera_manager
 
     async def test_ignores_recent_stream(
         self,
-        mock_camera_manager: SimpleNamespace,
+        mock_camera_manager: ProbeCameraManager,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Should not stop the stream if it has been active for less than the configured maximum duration."""
@@ -104,24 +161,24 @@ class TestCheckStreamDuration:
         mock_camera_manager.stream.is_active = True
         mock_camera_manager.stream.started_at = datetime.now(UTC)
 
-        await camera_deps.check_stream_duration()
+        await camera_deps.check_stream_duration(mock_camera_manager)
 
-        mock_camera_manager.stop_streaming.assert_not_awaited()
+        mock_camera_manager.stop_streaming_mock.assert_not_awaited()
 
     async def test_logs_runtime_error(
         self,
-        mock_camera_manager: SimpleNamespace,
+        mock_camera_manager: ProbeCameraManager,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Should log a RuntimeError if stopping the stream fails, but not raise it."""
         monkeypatch.setattr(settings, "max_stream_duration_s", 10)
         mock_camera_manager.stream.is_active = True
         mock_camera_manager.stream.started_at = datetime.now(UTC) - timedelta(seconds=20)
-        mock_camera_manager.stop_streaming.side_effect = RuntimeError("boom")
+        mock_camera_manager.stop_streaming_mock.side_effect = RuntimeError("boom")
 
-        await camera_deps.check_stream_duration()
+        await camera_deps.check_stream_duration(mock_camera_manager)
 
-        mock_camera_manager.stop_streaming.assert_awaited_once()
+        mock_camera_manager.stop_streaming_mock.assert_awaited_once()
 
 
 class TestCheckStreamHealth:
@@ -129,79 +186,79 @@ class TestCheckStreamHealth:
 
     async def test_noop_when_no_stream_active(
         self,
-        mock_camera_manager: SimpleNamespace,
+        mock_camera_manager: ProbeCameraManager,
     ) -> None:
         """No active stream: the probe returns immediately without touching anything."""
         mock_camera_manager.stream.is_active = False
-        mock_camera_manager.get_stream_info = AsyncMock()
+        mock_camera_manager.get_stream_info_mock = AsyncMock()
 
-        await camera_deps.check_stream_health()
+        await camera_deps.check_stream_health(mock_camera_manager)
 
-        mock_camera_manager.get_stream_info.assert_not_awaited()
-        mock_camera_manager.stop_streaming.assert_not_awaited()
+        mock_camera_manager.get_stream_info_mock.assert_not_awaited()
+        mock_camera_manager.stop_streaming_mock.assert_not_awaited()
 
     async def test_stops_stream_when_get_info_returns_none(
         self,
-        mock_camera_manager: SimpleNamespace,
+        mock_camera_manager: ProbeCameraManager,
     ) -> None:
         """Get-info reports no info (e.g. ffmpeg died) -> stop the stream for recovery."""
         mock_camera_manager.stream.is_active = True
-        mock_camera_manager.get_stream_info = AsyncMock(return_value=None)
+        mock_camera_manager.get_stream_info_mock = AsyncMock(return_value=None)
 
-        await camera_deps.check_stream_health()
+        await camera_deps.check_stream_health(mock_camera_manager)
 
-        mock_camera_manager.get_stream_info.assert_awaited_once()
-        mock_camera_manager.stop_streaming.assert_awaited_once()
+        mock_camera_manager.get_stream_info_mock.assert_awaited_once()
+        mock_camera_manager.stop_streaming_mock.assert_awaited_once()
 
     async def test_tolerates_os_error_and_stops_stream(
         self,
-        mock_camera_manager: SimpleNamespace,
+        mock_camera_manager: ProbeCameraManager,
     ) -> None:
         """OSError from get_stream_info should trigger a recovery stop."""
         mock_camera_manager.stream.is_active = True
-        mock_camera_manager.get_stream_info = AsyncMock(side_effect=OSError("pipe closed"))
+        mock_camera_manager.get_stream_info_mock = AsyncMock(side_effect=OSError("pipe closed"))
 
-        await camera_deps.check_stream_health()
+        await camera_deps.check_stream_health(mock_camera_manager)
 
-        mock_camera_manager.stop_streaming.assert_awaited_once()
+        mock_camera_manager.stop_streaming_mock.assert_awaited_once()
 
     async def test_tolerates_runtime_error_and_stops_stream(
         self,
-        mock_camera_manager: SimpleNamespace,
+        mock_camera_manager: ProbeCameraManager,
     ) -> None:
         """RuntimeError from get_stream_info should also trigger a recovery stop."""
         mock_camera_manager.stream.is_active = True
-        mock_camera_manager.get_stream_info = AsyncMock(side_effect=RuntimeError("crashed"))
+        mock_camera_manager.get_stream_info_mock = AsyncMock(side_effect=RuntimeError("crashed"))
 
-        await camera_deps.check_stream_health()
+        await camera_deps.check_stream_health(mock_camera_manager)
 
-        mock_camera_manager.stop_streaming.assert_awaited_once()
+        mock_camera_manager.stop_streaming_mock.assert_awaited_once()
 
     async def test_suppresses_error_from_recovery_stop(
         self,
-        mock_camera_manager: SimpleNamespace,
+        mock_camera_manager: ProbeCameraManager,
     ) -> None:
         """If the recovery stop itself raises RuntimeError, the probe still returns cleanly."""
         mock_camera_manager.stream.is_active = True
-        mock_camera_manager.get_stream_info = AsyncMock(side_effect=RuntimeError("crashed"))
-        mock_camera_manager.stop_streaming.side_effect = RuntimeError("cannot stop")
+        mock_camera_manager.get_stream_info_mock = AsyncMock(side_effect=RuntimeError("crashed"))
+        mock_camera_manager.stop_streaming_mock.side_effect = RuntimeError("cannot stop")
 
         # Should not raise — contextlib.suppress handles it.
-        await camera_deps.check_stream_health()
+        await camera_deps.check_stream_health(mock_camera_manager)
 
-        mock_camera_manager.stop_streaming.assert_awaited_once()
+        mock_camera_manager.stop_streaming_mock.assert_awaited_once()
 
     async def test_healthy_stream_leaves_state_alone(
         self,
-        mock_camera_manager: SimpleNamespace,
+        mock_camera_manager: ProbeCameraManager,
     ) -> None:
         """Healthy get_stream_info result: do not stop the stream."""
         mock_camera_manager.stream.is_active = True
-        mock_camera_manager.get_stream_info = AsyncMock(return_value=SimpleNamespace(healthy=True))
+        mock_camera_manager.get_stream_info_mock = AsyncMock(return_value=SimpleNamespace(healthy=True))
 
-        await camera_deps.check_stream_health()
+        await camera_deps.check_stream_health(mock_camera_manager)
 
-        mock_camera_manager.stop_streaming.assert_not_awaited()
+        mock_camera_manager.stop_streaming_mock.assert_not_awaited()
 
 
 class TestCameraManagerCleanup:
@@ -285,10 +342,6 @@ class TestCameraManagerCapture:
 
     async def test_capture_uses_backend_result(self, tmp_path: Path) -> None:
         """Should build an image response from the backend capture result."""
-        from pydantic import AnyUrl  # noqa: PLC0415
-
-        from app.api.services.image_sinks.base import StoredImage  # noqa: PLC0415
-
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="green")
         backend.capture_image.return_value = CaptureResult(
@@ -339,12 +392,6 @@ class TestCameraManagerCapture:
         image = Image.new("RGB", (64, 64), color="blue")
         disk_full_msg = "simulated disk full"
 
-        def _boom_save(*_args: object, **_kwargs: object) -> None:
-            raise OSError(disk_full_msg)
-
-        # Replace ``save`` on the instance so encoding fails mid-capture.
-        image.save = _boom_save  # type: ignore[method-assign]
-
         backend.capture_image.return_value = CaptureResult(
             image=image,
             camera_properties={"Model": "mock-camera"},
@@ -355,9 +402,18 @@ class TestCameraManagerCapture:
         original = settings.image_path
         settings.image_path = tmp_path / "images"
         settings.image_path.mkdir()
+
+        def _raise_disk_full(*_args: object, **_kwargs: object) -> bytes:
+            raise OSError(disk_full_msg)
+
         try:
-            with pytest.raises(OSError, match=disk_full_msg):
-                await manager.capture_jpeg()
+            with pytest.MonkeyPatch.context() as monkeypatch:
+                monkeypatch.setattr(
+                    "app.api.services.camera_manager._encode_jpeg_atomic",
+                    _raise_disk_full,
+                )
+                with pytest.raises(OSError, match=disk_full_msg):
+                    await manager.capture_jpeg()
         finally:
             settings.image_path = original
 

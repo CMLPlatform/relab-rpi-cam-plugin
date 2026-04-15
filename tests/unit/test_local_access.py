@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import socket
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 from app.api.routers.local_access import _get_candidate_urls
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class TestGetCandidateUrls:
     """Tests for _get_candidate_urls."""
 
-    def test_prefers_physical_interfaces_over_docker_bridges(self, monkeypatch) -> None:
+    def test_prefers_physical_interfaces_over_docker_bridges(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A Docker bridge should not outrank a real LAN interface."""
         monkeypatch.setattr(
             "app.api.routers.local_access.psutil.net_if_addrs",
