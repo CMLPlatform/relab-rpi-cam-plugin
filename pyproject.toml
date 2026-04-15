@@ -34,7 +34,7 @@
     "psutil>=5.9",
     "pydantic-settings>=2.8.0",
     "pyjwt[crypto]>=2.12.1",
-    "relab-rpi-cam-models>=0.5.0", # NOTE: Keep this aligned with the published contract package
+    "relab-rpi-cam-models>=0.2.0",                    # NOTE: Keep this aligned with the published contract package
     "websockets>=14.0",
   ]
 
@@ -61,14 +61,14 @@
 
 ### Tools configuration
 [tool.pytest.ini_options]
-  addopts       = ["--strict-markers"]
+  addopts = ["--strict-markers"]
   asyncio_mode = "auto"
-  markers       = [
+  markers = [
     "unit: pure function/service tests with no app boot unless unavoidable",
     "integration: ASGI app, route, or lifespan behavior tests",
     "slow: intentionally longer lifecycle/worker tests",
   ]
-  testpaths    = ["tests"]
+  testpaths = ["tests"]
 
 [tool.coverage.report]
   fail_under   = 80
