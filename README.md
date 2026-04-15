@@ -111,7 +111,14 @@ runs the RustFS sidecar *and* ships logs to your central Loki.
 
 ## Local (direct) connection mode
 
-In addition to the WebSocket relay, the plugin supports a **direct connection mode** for use when the Pi is physically connected to a desktop or tablet via Ethernet or USB-C (to Ethernet adapter). This eliminates the relay hop and reduces LL-HLS preview latency from ~1.5–3 s to ~0.4–0.8 s. It also works with no internet access. The relay continues running in parallel — remote access is unaffected.
+The local API key serves **two independent use-cases**:
+
+| Use-case | Requires relay pairing? | What it does |
+| --- | --- | --- |
+| **Latency boost in RELab** | Yes | After relay pairing, the RELab app fetches the key automatically through the relay and switches to Ethernet-direct when the Pi is on the same LAN — preview latency drops from ~2 s to ~0.4 s. No manual setup. |
+| **Standalone / custom clients** | No | Call the camera API directly with `X-API-Key: <key>` — no relay needed. Useful for scripts, custom dashboards, or standalone mode (see below). |
+
+> **The local key does not replace relay pairing.** To register a camera in the RELab app you still need to complete the relay pairing flow (6-character code). The local key is for latency improvement once already paired, or for non-RELab access.
 
 ### Setup — zero configuration required
 
