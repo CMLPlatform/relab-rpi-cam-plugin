@@ -11,7 +11,7 @@ from app.api.dependencies.auth import verify_request
 from app.api.routers import hls as hls_mod
 from app.api.services.camera_manager import CameraManager
 from app.main import app
-from tests.constants import HTML_CONTENT_TYPE, YOUTUBE_TEST_BROADCAST_URL
+from tests.constants import EXAMPLE_IMAGE_URL, HTML_CONTENT_TYPE, YOUTUBE_TEST_BROADCAST_URL
 
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
@@ -52,6 +52,20 @@ class TestHomepage:
         resp = await client.get("/")
         assert resp.status_code == 200
         assert YOUTUBE_DOMAIN not in resp.text
+
+    async def test_homepage_shows_last_image_url_when_available(
+        self,
+        client: AsyncClient,
+        camera_manager: CameraManager,
+    ) -> None:
+        """Homepage should surface the latest uploaded image URL in the recent-capture card."""
+        camera_manager_any = cast("Any", camera_manager)
+        camera_manager_any._last_image_url = AnyUrl(EXAMPLE_IMAGE_URL)
+
+        resp = await client.get("/")
+
+        assert resp.status_code == 200
+        assert EXAMPLE_IMAGE_URL in resp.text
 
     async def test_hls_preview_proxy_is_available_without_auth(self, unauthed_client: AsyncClient) -> None:
         """Local preview HLS stays usable before pairing/login."""

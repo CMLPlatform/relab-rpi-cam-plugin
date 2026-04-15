@@ -8,6 +8,7 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
+from app.api.routers.local_access import _get_candidate_urls, _get_mdns_name
 from app.core.config import clear_runtime_relay_credentials, settings
 from app.core.templates_config import templates
 from app.utils.backend_client import notify_self_unpair
@@ -34,6 +35,11 @@ async def setup_page(request: Request) -> HTMLResponse:
     pairing = get_pairing_state()
     pairing_expires_at_iso = pairing.expires_at.isoformat() if pairing.expires_at else ""
 
+    # Resolve the Pi's LAN IPs for display on the setup page.
+    candidate_urls = _get_candidate_urls()
+    primary_ip = candidate_urls[0].removeprefix("http://").split(":")[0] if candidate_urls else None
+    mdns_name = _get_mdns_name()
+
     return templates.TemplateResponse(
         request,
         "setup.html",
@@ -49,6 +55,8 @@ async def setup_page(request: Request) -> HTMLResponse:
             "pairing_code_ttl_seconds": PAIRING_CODE_TTL_SECONDS,
             "local_mode_enabled": settings.local_mode_enabled,
             "local_api_key": settings.local_api_key,
+            "primary_ip": primary_ip,
+            "mdns_name": mdns_name,
         },
     )
 

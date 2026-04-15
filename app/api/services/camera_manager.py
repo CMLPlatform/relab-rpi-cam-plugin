@@ -102,6 +102,11 @@ class CameraManager:
         """Expose active stream state for existing callers."""
         return self.stream_service.state
 
+    @property
+    def last_image_url(self) -> AnyUrl | None:
+        """Return the most recently uploaded image URL, if any."""
+        return self._last_image_url
+
     async def _acquire_lock(self) -> None:
         """Acquire the camera lock with a timeout."""
         try:
