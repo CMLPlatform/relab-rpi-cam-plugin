@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 import httpx
 import websockets
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from app.core.config import Settings, settings
 from app.core.runtime_state import RuntimeState
@@ -61,7 +61,7 @@ _RECONNECT_MIN = 2.0
 _RECONNECT_MAX = 60.0
 _MAX_CONCURRENT_COMMANDS = 8
 
-_WEBSOCKET_CONNECTION_ERRORS: tuple[type[Exception], ...] = (ConnectionClosed, OSError)
+_WEBSOCKET_CONNECTION_ERRORS: tuple[type[Exception], ...] = (ConnectionClosed, InvalidStatus, OSError)
 
 _RELAY_CONNECTION_ERRORS: tuple[type[Exception], ...] = (RuntimeError, *_WEBSOCKET_CONNECTION_ERRORS)
 

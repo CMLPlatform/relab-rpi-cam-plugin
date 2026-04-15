@@ -80,6 +80,10 @@ class AppRuntime:
         task_set.add(task)
 
         def _discard(done_task: asyncio.Task[None]) -> None:
+            if not done_task.cancelled():
+                exc = done_task.exception()
+                if exc is not None:
+                    logger.exception("Managed task '%s' failed", done_task.get_name(), exc_info=exc)
             task_set.discard(done_task)
 
         task.add_done_callback(_discard)

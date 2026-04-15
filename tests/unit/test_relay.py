@@ -7,6 +7,9 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from websockets.datastructures import Headers
+from websockets.exceptions import InvalidStatus
+from websockets.http11 import Response
 
 from app.core.runtime_state import RuntimeState
 from app.utils import relay as relay_mod
@@ -311,3 +314,46 @@ class TestRelayServiceRunForever:
         monkeypatch.setattr(relay_mod, "_websocket_connect", lambda _url: _Conn())
         with pytest.raises(asyncio.CancelledError):
             await service.run_forever()
+
+    async def test_reconnects_after_websocket_handshake_rejection(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A transient handshake rejection should be treated as reconnectable."""
+        runtime_state = RuntimeState()
+        runtime_state.set_relay_credentials(
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
+            relay_camera_id="cam-1",
+            relay_auth_scheme=RELAY_AUTH_SCHEME,
+            relay_key_id=RELAY_KEY_ID,
+            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
+        )
+        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        handshake_response = Response(
+            502,
+            "Bad Gateway",
+            Headers(),
+            b"error code: 502",
+        )
+        monkeypatch.setattr(
+            relay_mod,
+            "_websocket_connect",
+            lambda _url: _HandshakeFailure(handshake_response),
+        )
+        monkeypatch.setattr(relay_mod.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError()))
+
+        with pytest.raises(asyncio.CancelledError):
+            await service.run_forever()
+
+
+class _HandshakeFailure:
+    """Async context manager that raises an InvalidStatus on enter."""
+
+    def __init__(self, response: Response) -> None:
+        self._response = response
+
+    async def __aenter__(self) -> Self:
+        raise InvalidStatus(self._response)
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
