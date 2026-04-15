@@ -21,6 +21,7 @@ import time
 
 _connected: bool = False
 _last_activity_monotonic: float | None = None
+_last_hls_activity_monotonic: float | None = None
 
 
 def mark_relay_connected() -> None:
@@ -42,20 +43,34 @@ def mark_relay_activity() -> None:
     _last_activity_monotonic = time.monotonic()
 
 
+def mark_hls_activity() -> None:
+    """Called on every local HLS segment/playlist fetch — resets the HLS idle timer."""
+    global _last_hls_activity_monotonic  # noqa: PLW0603
+    _last_hls_activity_monotonic = time.monotonic()
+
+
 def is_relay_connected() -> bool:
     """Whether the relay currently holds an open WebSocket to the backend."""
     return _connected
 
 
 def seconds_since_last_activity() -> float | None:
-    """Monotonic seconds since the last inbound command. ``None`` if never."""
+    """Monotonic seconds since the last inbound relay command. ``None`` if never."""
     if _last_activity_monotonic is None:
         return None
     return time.monotonic() - _last_activity_monotonic
 
 
+def seconds_since_last_hls_activity() -> float | None:
+    """Monotonic seconds since the last local HLS fetch. ``None`` if never."""
+    if _last_hls_activity_monotonic is None:
+        return None
+    return time.monotonic() - _last_hls_activity_monotonic
+
+
 def reset_for_tests() -> None:
     """Reset module globals (tests only)."""
-    global _connected, _last_activity_monotonic  # noqa: PLW0603
+    global _connected, _last_activity_monotonic, _last_hls_activity_monotonic  # noqa: PLW0603
     _connected = False
     _last_activity_monotonic = None
+    _last_hls_activity_monotonic = None

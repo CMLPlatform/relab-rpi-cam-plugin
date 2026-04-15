@@ -105,6 +105,46 @@ class TestShouldBeRunning:
         sleeper = PreviewSleeper(pipeline=pipeline, hibernate_after_s=300)
         assert sleeper.should_be_running() is False
 
+    def test_recent_local_hls_activity_keeps_encoder_awake(
+        self,
+        pipeline: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Local HLS segment fetches keep the encoder awake even when relay is idle."""
+        monkeypatch.setattr(type(settings), "relay_enabled", property(lambda _self: True))
+        # Relay is connected but idle past the threshold.
+        relay_state.mark_relay_connected()
+        monkeypatch.setattr("app.utils.preview_sleeper.seconds_since_last_activity", lambda: 301.0)
+        # But someone is actively fetching HLS segments locally.
+        relay_state.mark_hls_activity()
+        sleeper = PreviewSleeper(pipeline=pipeline, hibernate_after_s=300)
+        assert sleeper.should_be_running() is True
+
+    def test_local_hls_activity_keeps_encoder_awake_without_relay(
+        self,
+        pipeline: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Local HLS keeps the encoder awake even when the relay is disconnected."""
+        monkeypatch.setattr(type(settings), "relay_enabled", property(lambda _self: True))
+        # Relay not connected at all.
+        relay_state.mark_hls_activity()
+        sleeper = PreviewSleeper(pipeline=pipeline, hibernate_after_s=300)
+        assert sleeper.should_be_running() is True
+
+    def test_stale_hls_activity_does_not_keep_encoder_awake(
+        self,
+        pipeline: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """HLS activity older than the threshold does not prevent hibernation."""
+        monkeypatch.setattr(type(settings), "relay_enabled", property(lambda _self: True))
+        monkeypatch.setattr("app.utils.preview_sleeper.seconds_since_last_hls_activity", lambda: 301.0)
+        monkeypatch.setattr("app.utils.preview_sleeper.seconds_since_last_activity", lambda: 301.0)
+        relay_state.mark_relay_connected()
+        sleeper = PreviewSleeper(pipeline=pipeline, hibernate_after_s=300)
+        assert sleeper.should_be_running() is False
+
 
 class TestTick:
     """``_tick`` translates ``should_be_running`` into encoder start/stop calls."""

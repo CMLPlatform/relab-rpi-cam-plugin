@@ -13,7 +13,7 @@ from tests.constants import HTML_CONTENT_TYPE
 SETUP_TITLE = "RPi Camera — Setup"
 SETUP_COPY_TEXT = "Pair this camera with the ReLab app"
 PAIRING_CODE = "ABC123"
-RELAY_CONNECTED_TEXT = 'WebSocket relay: <span class="online">connected</span>'
+RELAY_CONNECTED_TEXT = 'Relay configured'
 PAIRING_FAILED_TEXT = "Pairing failed"
 PAIRED_SUCCESS_TEXT = "Pairing complete"
 PAIRING_EXPIRY_ATTR = "data-pairing-expiry"

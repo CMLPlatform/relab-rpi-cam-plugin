@@ -29,6 +29,8 @@ from fastapi import APIRouter, HTTPException, Response
 from fastapi import Path as FastAPIPath
 from pydantic import AfterValidator
 
+from app.utils.relay_state import mark_hls_activity
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/hls", tags=["hls"])
@@ -92,6 +94,7 @@ async def proxy_hls(
             detail=f"MediaMTX rejected HLS request (HTTP {response.status_code})",
         )
 
+    mark_hls_activity()
     # Pass through the MediaMTX content-type so the relay's binary detection
     # fires correctly on ``video/*`` responses.
     return Response(
