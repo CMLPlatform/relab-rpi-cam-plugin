@@ -65,6 +65,10 @@ class PairingCodeExpiredError(RuntimeError):
     """Raised when the active pairing code expires and should be rotated."""
 
 
+class PairingBackendNotFoundError(RuntimeError):
+    """Raised when the configured pairing backend does not expose the pairing API."""
+
+
 @dataclass
 class PairingState:
     """Observable pairing state for the setup page."""
@@ -254,6 +258,13 @@ async def run_pairing(on_paired: Callable[[], Coroutine[Any, Any, None]]) -> Non
                 await _pairing_cycle(client, base, on_paired)
             except PairingCodeExpiredError:
                 continue
+            except PairingBackendNotFoundError:
+                logger.error("Pairing backend missing pairing API | stopping pairing")
+                _clear_transient_pairing_state(
+                    status="error",
+                    error="Pairing backend is reachable, but the pairing API was not found at the configured URL.",
+                )
+                return
             except httpx.HTTPStatusError as exc:
                 _log_pairing_http_status_error(exc)
                 logger.exception("Pairing cycle failed | retry_in_s=10")
@@ -335,6 +346,12 @@ async def _register_pairing_code(client: httpx.AsyncClient, base_url: str) -> Pa
             registration = _new_pairing_registration()
             _prepare_registration_state(registration)
             continue
+        if resp.status_code == 404:
+            msg = (
+                "Pairing register endpoint returned 404. "
+                "Check PAIRING_BACKEND_URL and backend deployment."
+            )
+            raise PairingBackendNotFoundError(msg)
 
         resp.raise_for_status()
 

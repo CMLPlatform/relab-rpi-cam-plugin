@@ -5,16 +5,17 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
-from app.api.routers.local_access import _get_candidate_urls, _get_mdns_name
-from app.core.config import clear_runtime_relay_credentials, settings
+from app.core.config import DEFAULT_PAIRING_BACKEND_URL, clear_runtime_relay_credentials, settings
 from app.core.templates_config import templates
 from app.utils.backend_client import notify_self_unpair
 from app.utils.pairing import (
     PAIRING_CODE_TTL_SECONDS,
     STATUS_PAIRED,
+    _normalize_pairing_backend_base_url,
     delete_relay_credentials,
     get_pairing_state,
     run_pairing,
@@ -22,10 +23,26 @@ from app.utils.pairing import (
 from app.utils.relay import run_relay
 
 _STATUS_ERROR = "error"
+_PAIRING_BACKEND_REACHABILITY_TIMEOUT = httpx.Timeout(connect=1.5, read=1.5, write=1.5, pool=1.5)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["setup"])
+
+
+async def _pairing_backend_reachable() -> bool:
+    """Best-effort probe for the configured pairing backend."""
+    base_url = settings.pairing_backend_url.rstrip("/")
+    if not base_url:
+        return False
+
+    normalized_base_url = _normalize_pairing_backend_base_url(base_url)
+    try:
+        async with httpx.AsyncClient(timeout=_PAIRING_BACKEND_REACHABILITY_TIMEOUT, follow_redirects=True) as client:
+            await client.get(normalized_base_url)
+    except httpx.HTTPError:
+        return False
+    return True
 
 
 @router.get("/setup")
@@ -35,10 +52,8 @@ async def setup_page(request: Request) -> HTMLResponse:
     pairing = get_pairing_state()
     pairing_expires_at_iso = pairing.expires_at.isoformat() if pairing.expires_at else ""
 
-    # Resolve the Pi's LAN IPs for display on the setup page.
-    candidate_urls = _get_candidate_urls()
-    primary_ip = candidate_urls[0].removeprefix("http://").split(":")[0] if candidate_urls else None
-    mdns_name = _get_mdns_name()
+    connection_host = "<this-ip>"
+    pairing_backend_reachable = settings.relay_enabled or await _pairing_backend_reachable()
 
     return templates.TemplateResponse(
         request,
@@ -49,14 +64,16 @@ async def setup_page(request: Request) -> HTMLResponse:
             "relay_enabled": settings.relay_enabled,
             "relay_backend_url": settings.relay_backend_url,
             "relay_camera_id": settings.relay_camera_id,
+            "pairing_backend_url": settings.pairing_backend_url,
+            "default_pairing_backend_url": DEFAULT_PAIRING_BACKEND_URL,
             "base_url": base_url,
             "status_paired": STATUS_PAIRED,
             "status_error": _STATUS_ERROR,
             "pairing_code_ttl_seconds": PAIRING_CODE_TTL_SECONDS,
             "local_mode_enabled": settings.local_mode_enabled,
             "local_api_key": settings.local_api_key,
-            "primary_ip": primary_ip,
-            "mdns_name": mdns_name,
+            "connection_host": connection_host,
+            "pairing_backend_reachable": pairing_backend_reachable,
         },
     )
 

@@ -6,6 +6,7 @@ import time
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -125,7 +126,9 @@ def _log_startup_banner() -> None:
     except OSError:
         hostname = "localhost"
 
-    setup_url = f"http://{hostname}.local:{settings.base_url.port or 8018}/setup"
+    base_url = urlparse(str(settings.base_url))
+    setup_port = base_url.port or 8018
+    setup_url = f"http://{hostname}.local:{setup_port}/setup"
 
     if settings.relay_enabled:
         mode_line = f"PAIRED      camera_id={settings.relay_camera_id}"

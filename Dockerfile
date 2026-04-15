@@ -66,6 +66,7 @@ ENV PYTHONPATH="/app:/usr/lib/python3/dist-packages" \
 
 COPY --link --chown=1000:44 --from=builder /app/.venv .venv
 COPY --link --chown=1000:44 --from=builder /app/app app
+COPY --link --chown=1000:44 scripts/show_key.py scripts/show_key.py
 COPY --link --chown=1000:44 scripts/docker_entrypoint.sh scripts/docker_entrypoint.sh
 
 RUN mkdir -p /app/data/images /app/logs /home/rpicam/.config/relab && \

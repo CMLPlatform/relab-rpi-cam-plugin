@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
@@ -14,10 +15,18 @@ from tests.constants import EXAMPLE_RELAY_BACKEND_URL, HTML_CONTENT_TYPE
 
 SETUP_TITLE = "RPi Camera — Setup"
 SETUP_COPY_TEXT = "Pair this camera with the ReLab app"
+PAIRING_URL_DEBUG_TEXT = "Pairing URL and debugging"
+PAIRING_BACKEND_URL_TEXT = "Pairing backend URL"
+DEFAULT_BACKEND_PRESET_TEXT = "Default RELab backend"
+PAIRING_BACKEND_URL_VALUE = "https://api.cml-relab.org"
+REACHABLE_TEXT = "Reachable"
+NOT_REACHABLE_TEXT = "Not reachable"
+HOW_TO_CHANGE_TEXT = "How to change it"
 PAIRING_CODE = "ABC123"
-RELAY_CONNECTED_TEXT = "Relay configured"
+PAIRED_TEXT = "Paired"
 PAIRING_FAILED_TEXT = "Pairing failed"
-PAIRED_SUCCESS_TEXT = "Pairing complete"
+PAIRED_SUCCESS_TEXT = "paired successfully and is connecting to the backend now"
+THIS_IP_PLACEHOLDER = "&lt;this-ip&gt;"
 PAIRING_EXPIRY_ATTR = "data-pairing-expiry"
 PAIRING_TTL_ATTR = 'data-ttl-ms="600000"'
 UNPAIR_FUNCTION_CALL = "unpair()"
@@ -25,6 +34,15 @@ UNPAIR_FUNCTION_CALL = "unpair()"
 
 class TestSetupPage:
     """Tests for GET /setup (no auth required)."""
+
+    @pytest.fixture(autouse=True)
+    def _default_pairing_backend_reachability(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Keep setup-page tests deterministic without making real network calls."""
+        monkeypatch.setattr(setup_router, "_pairing_backend_reachable", AsyncMock(return_value=True))
+        monkeypatch.setattr(settings, "relay_backend_url", "")
+        monkeypatch.setattr(settings, "relay_camera_id", "")
+        monkeypatch.setattr(settings, "relay_key_id", "")
+        monkeypatch.setattr(settings, "relay_private_key_pem", "")
 
     async def test_setup_page_returns_html(self, unauthed_client: AsyncClient) -> None:
         """Test that the setup page returns HTML."""
@@ -42,6 +60,31 @@ class TestSetupPage:
         resp = await unauthed_client.get("/setup")
         assert SETUP_COPY_TEXT in resp.text
 
+    async def test_setup_page_shows_pairing_url_and_change_hints_when_backend_is_reachable(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """The setup page should always show the configured pairing URL and how to change it."""
+        resp = await unauthed_client.get("/setup")
+        assert PAIRING_URL_DEBUG_TEXT in resp.text
+        assert PAIRING_BACKEND_URL_TEXT in resp.text
+        assert DEFAULT_BACKEND_PRESET_TEXT in resp.text
+        assert HOW_TO_CHANGE_TEXT in resp.text
+        assert PAIRING_BACKEND_URL_VALUE in resp.text
+        assert REACHABLE_TEXT in resp.text
+        assert NOT_REACHABLE_TEXT not in resp.text
+
+    async def test_setup_page_shows_pairing_help_when_backend_is_unreachable(
+        self,
+        unauthed_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The debugging section should reflect when the backend cannot be reached."""
+        monkeypatch.setattr(setup_router, "_pairing_backend_reachable", AsyncMock(return_value=False))
+        resp = await unauthed_client.get("/setup")
+        assert NOT_REACHABLE_TEXT in resp.text
+        assert "No relay is active yet" in resp.text
+
     async def test_setup_page_shows_pairing_status(
         self,
         unauthed_client: AsyncClient,
@@ -58,29 +101,12 @@ class TestSetupPage:
                 expires_at=datetime.now(UTC) + timedelta(minutes=10),
             ),
         )
-        original = (
-            settings.relay_backend_url,
-            settings.relay_camera_id,
-            settings.relay_key_id,
-            settings.relay_private_key_pem,
-        )
-        settings.relay_backend_url = EXAMPLE_RELAY_BACKEND_URL
-        settings.relay_camera_id = "cam-1"
-        settings.relay_key_id = "key-1"
-        settings.relay_private_key_pem = "private-key"
-        try:
-            resp = await unauthed_client.get("/setup")
-            assert PAIRING_CODE in resp.text
-            assert PAIRING_EXPIRY_ATTR in resp.text
-            assert PAIRING_TTL_ATTR in resp.text
-            assert RELAY_CONNECTED_TEXT in resp.text
-        finally:
-            (
-                settings.relay_backend_url,
-                settings.relay_camera_id,
-                settings.relay_key_id,
-                settings.relay_private_key_pem,
-            ) = original
+        resp = await unauthed_client.get("/setup")
+        assert PAIRING_CODE in resp.text
+        assert PAIRING_EXPIRY_ATTR in resp.text
+        assert PAIRING_TTL_ATTR in resp.text
+        assert "Enter this code in the ReLab app" in resp.text
+        assert PAIRED_TEXT not in resp.text
 
     async def test_setup_page_shows_pairing_error(
         self,
@@ -108,6 +134,7 @@ class TestSetupPage:
             lambda: SimpleNamespace(status="paired", code=None, error=None, expires_at=None),
         )
         resp = await unauthed_client.get("/setup")
+        assert PAIRED_TEXT in resp.text
         assert PAIRED_SUCCESS_TEXT in resp.text
 
     async def test_setup_page_shows_unpair_button_when_relay_enabled(
@@ -123,6 +150,19 @@ class TestSetupPage:
         resp = await unauthed_client.get("/setup")
         assert resp.status_code == 200
         assert UNPAIR_FUNCTION_CALL in resp.text
+        assert PAIRING_BACKEND_URL_TEXT in resp.text
+
+    async def test_setup_page_falls_back_to_this_ip_placeholder_when_no_mdns_name(
+        self,
+        unauthed_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The direct-connect instructions should not claim a bogus LAN IP."""
+        monkeypatch.setattr(settings, "local_api_key", "test-local-api-key")
+        resp = await unauthed_client.get("/setup")
+        assert resp.status_code == 200
+        assert THIS_IP_PLACEHOLDER in resp.text
+        assert ".local" not in resp.text
 
 
 class TestUnpair:
@@ -136,7 +176,6 @@ class TestUnpair:
             patch("app.api.routers.setup.asyncio.sleep"),
         ):
             resp = await unauthed_client.delete("/pairing/credentials")
-            await asyncio.sleep(0)  # let the background task run
         assert resp.status_code == 204
 
     async def test_unpair_deletes_credentials_and_clears_settings(
@@ -146,14 +185,21 @@ class TestUnpair:
         """Credentials file is deleted and runtime settings are cleared after the brief delay."""
         deleted: list[bool] = []
         cleared: list[bool] = []
+        created_tasks: list[asyncio.Task[None]] = []
+
+        def _create_task(coro: object, name: str | None = None) -> asyncio.Task[None]:
+            task = asyncio.get_running_loop().create_task(coro, name=name)
+            created_tasks.append(task)
+            return task
 
         with (
             patch("app.api.routers.setup.delete_relay_credentials", side_effect=lambda: deleted.append(True)),
             patch("app.api.routers.setup.clear_runtime_relay_credentials", side_effect=lambda: cleared.append(True)),
             patch("app.api.routers.setup.asyncio.sleep"),  # skip the 0.1s delay
+            patch("app.api.routers.setup.asyncio.create_task", side_effect=_create_task),
         ):
             resp = await unauthed_client.delete("/pairing/credentials")
-            await asyncio.sleep(0)  # yield so the background task executes
+            await created_tasks[0]
 
         assert resp.status_code == 204
         assert deleted == [True]

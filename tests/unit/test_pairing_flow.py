@@ -27,6 +27,7 @@ PAIRING_CODE_1 = "CODE1"
 PAIRING_CODE_2 = "CODE2"
 PAIRING_MODE_LOG_PREFIX = "PAIRING MODE | state=awaiting_claim setup=/setup"
 PAIRING_FAILURE_LOG = "Pairing cycle failed"
+PAIRING_API_NOT_FOUND_LOG = "Pairing backend missing pairing API | stopping pairing"
 FINGERPRINT_2 = "FP2"
 LAN_SETUP_URL = "http://192.168.1.42:8018/setup"
 RELATIVE_SETUP_PATH = "/setup"
@@ -143,6 +144,23 @@ class TestRunPairing:
         on_paired = AsyncMock()
         await pairing_mod.run_pairing(on_paired)
         on_paired.assert_not_awaited()
+
+    async def test_stops_when_register_endpoint_is_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A 404 on the register endpoint should stop pairing instead of retrying forever."""
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+        monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: FakeClient([FakeResponse(404)], []))
+        on_paired = AsyncMock()
+
+        with caplog.at_level(logging.ERROR):
+            await pairing_mod.run_pairing(on_paired)
+
+        on_paired.assert_not_awaited()
+        assert PAIRING_API_NOT_FOUND_LOG in caplog.text
+        assert "Traceback" not in caplog.text
 
     async def test_rewrites_loopback_backend_to_host_docker_internal(
         self,
