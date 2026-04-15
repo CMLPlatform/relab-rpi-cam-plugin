@@ -93,6 +93,7 @@ class AppRuntime:
         name: str,
     ) -> asyncio.Task[None]:
         """Create a tracked repeating task."""
+
         async def _loop() -> None:
             while True:
                 try:

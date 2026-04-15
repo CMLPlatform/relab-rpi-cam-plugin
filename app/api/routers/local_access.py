@@ -26,6 +26,7 @@ _API_PORT = 8018
 _MEDIA_PORT = 8888
 _DOCKERISH_INTERFACE_PREFIXES = ("docker", "veth", "br-", "virbr", "tap", "tun", "zt")
 
+
 def _get_candidate_urls() -> list[str]:
     """Return all non-loopback IPv4 base URLs for this host.
 

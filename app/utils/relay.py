@@ -45,6 +45,7 @@ _BINARY_IMAGE = "image"
 _BINARY_OCTET = "octet-stream"
 _BINARY_VIDEO = "video"
 
+
 class _AsyncWebSocket(Protocol):
     """Protocol for async WebSocket connections (e.g. websockets library)."""
 
