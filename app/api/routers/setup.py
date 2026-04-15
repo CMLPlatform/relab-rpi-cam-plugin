@@ -46,6 +46,8 @@ async def setup_page(request: Request) -> HTMLResponse:
             "status_paired": STATUS_PAIRED,
             "status_error": _STATUS_ERROR,
             "pairing_code_ttl_seconds": PAIRING_CODE_TTL_SECONDS,
+            "local_mode_enabled": settings.local_mode_enabled,
+            "local_api_key": settings.local_api_key,
         },
     )
 

@@ -3,6 +3,7 @@
 import json
 import logging
 import secrets
+import tempfile
 import warnings
 from collections.abc import Iterable
 from pathlib import Path
@@ -81,6 +82,33 @@ class Settings(BaseSettings):
 
     # Debug mode
     debug: bool = False
+
+    # Local (direct Ethernet / USB-C) mode
+    # When enabled, the plugin auto-generates a persistent local_api_key on startup
+    # (saved to the credentials JSON) and accepts it alongside relay and user-configured
+    # keys. The frontend can discover the Pi via mDNS and switch to direct HLS/API access.
+    local_mode_enabled: bool = False
+    local_api_key: str = ""  # Auto-generated if empty and local_mode_enabled=True
+    # Extra CORS origins allowed for direct-connect clients, e.g. "http://192.168.1.42"
+    # Accepts a JSON array string or comma-separated list (same format as authorized_api_keys).
+    local_allowed_origins: list[str] = []
+
+    @field_validator("local_allowed_origins", mode="before")
+    @classmethod
+    def _parse_local_origins(cls, v: object) -> list[str]:
+        """Accept a JSON array, comma-separated string, or empty value."""
+        if isinstance(v, list):
+            return cast("list[str]", v)
+        if not isinstance(v, str):
+            return cast("list[str]", list(v)) if isinstance(v, Iterable) else []
+        stripped = v.strip()
+        if not stripped:
+            return []
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            return [k.strip().strip("\"'") for k in stripped.strip("[]").split(",") if k.strip()]
+        return cast("list[str]", [parsed] if not isinstance(parsed, list) else parsed)
 
     # WebSocket relay (auto-enabled when all three fields are set)
     relay_backend_url: str = ""  # wss://your-backend/plugins/rpi-cam/ws/connect
@@ -201,6 +229,64 @@ def clear_runtime_relay_credentials() -> None:
     settings.relay_auth_scheme = ""
     settings.relay_key_id = ""
     settings.relay_private_key_pem = ""
+
+
+def _persist_local_api_key(key: str) -> None:
+    """Add/update local_api_key in the shared credentials JSON file.
+
+    Reads any existing content (relay creds, etc.) and merges the key in so
+    nothing else is overwritten. Writes atomically to prevent corruption.
+    """
+    _CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict[str, object] = {}
+    if _CREDENTIALS_FILE.exists():
+        try:
+            existing = json.loads(_CREDENTIALS_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    existing["local_api_key"] = key
+    with tempfile.NamedTemporaryFile(
+        mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
+    ) as tmp:
+        tmp_path = tmp.name
+        tmp.write(json.dumps(existing, indent=2))
+    try:
+        Path(tmp_path).replace(_CREDENTIALS_FILE)
+        _CREDENTIALS_FILE.chmod(0o600)
+    except OSError:
+        from contextlib import suppress
+
+        with suppress(OSError):
+            Path(tmp_path).unlink()
+        raise
+    logger.info("local_api_key persisted to %s", _CREDENTIALS_FILE)
+
+
+def apply_local_mode() -> None:
+    """Load or generate the local API key when local mode is enabled.
+
+    Should be called once during application startup (lifespan) after
+    ``apply_relay_credentials()``, so credentials are fully loaded first.
+    Does nothing when ``local_mode_enabled`` is False.
+    """
+    if not settings.local_mode_enabled:
+        return
+
+    # Priority: env-provided > credentials file > auto-generate
+    local_api_key = settings.local_api_key
+    if not local_api_key:
+        creds = load_relay_credentials()
+        local_api_key = str(creds.get("local_api_key", "")) if creds else ""
+
+    if not local_api_key:
+        local_api_key = f"local_{secrets.token_urlsafe(32)}"
+        _persist_local_api_key(local_api_key)
+        logger.info("Local mode: generated new API key and persisted to credentials file")
+
+    settings.local_api_key = local_api_key
+    if local_api_key not in settings.authorized_api_keys:
+        settings.authorized_api_keys.append(local_api_key)
+    logger.info("Local mode active — direct connection API key loaded")
 
 
 def set_runtime_relay_credentials(
