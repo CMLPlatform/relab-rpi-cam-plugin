@@ -104,9 +104,15 @@ class RelayService:
                     )
             except _RELAY_CONNECTION_ERRORS as exc:
                 logger.warning(
-                    "Relay connection lost. Reconnecting in %.0fs…",
+                    "Relay connection lost (%s). Reconnecting in %.0fs…",
+                    _format_relay_connection_error(exc),
                     delay,
-                    exc_info=exc,
+                    extra=build_log_extra(),
+                )
+            except Exception:
+                logger.exception(
+                    "Relay loop failed unexpectedly. Reconnecting in %.0fs…",
+                    delay,
                     extra=build_log_extra(),
                 )
             finally:
@@ -122,6 +128,14 @@ class RelayService:
     def build_url(self) -> str:
         """Return the active relay URL including camera identifier."""
         return f"{self._runtime_state.relay_backend_url.rstrip('/')}?camera_id={self._runtime_state.relay_camera_id}"
+
+
+def _format_relay_connection_error(exc: Exception) -> str:
+    """Return a concise description for expected transient relay failures."""
+    if isinstance(exc, InvalidStatus):
+        response = exc.response
+        return f"HTTP {response.status_code}"
+    return str(exc) or type(exc).__name__
 
 
 class _WebSocketConnection:

@@ -16,6 +16,7 @@ from app.utils import relay as relay_mod
 from app.utils.relay import (
     RelayService,
     _extract_trace_headers,
+    _format_relay_connection_error,
     _handle_command,
     _receive_loop,
     _send_error,
@@ -36,6 +37,10 @@ HLS_SEGMENT_CONTENT_TYPE = "video/mp4"
 TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00"
 TRACESTATE = "vendor=value"
 BAGGAGE = "user_id=42"
+HTTP_502_SUMMARY = "HTTP 502"
+NETWORK_DOWN = "network down"
+RELAY_RECONNECT_LOG = "Relay connection lost (HTTP 502). Reconnecting in 2s"
+TRACEBACK_MARKER = "Traceback"
 
 
 class TestRelayServiceConfig:
@@ -74,6 +79,21 @@ class TestRelayServiceUrl:
         runtime_state = RuntimeState(relay_backend_url=f"{EXAMPLE_RELAY_BACKEND_URL}/", relay_camera_id="cam-42")
         service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
         assert service.build_url() == EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
+
+
+class TestRelayConnectionErrorFormatting:
+    """Tests for concise formatting of expected reconnect errors."""
+
+    def test_invalid_status_formats_as_http_code(self) -> None:
+        """Handshake failures should log as short HTTP status summaries."""
+        response = Response(502, "Bad Gateway", Headers(), b"error code: 502")
+        exc = InvalidStatus(response)
+
+        assert _format_relay_connection_error(exc) == HTTP_502_SUMMARY
+
+    def test_generic_error_uses_message(self) -> None:
+        """Non-handshake reconnect errors should use their message text."""
+        assert _format_relay_connection_error(OSError(NETWORK_DOWN)) == NETWORK_DOWN
 
 
 class TestSendError:
@@ -344,6 +364,31 @@ class TestRelayServiceRunForever:
 
         with pytest.raises(asyncio.CancelledError):
             await service.run_forever()
+
+    async def test_expected_connection_errors_log_without_traceback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Expected reconnectable failures should log concisely without traceback noise."""
+        runtime_state = RuntimeState()
+        runtime_state.set_relay_credentials(
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
+            relay_camera_id="cam-1",
+            relay_auth_scheme=RELAY_AUTH_SCHEME,
+            relay_key_id=RELAY_KEY_ID,
+            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
+        )
+        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        response = Response(502, "Bad Gateway", Headers(), b"error code: 502")
+        monkeypatch.setattr(relay_mod, "_websocket_connect", lambda _url: _HandshakeFailure(response))
+        monkeypatch.setattr(relay_mod.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError()))
+
+        with caplog.at_level("WARNING"), pytest.raises(asyncio.CancelledError):
+            await service.run_forever()
+
+        assert RELAY_RECONNECT_LOG in caplog.text
+        assert TRACEBACK_MARKER not in caplog.text
 
 
 class _HandshakeFailure:
