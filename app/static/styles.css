@@ -298,7 +298,21 @@ body.setup-page p {
     box-shadow: 0 12px 26px rgba(16, 185, 129, 0.14);
 }
 
+.setup-refresh-code-btn[data-feedback-state="success"] {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.28);
+    color: #047857;
+    box-shadow: 0 12px 26px rgba(16, 185, 129, 0.14);
+}
+
 .setup-copy-code-btn[data-feedback-state="failed"] {
+    background: rgba(239, 68, 68, 0.11);
+    border-color: rgba(239, 68, 68, 0.24);
+    color: #b91c1c;
+    box-shadow: 0 12px 26px rgba(239, 68, 68, 0.12);
+}
+
+.setup-refresh-code-btn[data-feedback-state="failed"] {
     background: rgba(239, 68, 68, 0.11);
     border-color: rgba(239, 68, 68, 0.24);
     color: #b91c1c;
@@ -335,7 +349,9 @@ body.setup-page p {
 }
 
 .setup-copy-code-btn[data-feedback-state="copied"] svg,
-.setup-copy-code-btn[data-feedback-state="failed"] svg {
+.setup-copy-code-btn[data-feedback-state="failed"] svg,
+.setup-refresh-code-btn[data-feedback-state="success"] svg,
+.setup-refresh-code-btn[data-feedback-state="failed"] svg {
     width: 17px;
     height: 17px;
 }
