@@ -4,16 +4,16 @@ import pytest
 from httpx import AsyncClient
 
 from app.api.routers import local_key as local_key_router
-from app.core.config import settings
+from app.core.runtime import AppRuntime
 
 LOCAL_KEY_PATH = "/local-key"
 TEST_LOCAL_KEY = "test-local-api-key"
 
 
 @pytest.fixture
-def _local_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def _local_api_key(app_runtime: AppRuntime) -> None:
     """Ensure the endpoint has a stable key to return."""
-    monkeypatch.setattr(settings, "local_api_key", TEST_LOCAL_KEY)
+    app_runtime.runtime_state.set_local_api_key(TEST_LOCAL_KEY)
 
 
 @pytest.mark.usefixtures("_local_api_key")

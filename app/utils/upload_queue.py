@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from app.api.services.image_sinks.base import ImageSink, ImageSinkError
+from app.utils.logging import build_log_extra
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -96,7 +97,7 @@ class UploadQueue:
         }
         await asyncio.to_thread(target_metadata.write_text, json.dumps(entry_data, indent=2))
 
-        logger.info("Enqueued capture %s for backend retry", image_id)
+        logger.info("Enqueued capture %s for backend retry", image_id, extra=build_log_extra())
         return QueuedCapture(
             image_id=image_id,
             image_path=target_image,
@@ -128,7 +129,12 @@ class UploadQueue:
         attempts = entry.attempts + 1
         if attempts >= _MAX_ATTEMPTS:
             await self._dead_letter(entry)
-            logger.warning("Capture %s dead-lettered after %d failed attempts", entry.image_id, attempts)
+            logger.warning(
+                "Capture %s dead-lettered after %d failed attempts",
+                entry.image_id,
+                attempts,
+                extra=build_log_extra(),
+            )
             return True
 
         backoff = _BACKOFF_SCHEDULE[attempts]
@@ -147,6 +153,7 @@ class UploadQueue:
             entry.image_id,
             attempts,
             backoff,
+            extra=build_log_extra(),
         )
         return False
 
@@ -154,10 +161,17 @@ class UploadQueue:
         """Delete a successfully-uploaded entry from disk."""
         await asyncio.to_thread(_unlink_quiet, entry.image_path)
         await asyncio.to_thread(_unlink_quiet, entry.metadata_path)
-        logger.info("Capture %s drained from queue", entry.image_id)
+        logger.info("Capture %s drained from queue", entry.image_id, extra=build_log_extra())
 
     async def drain_once(self) -> int:
-        """Attempt every due entry exactly once. Returns the number of successes."""
+        """Attempt every due entry exactly once. Returns the number of successes.
+
+        Each entry is processed in its own try/except so a single poisonous entry
+        cannot stop the rest of the queue from draining. ``asyncio.CancelledError``
+        propagates (task shutdown) but every other exception — including
+        ``TimeoutError`` on the sink upload — is treated as a failed attempt and
+        eventually dead-letters via the normal retry schedule.
+        """
         successes = 0
         for entry in self.iter_pending():
             if not self.is_due(entry):
@@ -171,17 +185,35 @@ class UploadQueue:
                     capture_metadata=entry.capture_metadata,
                     upload_metadata=entry.upload_metadata,
                 )
+            except asyncio.CancelledError:
+                raise
             except ImageSinkError as exc:
                 logger.debug("Queue drain: %s still failing: %s", entry.image_id, exc)
                 await self.mark_attempt_failed(entry)
                 continue
-            except OSError:
-                logger.exception("Queue drain: %s file unreadable", entry.image_id)
+            except TimeoutError:
+                logger.warning("Queue drain: %s upload timed out", entry.image_id, extra=build_log_extra())
                 await self.mark_attempt_failed(entry)
+                continue
+            except OSError:
+                logger.exception("Queue drain: %s file unreadable", entry.image_id, extra=build_log_extra())
+                await self.mark_attempt_failed(entry)
+                continue
+            except Exception:
+                # Unexpected exception: don't let one poisoned entry kill the drain
+                # pass. Log with stacktrace, mark as failed, and keep going.
+                logger.exception("Queue drain: %s hit unexpected error", entry.image_id, extra=build_log_extra())
+                with contextlib.suppress(Exception):
+                    await self.mark_attempt_failed(entry)
                 continue
 
             await self.mark_attempt_succeeded(entry)
-            logger.info("Queue drain: %s uploaded as stored id %s", entry.image_id, stored.image_id)
+            logger.info(
+                "Queue drain: %s uploaded as stored id %s",
+                entry.image_id,
+                stored.image_id,
+                extra=build_log_extra(),
+            )
             successes += 1
         return successes
 
@@ -192,12 +224,16 @@ class UploadQueue:
         try:
             payload = json.loads(metadata_path.read_text())
         except (OSError, json.JSONDecodeError):
-            logger.warning("Queue: skipping unreadable metadata %s", metadata_path)
+            logger.warning("Queue: skipping unreadable metadata %s", metadata_path, extra=build_log_extra())
             return None
         image_id = payload.get("image_id") or metadata_path.stem
         image_path = self._root / f"{image_id}.jpg"
         if not image_path.exists():
-            logger.warning("Queue: metadata %s has no matching jpg; cleaning up", metadata_path)
+            logger.warning(
+                "Queue: metadata %s has no matching jpg; cleaning up",
+                metadata_path,
+                extra=build_log_extra(),
+            )
             _unlink_quiet(metadata_path)
             return None
         try:
@@ -285,7 +321,7 @@ class UploadQueueWorker:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception("Upload queue drain failed; continuing")
+                logger.exception("Upload queue drain failed; continuing", extra=build_log_extra())
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval_s)
             except TimeoutError:

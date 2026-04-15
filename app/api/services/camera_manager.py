@@ -29,12 +29,15 @@ from app.api.services.stream_service import StreamService
 from app.api.services.stream_state import ActiveStreamState
 from app.core.config import settings
 from app.utils.files import clear_directory
+from app.utils.logging import build_log_extra
 from app.utils.upload_queue import UploadQueue
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping
     from pathlib import Path
 
+    from PIL.Image import Exif
+    from PIL.Image import Image as PilImage
     from relab_rpi_cam_models.stream import StreamMode, StreamView
 
 logger = logging.getLogger(__name__)
@@ -60,9 +63,9 @@ def _unlink_quiet(path: Path) -> None:
 
 
 def _encode_jpeg_atomic(
-    image: object,
+    image: PilImage,
     image_path: Path,
-    exif: bytes,
+    exif: Exif,
 ) -> bytes:
     """Encode a PIL image to ``image_path`` atomically and return the bytes.
 
@@ -72,7 +75,7 @@ def _encode_jpeg_atomic(
     """
     tmp_path = image_path.with_suffix(image_path.suffix + ".tmp")
     try:
-        image.save(tmp_path, exif=exif, format="JPEG", quality=90)  # type: ignore[attr-defined]
+        image.save(tmp_path, exif=exif, format="JPEG", quality=90)
         image_bytes = tmp_path.read_bytes()
         tmp_path.replace(image_path)
     except BaseException:
@@ -130,6 +133,10 @@ class CameraManager:
         """Return the most recently uploaded image URL, if any."""
         return self._last_image_url
 
+    def has_active_stream(self) -> bool:
+        """Whether a stream is currently active."""
+        return self.stream.is_active
+
     @contextlib.asynccontextmanager
     async def _locked(self) -> AsyncIterator[None]:
         """Acquire the camera lock with a timeout, yielding inside the critical section.
@@ -138,14 +145,12 @@ class CameraManager:
         and cancellation all release the lock automatically.
         """
         try:
-            await asyncio.wait_for(self.lock.acquire(), timeout=self.lock_timeout)
+            async with asyncio.timeout(self.lock_timeout):
+                async with self.lock:
+                    yield
         except TimeoutError as e:
             err_msg = f"Failed to acquire camera lock - timeout error: {e}"
             raise RuntimeError(err_msg) from e
-        try:
-            yield
-        finally:
-            self.lock.release()
 
     async def setup_camera(self, mode: CameraMode) -> None:
         """Prepare the configured backend for the requested camera mode."""
@@ -193,7 +198,12 @@ class CameraManager:
                 upload_metadata=upload_meta,
             )
         except ImageSinkError as exc:
-            logger.warning("Image sink for %s failed; enqueueing for retry: %s", image_id, exc)
+            logger.warning(
+                "Image sink for %s failed; enqueueing for retry: %s",
+                image_id,
+                exc,
+                extra=build_log_extra(stream_mode=self.stream.mode),
+            )
             self._last_image_url = None
             await self.upload_queue.enqueue(
                 image_id=image_id,
@@ -302,6 +312,7 @@ class CameraManager:
             if self.stream.is_active:
                 raise ActiveStreamError(self.stream)
             try:
+                logger.info("Starting stream", extra=build_log_extra(stream_mode=mode))
                 result = await backend.start_stream(mode, youtube_config=youtube_config)
                 self.stream_service.start(result)
             except Exception:
@@ -321,6 +332,7 @@ class CameraManager:
             if not self.stream.is_active:
                 err_msg = "No stream active"
                 raise RuntimeError(err_msg)
+            logger.info("Stopping stream", extra=build_log_extra(stream_mode=self.stream.mode))
             await backend.stop_stream()
             self.stream_service.reset()
 
@@ -349,6 +361,10 @@ class CameraManager:
         # Return empty stream view if no stream is active
         return None
 
+    async def get_stream_view(self) -> StreamView | None:
+        """Return the public stream view for the current state."""
+        return await self.get_stream_info()
+
     async def get_status(self) -> CameraStatusView:
         """Return the current camera status including active stream info."""
         stream_info = await self.get_stream_info()
@@ -357,3 +373,7 @@ class CameraManager:
             stream=stream_info if self.stream.is_active else None,
             last_image_url=self._last_image_url,
         )
+
+    async def get_camera_status(self) -> CameraStatusView:
+        """Return the public camera status view."""
+        return await self.get_status()

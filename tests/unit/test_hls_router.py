@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from app.api.routers import hls as hls_mod
 from app.api.routers.hls import _is_local_client, proxy_hls
-from app.utils import relay_state
+from app.utils.relay_state import RelayRuntimeState
 from tests.constants import HLS_M3U8_CONTENT_TYPE, HLS_MP4_CONTENT_TYPE, HLS_PREVIEW_ENCODER_FRAGMENT
 
 if TYPE_CHECKING:
@@ -65,10 +65,6 @@ def _request(host: str = "192.168.2.10") -> MagicMock:
 class TestProxyHLS:
     """The Pi HLS proxy forwards to MediaMTX and returns the body verbatim."""
 
-    def setup_method(self) -> None:
-        """Reset HLS activity between tests."""
-        relay_state.reset_for_tests()
-
     async def test_m3u8_playlist_returned_as_hls_text(self) -> None:
         """The m3u8 playlist should come back with the correct content type."""
         playlist = b"#EXTM3U\n#EXT-X-VERSION:9\n#EXT-X-TARGETDURATION:1\n"
@@ -79,11 +75,13 @@ class TestProxyHLS:
         )
 
         with _patch_httpx(response):
+            relay_state = RelayRuntimeState()
             result = await proxy_hls(
                 request=_request(),
                 hls_path="cam-preview/index.m3u8",
                 camera_manager=_camera_manager(),
                 pipeline=_pipeline(),
+                relay_state=relay_state,
             )
 
         assert result.body == playlist
@@ -100,11 +98,13 @@ class TestProxyHLS:
         )
 
         with _patch_httpx(response):
+            relay_state = RelayRuntimeState()
             result = await proxy_hls(
                 request=_request(),
                 hls_path="cam-preview/segment0.mp4",
                 camera_manager=_camera_manager(),
                 pipeline=_pipeline(),
+                relay_state=relay_state,
             )
 
         assert result.body == segment
@@ -117,11 +117,13 @@ class TestProxyHLS:
         pipeline = _pipeline(running=False)
 
         with _patch_httpx(response):
+            relay_state = RelayRuntimeState()
             await proxy_hls(
                 request=_request(),
                 hls_path="cam-preview/index.m3u8",
                 camera_manager=_camera_manager(camera),
                 pipeline=pipeline,
+                relay_state=relay_state,
             )
 
         pipeline.start.assert_awaited_once_with(camera)
@@ -132,23 +134,27 @@ class TestProxyHLS:
         pipeline = _pipeline(running=False)
 
         with _patch_httpx(response):
+            relay_state = RelayRuntimeState()
             await proxy_hls(
                 request=_request(),
                 hls_path="other/index.m3u8",
                 camera_manager=_camera_manager(),
                 pipeline=pipeline,
+                relay_state=relay_state,
             )
 
         pipeline.start.assert_not_called()
 
     async def test_public_client_is_rejected_before_proxying(self) -> None:
         """Unauthenticated HLS is limited to local network clients."""
+        relay_state = RelayRuntimeState()
         with pytest.raises(HTTPException) as excinfo:
             await proxy_hls(
                 request=_request("8.8.8.8"),
                 hls_path="cam-preview/index.m3u8",
                 camera_manager=_camera_manager(),
                 pipeline=_pipeline(),
+                relay_state=relay_state,
             )
 
         assert excinfo.value.status_code == 403
@@ -156,12 +162,14 @@ class TestProxyHLS:
 
     async def test_404_on_missing_stream(self) -> None:
         """MediaMTX 404 means the publisher hasn't attached yet."""
+        relay_state = RelayRuntimeState()
         with _patch_httpx(_Response(404)), pytest.raises(HTTPException) as excinfo:
             await proxy_hls(
                 request=_request(),
                 hls_path="cam-preview/index.m3u8",
                 camera_manager=_camera_manager(),
                 pipeline=_pipeline(),
+                relay_state=relay_state,
             )
         assert excinfo.value.status_code == 404
         assert HLS_PREVIEW_ENCODER_FRAGMENT in str(excinfo.value.detail)
@@ -169,23 +177,27 @@ class TestProxyHLS:
 
     async def test_other_4xx_raises_502(self) -> None:
         """Anything other than 404 becomes a 502 upstream-error."""
+        relay_state = RelayRuntimeState()
         with _patch_httpx(_Response(401)), pytest.raises(HTTPException) as excinfo:
             await proxy_hls(
                 request=_request(),
                 hls_path="cam-preview/index.m3u8",
                 camera_manager=_camera_manager(),
                 pipeline=_pipeline(),
+                relay_state=relay_state,
             )
         assert excinfo.value.status_code == 502
 
     async def test_network_error_raises_503(self) -> None:
         """Connection failure to MediaMTX surfaces as a 503."""
+        relay_state = RelayRuntimeState()
         with _patch_httpx(httpx.ConnectError("refused")), pytest.raises(HTTPException) as excinfo:
             await proxy_hls(
                 request=_request(),
                 hls_path="cam-preview/index.m3u8",
                 camera_manager=_camera_manager(),
                 pipeline=_pipeline(),
+                relay_state=relay_state,
             )
         assert excinfo.value.status_code == 503
 

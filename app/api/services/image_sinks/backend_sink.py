@@ -27,13 +27,14 @@ class BackendPushSink:
     async def put(
         self,
         *,
-        image_id: str,  # noqa: ARG002 — signature consistency with ImageSink Protocol
+        image_id: str,
         image_bytes: bytes,
         filename: str,
         capture_metadata: Mapping[str, object],
         upload_metadata: Mapping[str, object],
     ) -> StoredImage:
         """Push the capture to the Relab backend and return its stored URL."""
+        del image_id
         try:
             uploaded = await upload_image(
                 image_bytes=image_bytes,

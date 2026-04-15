@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import functools
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -30,7 +29,8 @@ from typing import TYPE_CHECKING
 from relab_rpi_cam_models.telemetry import ThermalState
 
 from app.api.services.hardware_protocols import Picamera2Like
-from app.api.services.preview_pipeline import PreviewPipelineManager, get_preview_pipeline_manager
+from app.api.services.preview_pipeline import PreviewPipelineManager
+from app.utils.logging import build_log_extra
 from app.utils.telemetry import collect_telemetry
 
 if TYPE_CHECKING:
@@ -121,7 +121,7 @@ class ThermalGovernor:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception("Thermal governor tick failed; continuing")
+                logger.exception("Thermal governor tick failed; continuing", extra=build_log_extra())
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval_s)
             except TimeoutError:
@@ -149,6 +149,7 @@ class ThermalGovernor:
                     "Thermal governor dropped lores preview bitrate to %d bps (CPU %.1f°C)",
                     self._low_bitrate,
                     temp,
+                    extra=build_log_extra(),
                 )
             return
 
@@ -163,6 +164,7 @@ class ThermalGovernor:
                     "Thermal governor restored lores preview bitrate to %d bps (CPU %.1f°C)",
                     self._high_bitrate,
                     temp,
+                    extra=build_log_extra(),
                 )
             return
 
@@ -178,14 +180,3 @@ class ThermalGovernor:
         if camera is None:
             return
         await self._pipeline.set_bitrate(camera, bitrate)
-
-
-@functools.lru_cache(maxsize=1)
-def get_thermal_governor() -> ThermalGovernor:
-    """Return the process-wide thermal governor, creating it on first call."""
-    return ThermalGovernor(get_preview_pipeline_manager())
-
-
-def reset_thermal_governor() -> None:
-    """Reset the singleton (tests only)."""
-    get_thermal_governor.cache_clear()

@@ -30,6 +30,10 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 import app.core.config as core_config
+from app.core.runtime_context import get_active_runtime
+from app.utils.logging import build_log_extra
+from app.utils.pairing_client import PairingClient
+from relab_rpi_cam_models import PairingClaimedBootstrap, PairingStatus, RelayAuthScheme
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -80,7 +84,102 @@ class PairingState:
     error: str | None = None
 
 
-_state = PairingState()
+class PairingService:
+    """Runtime-owned pairing orchestration and observable state."""
+
+    def __init__(self) -> None:
+        self.state = PairingState()
+
+    def reset_state(self) -> None:
+        """Clear the active pairing code and return to idle."""
+        _clear_transient_pairing_state(self.state, status="idle")
+
+    def get_state(self) -> PairingState:
+        """Return the current pairing state."""
+        return self.state
+
+    def log_mode_started(self) -> None:
+        """Emit a headless-friendly startup message for pairing mode."""
+        logger.info(
+            "PAIRING MODE | state=awaiting_claim setup=%s pairing_backend=%s",
+            _pairing_setup_location(),
+            core_config.settings.pairing_backend_url.rstrip("/"),
+            extra=build_log_extra(),
+        )
+
+    async def run_forever(self, on_paired: Callable[[], Coroutine[Any, Any, None]]) -> None:
+        """Run the pairing flow until credentials are obtained or a fatal error occurs."""
+        base = _normalize_pairing_backend_base_url(core_config.settings.pairing_backend_url.rstrip("/"))
+        if not base:
+            return
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            while True:
+                try:
+                    await self._pairing_cycle(client, base, on_paired)
+                except PairingCodeExpiredError:
+                    continue
+                except PairingBackendNotFoundError:
+                    logger.exception("Pairing backend missing pairing API | stopping pairing")
+                    _clear_transient_pairing_state(
+                        self.state,
+                        status="error",
+                        error="Pairing backend is reachable, but the pairing API was not found at the configured URL.",
+                    )
+                    return
+                except httpx.HTTPStatusError as exc:
+                    _log_pairing_http_status_error(exc)
+                    logger.exception("Pairing cycle failed | retry_in_s=10")
+                    _clear_transient_pairing_state(self.state, status="error", error="Pairing failed — retrying…")
+                    await asyncio.sleep(10)
+                except httpx.ConnectError as exc:
+                    _log_pairing_connect_error(exc, base)
+                    logger.exception("Pairing cycle failed | retry_in_s=10")
+                    _clear_transient_pairing_state(
+                        self.state, status="error", error="Pairing backend unreachable — retrying…"
+                    )
+                    await asyncio.sleep(10)
+                except Exception:
+                    logger.exception("Pairing cycle failed | retry_in_s=10")
+                    _clear_transient_pairing_state(self.state, status="error", error="Pairing failed — retrying…")
+                    await asyncio.sleep(10)
+                else:
+                    return
+
+    def _set_pairing_code_state(self, code: str, fingerprint: str) -> None:
+        _set_pairing_code_state(self.state, code, fingerprint)
+
+    def _prepare_registration_state(self, registration: PairingRegistration) -> None:
+        self._set_pairing_code_state(registration.code, registration.fingerprint)
+        self.state.status = "registering"
+        self.state.error = None
+        _log_pairing_ready(registration.code)
+
+    async def _pairing_cycle(
+        self,
+        client: PairingClient | httpx.AsyncClient,
+        base_url: str,
+        on_paired: Callable[[], Coroutine[Any, Any, None]],
+    ) -> None:
+        pairing_client = _coerce_pairing_client(client, base_url)
+        registration = await self._register_pairing_code(pairing_client)
+        self.state.status = STATUS_WAITING
+        poll_result = await _poll_pairing_status(pairing_client, registration.code, registration.fingerprint)
+        await self._complete_pairing(poll_result, registration.private_key, on_paired)
+
+    async def _register_pairing_code(self, client: PairingClient) -> PairingRegistration:
+        return await _register_pairing_code_with_client(client, self.state)
+
+    def _clear_active_pairing_code(self) -> None:
+        _clear_active_pairing_code(self.state)
+
+    async def _complete_pairing(
+        self,
+        payload: PairingClaimedBootstrap,
+        private_key: ec.EllipticCurvePrivateKey,
+        on_paired: Callable[[], Coroutine[Any, Any, None]],
+    ) -> None:
+        await _complete_pairing_state(self.state, payload, private_key, on_paired)
 
 
 @dataclass(frozen=True)
@@ -94,18 +193,13 @@ class PairingRegistration:
     public_key_jwk: dict[str, str]
 
 
-def get_pairing_state() -> PairingState:
-    """Return the current pairing state (read by the setup page)."""
-    return _state
-
-
-def _clear_transient_pairing_state(*, status: str, error: str | None = None) -> None:
+def _clear_transient_pairing_state(state: PairingState, *, status: str, error: str | None = None) -> None:
     """Reset transient pairing state after a failed cycle or before restart."""
-    _state.code = None
-    _state.fingerprint = None
-    _state.expires_at = None
-    _state.status = status
-    _state.error = error
+    state.code = None
+    state.fingerprint = None
+    state.expires_at = None
+    state.status = status
+    state.error = error
 
 
 def _sanitize_log_value(value: object) -> str:
@@ -113,16 +207,23 @@ def _sanitize_log_value(value: object) -> str:
     return str(value).replace("\r", " ").replace("\n", " ")
 
 
+def _coerce_pairing_client(client: PairingClient | httpx.AsyncClient, base_url: str) -> PairingClient:
+    """Normalize a raw httpx client or an existing PairingClient to PairingClient."""
+    if isinstance(client, PairingClient):
+        return client
+    return PairingClient(client, base_url)
+
+
 def _pairing_code_expires_at() -> datetime:
     """Return the expiry timestamp for the currently active pairing code."""
     return datetime.now(UTC) + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
 
 
-def _set_pairing_code_state(code: str, fingerprint: str) -> None:
+def _set_pairing_code_state(state: PairingState, code: str, fingerprint: str) -> None:
     """Store the active pairing code and its expiry on the observable state."""
-    _state.code = code
-    _state.fingerprint = fingerprint
-    _state.expires_at = _pairing_code_expires_at()
+    state.code = code
+    state.fingerprint = fingerprint
+    state.expires_at = _pairing_code_expires_at()
 
 
 def _pairing_setup_location() -> str:
@@ -159,6 +260,7 @@ def _normalize_pairing_backend_base_url(base_url: str) -> str:
         "PAIRING BACKEND URL uses loopback inside a container; using %s instead of %s",
         normalized,
         base_url,
+        extra=build_log_extra(),
     )
     return normalized
 
@@ -173,15 +275,6 @@ def _lan_setup_url(port: int | None) -> str | None:
             if address and address not in _LOOPBACK_HOSTS and not address.startswith("127."):
                 return f"http://{address}:{setup_port}/setup"
     return None
-
-
-def log_pairing_mode_started() -> None:
-    """Emit a headless-friendly startup message for pairing mode."""
-    logger.info(
-        "PAIRING MODE | state=awaiting_claim setup=%s pairing_backend=%s",
-        _pairing_setup_location(),
-        core_config.settings.pairing_backend_url.rstrip("/"),
-    )
 
 
 def _format_pairing_ready_message(code: str) -> str:
@@ -200,7 +293,7 @@ def _format_pairing_ready_message(code: str) -> str:
 
 def _log_pairing_ready(code: str) -> None:
     """Emit the currently active pairing code for operators over SSH/logs."""
-    logger.info("%s", _format_pairing_ready_message(code))
+    logger.info("%s", _format_pairing_ready_message(code), extra=build_log_extra())
 
 
 def _log_pairing_connect_error(exc: httpx.ConnectError, base_url: str) -> None:
@@ -214,10 +307,11 @@ def _log_pairing_connect_error(exc: httpx.ConnectError, base_url: str) -> None:
             base_url,
             _DOCKER_HOST_ALIAS,
             parsed.port or 80,
+            extra=build_log_extra(),
         )
         return
 
-    logger.error("Pairing backend %s could not be reached.", base_url)
+    logger.error("Pairing backend %s could not be reached.", base_url, extra=build_log_extra())
 
 
 def _log_pairing_http_status_error(exc: httpx.HTTPStatusError) -> None:
@@ -251,55 +345,6 @@ def _log_pairing_timeout(stage: str, code: str, retry_in_s: int) -> None:
     logger.warning("PAIRING %s TIMEOUT | code=%s retry_in_s=%s", stage, code, retry_in_s)
 
 
-async def run_pairing(on_paired: Callable[[], Coroutine[Any, Any, None]]) -> None:
-    """Run the pairing flow: register → poll → configure → callback."""
-    base = _normalize_pairing_backend_base_url(core_config.settings.pairing_backend_url.rstrip("/"))
-    if not base:
-        return
-
-    async with httpx.AsyncClient(timeout=10) as client:
-        while True:
-            try:
-                await _pairing_cycle(client, base, on_paired)
-            except PairingCodeExpiredError:
-                continue
-            except PairingBackendNotFoundError:
-                logger.error("Pairing backend missing pairing API | stopping pairing")
-                _clear_transient_pairing_state(
-                    status="error",
-                    error="Pairing backend is reachable, but the pairing API was not found at the configured URL.",
-                )
-                return
-            except httpx.HTTPStatusError as exc:
-                _log_pairing_http_status_error(exc)
-                logger.exception("Pairing cycle failed | retry_in_s=10")
-                _clear_transient_pairing_state(status="error", error="Pairing failed — retrying…")
-                await asyncio.sleep(10)
-            except httpx.ConnectError as exc:
-                _log_pairing_connect_error(exc, base)
-                logger.exception("Pairing cycle failed | retry_in_s=10")
-                _clear_transient_pairing_state(status="error", error="Pairing backend unreachable — retrying…")
-                await asyncio.sleep(10)
-            except Exception:
-                logger.exception("Pairing cycle failed | retry_in_s=10")
-                _clear_transient_pairing_state(status="error", error="Pairing failed — retrying…")
-                await asyncio.sleep(10)
-            else:
-                return  # Successfully paired
-
-
-async def _pairing_cycle(
-    client: httpx.AsyncClient,
-    base_url: str,
-    on_paired: Callable[[], Coroutine[Any, Any, None]],
-) -> None:
-    """Single pairing attempt: register a code and poll until claimed."""
-    registration = await _register_pairing_code(client, base_url)
-    _state.status = "waiting"
-    data = await _poll_pairing_status(client, base_url, registration.code, registration.fingerprint)
-    await _complete_pairing(data, registration.private_key, on_paired)
-
-
 def _new_pairing_registration() -> PairingRegistration:
     code, fingerprint = _generate_code_and_fingerprint()
     private_key = _generate_private_key()
@@ -313,31 +358,27 @@ def _new_pairing_registration() -> PairingRegistration:
     )
 
 
-def _prepare_registration_state(registration: PairingRegistration) -> None:
-    _set_pairing_code_state(registration.code, registration.fingerprint)
-    _state.status = "registering"
-    _state.error = None
+def _prepare_registration_state(state: PairingState, registration: PairingRegistration) -> None:
+    _set_pairing_code_state(state, registration.code, registration.fingerprint)
+    state.status = "registering"
+    state.error = None
     _log_pairing_ready(registration.code)
 
 
-def _registration_payload(registration: PairingRegistration) -> dict[str, object]:
-    return {
-        "code": registration.code,
-        "rpi_fingerprint": registration.fingerprint,
-        "public_key_jwk": registration.public_key_jwk,
-        "key_id": registration.key_id,
-    }
-
-
-async def _register_pairing_code(client: httpx.AsyncClient, base_url: str) -> PairingRegistration:
+async def _register_pairing_code_with_client(
+    client: PairingClient,
+    state: PairingState,
+) -> PairingRegistration:
     registration = _new_pairing_registration()
-    _prepare_registration_state(registration)
+    _prepare_registration_state(state, registration)
 
     for _attempt in range(3):
         try:
-            resp = await client.post(
-                f"{base_url}/plugins/rpi-cam/pairing/register",
-                json=_registration_payload(registration),
+            resp = await client.register(
+                code=registration.code,
+                fingerprint=registration.fingerprint,
+                public_key_jwk=registration.public_key_jwk,
+                key_id=registration.key_id,
             )
         except httpx.TimeoutException:
             retry_delay_s = core_config.settings.pairing_register_timeout_retry_s
@@ -349,13 +390,10 @@ async def _register_pairing_code(client: httpx.AsyncClient, base_url: str) -> Pa
             return registration
         if resp.status_code == 409:
             registration = _new_pairing_registration()
-            _prepare_registration_state(registration)
+            _prepare_registration_state(state, registration)
             continue
         if resp.status_code == 404:
-            msg = (
-                "Pairing register endpoint returned 404. "
-                "Check PAIRING_BACKEND_URL and backend deployment."
-            )
+            msg = "Pairing register endpoint returned 404. Check PAIRING_BACKEND_URL and backend deployment."
             raise PairingBackendNotFoundError(msg)
 
         resp.raise_for_status()
@@ -364,20 +402,24 @@ async def _register_pairing_code(client: httpx.AsyncClient, base_url: str) -> Pa
     raise RuntimeError(msg)
 
 
-async def _poll_pairing_status(
+async def _register_pairing_code(
     client: httpx.AsyncClient,
     base_url: str,
+    state: PairingState,
+) -> PairingRegistration:
+    return await _register_pairing_code_with_client(PairingClient(client, base_url), state)
+
+
+async def _poll_pairing_status(
+    client: PairingClient,
     code: str,
     fingerprint: str,
-) -> dict[str, object]:
+) -> PairingClaimedBootstrap:
     while True:
         poll_interval_s = core_config.settings.pairing_poll_interval_s
         await asyncio.sleep(poll_interval_s)
         try:
-            resp = await client.get(
-                f"{base_url}/plugins/rpi-cam/pairing/poll",
-                params={"code": code, "fingerprint": fingerprint},
-            )
+            resp = await client.poll(code=code, fingerprint=fingerprint)
         except httpx.TimeoutException:
             _log_pairing_timeout("POLL", code, poll_interval_s)
             continue
@@ -387,37 +429,38 @@ async def _poll_pairing_status(
             raise PairingCodeExpiredError
 
         resp.raise_for_status()
-        data = resp.json()
-        if data["status"] == STATUS_WAITING:
+        data = client.parse_poll_response(resp.json())
+        if data.status == PairingStatus.WAITING:
             continue
-        return data
+        return PairingClaimedBootstrap(
+            camera_id=str(data.camera_id),
+            ws_url=str(data.ws_url),
+            auth_scheme=RelayAuthScheme(str(data.auth_scheme)),
+            key_id=str(data.key_id),
+        )
 
 
-def _clear_active_pairing_code() -> None:
-    _state.code = None
-    _state.fingerprint = None
-    _state.expires_at = None
+def _clear_active_pairing_code(state: PairingState) -> None:
+    state.code = None
+    state.fingerprint = None
+    state.expires_at = None
 
 
-def reset_pairing_state() -> None:
-    """Clear the active pairing code and return the observable state to idle."""
-    _clear_transient_pairing_state(status="idle")
-
-
-async def _complete_pairing(
-    data: dict[str, object],
+async def _complete_pairing_state(
+    state: PairingState,
+    payload: PairingClaimedBootstrap,
     private_key: ec.EllipticCurvePrivateKey,
     on_paired: Callable[[], Coroutine[Any, Any, None]],
 ) -> None:
-    camera_id = str(data["camera_id"])
-    relay_backend_url = str(data["ws_url"])
-    relay_auth_scheme = str(data["auth_scheme"])
-    key_id = str(data["key_id"])
+    camera_id = payload.camera_id
+    relay_backend_url = payload.ws_url
+    relay_auth_scheme = payload.auth_scheme.value
+    key_id = payload.key_id
     private_key_pem = _private_key_pem(private_key)
 
     logger.info("PAIRING COMPLETE | camera_id=%s relay_starting=true", camera_id)
-    _state.status = STATUS_PAIRED
-    _clear_active_pairing_code()
+    state.status = STATUS_PAIRED
+    _clear_active_pairing_code(state)
 
     _save_relay_credentials(
         relay_backend_url=relay_backend_url,
@@ -427,6 +470,7 @@ async def _complete_pairing(
         private_key_pem=private_key_pem,
     )
     core_config.set_runtime_relay_credentials(
+        get_active_runtime().runtime_state,
         relay_backend_url=relay_backend_url,
         relay_camera_id=camera_id,
         relay_auth_scheme=relay_auth_scheme,
@@ -434,6 +478,17 @@ async def _complete_pairing(
         relay_private_key_pem=private_key_pem,
     )
     await on_paired()
+
+
+async def _complete_pairing(
+    state: PairingState,
+    payload: PairingClaimedBootstrap | dict[str, object],
+    private_key: ec.EllipticCurvePrivateKey,
+    on_paired: Callable[[], Coroutine[Any, Any, None]],
+) -> None:
+    if not isinstance(payload, PairingClaimedBootstrap):
+        payload = PairingClaimedBootstrap.model_validate(payload)
+    await _complete_pairing_state(state, payload, private_key, on_paired)
 
 
 def _generate_code_and_fingerprint() -> tuple[str, str]:
@@ -522,7 +577,7 @@ def load_relay_credentials() -> dict[str, str | bool] | None:
 
 
 def delete_relay_credentials() -> None:
-    """Delete the on-disk credentials file and reset the in-memory pairing state to idle.
+    """Delete the on-disk credentials file.
 
     Does not touch runtime settings (relay_backend_url etc.) — call
     ``clear_runtime_relay_credentials()`` separately for that.
@@ -532,4 +587,3 @@ def delete_relay_credentials() -> None:
         logger.info("Relay credentials deleted from %s", _CREDENTIALS_FILE)
     except OSError as exc:
         logger.warning("Failed to delete relay credentials file: %s", exc)
-    _clear_transient_pairing_state(status="idle")

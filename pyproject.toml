@@ -26,6 +26,10 @@
   # Dependencies and version constraints
   dependencies = [
     "fastapi[standard]>=0.115.8",
+    "opentelemetry-exporter-otlp-proto-http>=1.38.0",
+    "opentelemetry-instrumentation-fastapi>=0.59b0",
+    "opentelemetry-instrumentation-httpx>=0.59b0",
+    "opentelemetry-sdk>=1.38.0",
     "pillow>=10.0.0",
     "psutil>=5.9",
     "pydantic-settings>=2.8.0",
@@ -57,7 +61,13 @@
 
 ### Tools configuration
 [tool.pytest.ini_options]
+  addopts       = ["--strict-markers"]
   asyncio_mode = "auto"
+  markers       = [
+    "unit: pure function/service tests with no app boot unless unavoidable",
+    "integration: ASGI app, route, or lifespan behavior tests",
+    "slow: intentionally longer lifecycle/worker tests",
+  ]
   testpaths    = ["tests"]
 
 [tool.coverage.report]

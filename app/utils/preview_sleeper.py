@@ -31,9 +31,10 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from app.api.services.preview_pipeline import PreviewPipelineManager, get_preview_pipeline_manager
+from app.api.services.preview_pipeline import PreviewPipelineManager
 from app.core.config import settings
-from app.utils.relay_state import is_relay_connected, seconds_since_last_activity, seconds_since_last_hls_activity
+from app.utils.logging import build_log_extra
+from app.utils.relay_state import RelayRuntimeState
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -51,12 +52,16 @@ class PreviewSleeper:
     def __init__(
         self,
         *,
-        pipeline: PreviewPipelineManager | None = None,
+        pipeline: PreviewPipelineManager,
+        relay_state: RelayRuntimeState,
+        relay_enabled_getter: Callable[[], bool] | None = None,
         camera_getter: Callable[[], Picamera2Like | None] | None = None,
         hibernate_after_s: float | None = None,
         poll_interval_s: float = _POLL_INTERVAL_S,
     ) -> None:
-        self._pipeline = pipeline or get_preview_pipeline_manager()
+        self._pipeline = pipeline
+        self._relay_state = relay_state
+        self._relay_enabled_getter = relay_enabled_getter or (lambda: False)
         self._camera_getter = camera_getter
         self._hibernate_after_s = (
             hibernate_after_s if hibernate_after_s is not None else settings.preview_hibernate_after_s
@@ -92,19 +97,19 @@ class PreviewSleeper:
         # Local HLS viewers (browser preview player) keep the encoder awake
         # independently of relay connectivity — if someone is actively fetching
         # segments, there's no reason to sleep.
-        hls_idle = seconds_since_last_hls_activity()
+        hls_idle = self._relay_state.seconds_since_last_hls_activity()
         if hls_idle is not None and hls_idle <= self._hibernate_after_s:
             return True
 
-        if not settings.relay_enabled:
+        if not self._relay_enabled_getter():
             # Pairing/standalone without a local viewer: sleep until the
             # app-managed HLS proxy records a preview request.
             return False
 
-        if not is_relay_connected():
+        if not self._relay_state.is_connected():
             return False
 
-        idle = seconds_since_last_activity()
+        idle = self._relay_state.seconds_since_last_activity()
         if idle is None:
             # Connected but haven't seen a real command yet — keep the
             # encoder off until a user actually opens the mosaic.
@@ -125,7 +130,7 @@ class PreviewSleeper:
             if camera is not None and self._pipeline.is_running:
                 try:
                     await self._pipeline.stop(camera)
-                except Exception:  # noqa: BLE001
+                except (OSError, RuntimeError):
                     logger.debug("Preview sleeper cleanup error on cancel", exc_info=True)
             raise
 
@@ -139,36 +144,23 @@ class PreviewSleeper:
         currently_running = self._pipeline.is_running
 
         if desired and not currently_running:
-            logger.info("Preview sleeper: waking encoder (relay or local HLS activity resumed)")
+            logger.info(
+                "Preview sleeper: waking encoder (relay or local HLS activity resumed)",
+                extra=build_log_extra(),
+            )
             try:
                 await self._pipeline.start(camera)
             except RuntimeError as exc:
-                logger.warning("Preview sleeper failed to wake encoder: %s", exc)
+                logger.warning("Preview sleeper failed to wake encoder: %s", exc, extra=build_log_extra())
             return
 
         if not desired and currently_running:
             logger.info(
                 "Preview sleeper: hibernating encoder (relay/local HLS idle; hibernate_after=%.0fs)",
                 self._hibernate_after_s,
+                extra=build_log_extra(),
             )
             try:
                 await self._pipeline.stop(camera)
             except RuntimeError as exc:
-                logger.warning("Preview sleeper failed to hibernate encoder: %s", exc)
-
-
-_singleton: PreviewSleeper | None = None
-
-
-def get_preview_sleeper() -> PreviewSleeper:
-    """Return the process-wide preview sleeper."""
-    global _singleton  # noqa: PLW0603
-    if _singleton is None:
-        _singleton = PreviewSleeper()
-    return _singleton
-
-
-def reset_preview_sleeper() -> None:
-    """Reset the singleton (tests only)."""
-    global _singleton  # noqa: PLW0603
-    _singleton = None
+                logger.warning("Preview sleeper failed to hibernate encoder: %s", exc, extra=build_log_extra())

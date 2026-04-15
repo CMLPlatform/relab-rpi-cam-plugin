@@ -44,6 +44,29 @@ Complete setup instructions for the RPI Camera Plugin.
 
 The plugin connects to the RELab backend via **WebSocket relay**. The Pi initiates an outbound connection — no public IP or port forwarding is needed.
 
+Configuration precedence during startup is:
+
+1. explicit environment variables from `.env`
+1. runtime credentials persisted in `~/.config/relab/relay_credentials.json`
+1. generated defaults for local-only secrets like `local_api_key`
+
+This means operator-provided env vars win, persisted relay/local credentials
+fill gaps, and first-boot generation happens only when neither exists.
+
+At runtime, the app keeps pairing state, relay state, and other long-lived
+service state in the process runtime container rather than in module-level
+singletons. The persisted credentials file remains the source of truth across
+restarts; the runtime state is only for the live process.
+
+In practical terms:
+
+- `Settings` covers env-backed/static config
+- `RuntimeState` covers live mutable relay, local-auth, and derived auth state
+- `PairingService` / `RelayService` own the live orchestration for those flows
+
+This keeps operator configuration separate from state that changes during
+pairing, unpairing, and local-mode bootstrap.
+
 ### Option A: Automatic Pairing (recommended)
 
 The simplest approach. No credential exchange required.
@@ -127,20 +150,30 @@ volume at `/home/rpicam/.config/relab`, so paired relay credentials survive cont
 1. **Start server**
 
    ```sh
-   uv run fastapi run app/main.py --port 8018
+   uv run fastapi run app/main.py --host 0.0.0.0 --port 8018
    ```
 
-   When pairing mode is active, the terminal prints a line like:
+Useful local commands from the repo root:
 
-   ```text
-   ══════════════════════════════════════════════════════
-     PAIRING READY
-     PAIRING CODE: ABC123
-     Setup    : /setup
-     Backend  : https://api.cml-relab.org
-     Claim in : RELab app > Cameras > Add Camera
-   ══════════════════════════════════════════════════════
-   ```
+```sh
+just dev
+just lint
+just typecheck
+just test
+just show-key
+```
+
+When pairing mode is active, the terminal prints a line like:
+
+```text
+══════════════════════════════════════════════════════
+  PAIRING READY
+  PAIRING CODE: ABC123
+  Setup    : /setup
+  Backend  : https://api.cml-relab.org
+  Claim in : RELab app > Cameras > Add Camera
+══════════════════════════════════════════════════════
+```
 
 ## Testing
 
@@ -155,6 +188,19 @@ For headless operators, you can also read the pairing code from logs:
 - Systemd/journald: `journalctl -u relab-rpi-cam -f`
 - Direct shell run: read the boxed `PAIRING READY` banner in the terminal output
 
+## Operating Modes
+
+- **Paired relay mode**: WebSocket relay to the RELab backend, with optional direct-mode bootstrap
+- **Local direct mode**: LAN access authenticated by the generated local API key
+- **Backend upload mode**: captures flow back into the RELab backend
+- **S3 upload mode**: captures are written to a configured S3-compatible bucket
+
+Observability is intentionally split:
+
+- structured JSON logs always exist
+- OTLP tracing is opt-in via `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT`
+- the repo does not bundle a full OTLP collector/pipeline configuration
+
 ## Troubleshooting
 
 ### Camera not detected
@@ -168,7 +214,7 @@ Verify camera is properly connected to the CSI port.
 ### API won't start
 
 - Check port 8018 availability: `sudo netstat -tlnp | grep :8018`
-- Try dev mode: `uv run fastapi dev app/main.py`
+- Try dev mode: `just dev`
 - Check logs for Python errors
 
 ### WebSocket relay won't connect

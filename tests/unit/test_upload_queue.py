@@ -11,8 +11,11 @@ import pytest
 from pydantic import AnyUrl
 
 from app.api.services.image_sinks.base import ImageSink, ImageSinkError, StoredImage
+from app.utils import upload_queue as upload_queue_mod
 from app.utils.upload_queue import UploadQueue, UploadQueueWorker
 from tests.constants import EXAMPLE_IMAGE_URL
+
+BAD_IMAGE_ID = "bad"
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -188,6 +191,77 @@ class TestDrainOnce:
         assert reloaded.attempts == 1
         assert reloaded.next_attempt_at > datetime.now(UTC)
 
+    async def test_timeout_error_increments_attempts(
+        self,
+        queue_root: Path,
+        sample_image: Path,
+        sink: _FakeSink,
+    ) -> None:
+        """Upload timeouts should count as a failed attempt, not kill the drain."""
+        sink.put.side_effect = asyncio.TimeoutError
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
+        entry = await queue.enqueue(
+            image_id="slow",
+            image_path=sample_image,
+            filename="slow.jpg",
+            capture_metadata={},
+            upload_metadata={},
+        )
+
+        successes = await queue.drain_once()
+
+        assert successes == 0
+        assert sink.put.await_count == 1
+        assert await asyncio.to_thread(entry.image_path.exists)
+        reloaded = queue.iter_pending()[0]
+        assert reloaded.attempts == 1
+
+    async def test_unexpected_sink_error_marks_failed_and_continues(
+        self,
+        queue_root: Path,
+        tmp_path: Path,
+        sink: _FakeSink,
+    ) -> None:
+        """One poisoned entry should not stop later due entries from draining."""
+
+        async def _put(**kwargs: object) -> StoredImage:
+            if kwargs["image_id"] == BAD_IMAGE_ID:
+                msg = "boom"
+                raise ValueError(msg)
+            return StoredImage(image_id="srv-1", image_url=AnyUrl(EXAMPLE_IMAGE_URL))
+
+        sink.put.side_effect = _put
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
+
+        bad_image = tmp_path / "bad.jpg"
+        bad_image.write_bytes(b"\xff\xd8bad")
+        good_image = tmp_path / "good.jpg"
+        good_image.write_bytes(b"\xff\xd8good")
+
+        bad_entry = await queue.enqueue(
+            image_id="bad",
+            image_path=bad_image,
+            filename="bad.jpg",
+            capture_metadata={},
+            upload_metadata={},
+        )
+        good_entry = await queue.enqueue(
+            image_id="good",
+            image_path=good_image,
+            filename="good.jpg",
+            capture_metadata={},
+            upload_metadata={},
+        )
+
+        successes = await queue.drain_once()
+
+        assert successes == 1
+        assert sink.put.await_count == 2
+        assert await asyncio.to_thread(bad_entry.image_path.exists)
+        assert not await asyncio.to_thread(good_entry.image_path.exists)
+        reloaded = {entry.image_id: entry for entry in queue.iter_pending()}
+        assert reloaded["bad"].attempts == 1
+
     async def test_skips_entries_not_yet_due(
         self,
         queue_root: Path,
@@ -218,8 +292,6 @@ class TestDeadLetter:
         sink: _FakeSink,
     ) -> None:
         """After _MAX_ATTEMPTS consecutive failures the entry should move under dead/."""
-        from app.utils import upload_queue as upload_queue_mod  # noqa: PLC0415
-
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         entry = await queue.enqueue(
             image_id="doomed",
@@ -260,3 +332,28 @@ class TestUploadQueueWorker:
 
         await asyncio.sleep(0.05)
         await worker.stop()
+
+    async def test_worker_continues_after_drain_exception(self, queue_root: Path, sink: _FakeSink) -> None:
+        """A drain-loop exception should be logged and retried on the next tick."""
+
+        class _DrainSpyQueue(UploadQueue):
+            def __init__(self, root: Path, *, image_sink: ImageSink) -> None:
+                super().__init__(root, sink=image_sink)
+                self.drain_calls = 0
+                self._results: list[object] = [RuntimeError("boom"), 0]
+
+            async def drain_once(self) -> int:
+                self.drain_calls += 1
+                next_result = self._results.pop(0)
+                if isinstance(next_result, Exception):
+                    raise next_result
+                return cast("int", next_result)
+
+        queue = _DrainSpyQueue(queue_root, image_sink=cast("ImageSink", sink))
+        worker = UploadQueueWorker(queue, poll_interval_s=0.01)
+
+        worker.start()
+        await asyncio.sleep(0.05)
+        await worker.stop()
+
+        assert queue.drain_calls >= 2

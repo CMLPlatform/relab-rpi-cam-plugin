@@ -10,6 +10,7 @@ from app.api.services.camera_manager import CameraControlsNotSupportedError, Cam
 CURRENT_MODE_KEY = "current_mode"
 LAST_IMAGE_URL_KEY = "last_image_url"
 STREAM_KEY = "stream"
+JPEG_MAGIC_PREFIX = b"\xff\xd8"
 
 
 class TestCameraStatus:
@@ -41,7 +42,7 @@ class TestCameraStatus:
         resp = await client.get("/camera/snapshot")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("image/jpeg")
-        assert resp.content[:2] == b"\xff\xd8"
+        assert resp.content[:2] == JPEG_MAGIC_PREFIX
 
 
 class TestCameraControls:
