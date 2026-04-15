@@ -48,9 +48,9 @@ def _no_traversal(v: str) -> str:
     return v
 
 
-# MediaMTX LL-HLS listener. Runs on the host network so the app container
-# reaches it via the docker host-gateway alias.
-_MEDIAMTX_HLS_BASE = "http://host.docker.internal:8888"
+# MediaMTX LL-HLS listener. Both services run on the host network so this
+# is a plain loopback address.
+_MEDIAMTX_HLS_BASE = "http://localhost:8888"
 _HLS_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=5.0, pool=2.0)
 _PREVIEW_HLS_PREFIX = "cam-preview/"
 PreviewPipelineDependency = Annotated[PreviewPipelineManager, Depends(get_preview_pipeline_manager)]

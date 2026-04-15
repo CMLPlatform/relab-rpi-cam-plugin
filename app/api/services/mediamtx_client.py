@@ -25,18 +25,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# MediaMTX runs in ``network_mode: host``; its control API listens on the
-# host loopback, which from inside the app container is reachable via the
-# ``host.docker.internal`` bridge. We expose the URL here (not in config) so
-# tests can swap it cheaply.
-DEFAULT_MEDIAMTX_API_URL = "http://host.docker.internal:9997"
+# Both ``app`` and ``mediamtx`` run on ``network_mode: host``, so all
+# inter-service traffic stays on the Pi's loopback interface. We expose the
+# URL here (not in config) so tests can swap it cheaply.
+DEFAULT_MEDIAMTX_API_URL = "http://localhost:9997"
 _API_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=5.0, pool=2.0)
 
-# Hires main stream publish target on the Pi's local MediaMTX (same host
-# network as the lores stream, different path). ``stream.py`` builds an
-# ``FfmpegOutput`` pointing here; MediaMTX terminates the RTSP publish and
-# runs the configured egresses on top.
-HIRES_RTSP_URL = "rtsp://host.docker.internal:8554/cam-hires"
+# Hires main stream publish target on the local MediaMTX.
+HIRES_RTSP_URL = "rtsp://localhost:8554/cam-hires"
 
 
 class MediaMTXAPIError(RuntimeError):
