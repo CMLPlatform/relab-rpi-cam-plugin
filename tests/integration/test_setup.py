@@ -45,6 +45,7 @@ class TestSetupPage:
     def _default_pairing_backend_reachability(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Keep setup-page tests deterministic without making real network calls."""
         monkeypatch.setattr(setup_router, "_pairing_backend_reachable", AsyncMock(return_value=True))
+        monkeypatch.setattr(setup_router, "_get_candidate_urls", lambda: [])
         monkeypatch.setattr(
             setup_router,
             "get_pairing_state",
@@ -62,6 +63,7 @@ class TestSetupPage:
         assert resp.status_code == 200
         assert HTML_CONTENT_TYPE in resp.headers["content-type"]
         assert 'http-equiv="refresh"' not in resp.text
+        assert "/setup/state" in resp.text
 
     async def test_setup_page_contains_title(self, unauthed_client: AsyncClient) -> None:
         """Test that the setup page contains the correct title."""
@@ -167,6 +169,39 @@ class TestSetupPage:
         assert resp.status_code == 200
         assert UNPAIR_FUNCTION_CALL in resp.text
         assert PAIRING_BACKEND_URL_TEXT in resp.text
+
+    async def test_setup_state_endpoint_returns_current_state(
+        self,
+        unauthed_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The live-refresh endpoint should expose the current pairing and relay state."""
+        expires_at = datetime(2026, 4, 15, 12, 30, tzinfo=UTC)
+        monkeypatch.setattr(
+            setup_router,
+            "get_pairing_state",
+            lambda: SimpleNamespace(
+                status="waiting",
+                code=PAIRING_CODE,
+                error="retry",
+                expires_at=expires_at,
+            ),
+        )
+        monkeypatch.setattr(settings, "relay_backend_url", EXAMPLE_RELAY_BACKEND_URL)
+        monkeypatch.setattr(settings, "relay_camera_id", "cam-1")
+        monkeypatch.setattr(settings, "relay_key_id", "key-1")
+        monkeypatch.setattr(settings, "relay_private_key_pem", "pem")
+
+        resp = await unauthed_client.get("/setup/state")
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "relay_enabled": True,
+            "pairing_status": "waiting",
+            "pairing_code": PAIRING_CODE,
+            "pairing_error": "retry",
+            "pairing_expires_at_iso": expires_at.isoformat(),
+        }
 
     async def test_setup_page_keeps_local_access_collapsed_by_default(
         self,

@@ -9,6 +9,35 @@
 
 {% block extra_scripts %}
   <script>
+    function getSetupShell() {
+      return document.querySelector(".setup-shell");
+    }
+
+    function parseSetupState() {
+      const shell = getSetupShell();
+      if (!shell) {
+        return {};
+      }
+      try {
+        return JSON.parse(shell.dataset.setupState || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    function setupStateSignature(state) {
+      return [
+        state.relay_enabled ? "1" : "0",
+        state.pairing_status || "",
+        state.pairing_code || "",
+        state.pairing_error || "",
+        state.pairing_expires_at_iso || "",
+      ].join("|");
+    }
+
+    const initialSetupState = parseSetupState();
+    const initialSetupStateSignature = setupStateSignature(initialSetupState);
+
     function fallbackCopyText(text) {
       const textarea = document.createElement("textarea");
       textarea.value = text;
@@ -72,6 +101,43 @@
           el.dataset.state = "";
         }, 1200);
       }
+    }
+
+    async function fetchSetupState() {
+      const resp = await fetch("/setup/state", {
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      if (!resp.ok) {
+        return null;
+      }
+      return resp.json();
+    }
+
+    function setupStateHasChanged(state) {
+      return setupStateSignature(state) !== initialSetupStateSignature;
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => window.setTimeout(resolve, ms));
+    }
+
+    async function waitForSetupStateChange(timeoutMs = 15000, intervalMs = 1000) {
+      const started = Date.now();
+      while (Date.now() - started < timeoutMs) {
+        try {
+          const state = await fetchSetupState();
+          if (state && setupStateHasChanged(state)) {
+            return state;
+          }
+        } catch {
+          // Keep trying until the timeout expires.
+        }
+        await sleep(intervalMs);
+      }
+      return null;
     }
 
     async function copyText(text, button) {
@@ -147,7 +213,8 @@
             button.setAttribute("title", previousTitle);
           }, 1200);
         }
-        window.setTimeout(() => window.location.reload(), 700);
+        await waitForSetupStateChange();
+        window.location.reload();
       } catch {
         if (button) {
           setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
@@ -182,9 +249,8 @@
         const resp = await fetch("/pairing/credentials", { method: "DELETE" });
         dialog.close();
         if (resp.ok) {
-          // Small delay so the background reset task can run before the reload.
-          // The task sleeps 100 ms then clears credentials and restarts pairing.
-          setTimeout(() => window.location.reload(), 700);
+          await waitForSetupStateChange();
+          window.location.reload();
         } else {
           alert("Unpair failed (" + resp.status + "). Try again.");
         }
@@ -196,9 +262,34 @@
         btn.textContent = "Unpair";
       }
     }
+
+    function startSetupStateWatcher() {
+      let busy = false;
+      const tick = async () => {
+        if (busy || document.visibilityState !== "visible") {
+          return;
+        }
+        busy = true;
+        try {
+          const state = await fetchSetupState();
+          if (state && setupStateHasChanged(state)) {
+            window.location.reload();
+          }
+        } catch {
+          // Ignore transient network hiccups and try again on the next tick.
+        } finally {
+          busy = false;
+        }
+      };
+
+      tick();
+      window.setInterval(tick, 2500);
+    }
   </script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
+      startSetupStateWatcher();
+
       const countdown = document.querySelector("[data-pairing-countdown]");
       const expiry = document.querySelector("[data-pairing-expiry]");
       const progress = document.querySelector("[data-pairing-progress]");
@@ -243,7 +334,7 @@
 {% endblock %}
 
 {% block body %}
-<main class="setup-shell">
+<main class="setup-shell" data-setup-state='{{ setup_state | tojson }}'>
   <section class="setup-hero">
     <div class="setup-eyebrow">Raspberry Pi Camera</div>
     <h1>Setup</h1>
@@ -415,10 +506,10 @@
 
         <div class="setup-advanced__body">
           <p>
-            Usually automatic in the native RELab app. Open only for manual access.
+            Automatic direct mode only works in the native RELab app; browsers served over HTTPS cannot probe this Pi's HTTP API because of mixed-content blocking.
           </p>
           <ul class="setup-advanced__list">
-            <li><strong>RELab app latency boost</strong> - once relay-paired, the app receives this key automatically and switches to direct access when an Ethernet cable is connected. Works in both the native app and modern browsers (Chrome/Edge). Latency drops from ~2 s to ~0.4 s.</li>
+            <li><strong>Native RELab app latency boost</strong> - once relay-paired, the app receives this key automatically and switches to direct access when an Ethernet cable is connected. Works in both the native app and modern browsers (Chrome/Edge). Latency drops from ~2 s to ~0.4 s.</li>
             <li><strong>Standalone / non-ReLab clients</strong> - use the key directly with <code>X-API-Key</code> to call the camera API without the relay.</li>
           </ul>
           <div class="setup-advanced__callout">
