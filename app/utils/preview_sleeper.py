@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 
 from app.api.services.preview_pipeline import PreviewPipelineManager, get_preview_pipeline_manager
 from app.core.config import settings
-from app.utils.relay_state import is_relay_connected, seconds_since_last_activity
+from app.utils.relay_state import is_relay_connected, seconds_since_last_activity, seconds_since_last_hls_activity
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -99,6 +99,13 @@ class PreviewSleeper:
             # they're watching — prefer keeping it off until they explicitly
             # pair. The always-on case is ``hibernate_after_s = 0`` above.
             return False
+
+        # Local HLS viewers (browser preview player) keep the encoder awake
+        # independently of relay connectivity — if someone is actively fetching
+        # segments, there's no reason to sleep.
+        hls_idle = seconds_since_last_hls_activity()
+        if hls_idle is not None and hls_idle <= self._hibernate_after_s:
+            return True
 
         if not is_relay_connected():
             return False
