@@ -9,35 +9,6 @@
 
 {% block extra_scripts %}
   <script>
-    function getSetupShell() {
-      return document.querySelector(".setup-shell");
-    }
-
-    function parseSetupState() {
-      const shell = getSetupShell();
-      if (!shell) {
-        return {};
-      }
-      try {
-        return JSON.parse(shell.dataset.setupState || "{}");
-      } catch {
-        return {};
-      }
-    }
-
-    function setupStateSignature(state) {
-      return [
-        state.relay_enabled ? "1" : "0",
-        state.pairing_status || "",
-        state.pairing_code || "",
-        state.pairing_error || "",
-        state.pairing_expires_at_iso || "",
-      ].join("|");
-    }
-
-    const initialSetupState = parseSetupState();
-    const initialSetupStateSignature = setupStateSignature(initialSetupState);
-
     function fallbackCopyText(text) {
       const textarea = document.createElement("textarea");
       textarea.value = text;
@@ -103,43 +74,6 @@
       }
     }
 
-    async function fetchSetupState() {
-      const resp = await fetch("/setup/state", {
-        cache: "no-store",
-        headers: {
-          Accept: "application/json",
-        },
-      });
-      if (!resp.ok) {
-        return null;
-      }
-      return resp.json();
-    }
-
-    function setupStateHasChanged(state) {
-      return setupStateSignature(state) !== initialSetupStateSignature;
-    }
-
-    function sleep(ms) {
-      return new Promise((resolve) => window.setTimeout(resolve, ms));
-    }
-
-    async function waitForSetupStateChange(timeoutMs = 15000, intervalMs = 1000) {
-      const started = Date.now();
-      while (Date.now() - started < timeoutMs) {
-        try {
-          const state = await fetchSetupState();
-          if (state && setupStateHasChanged(state)) {
-            return state;
-          }
-        } catch {
-          // Keep trying until the timeout expires.
-        }
-        await sleep(intervalMs);
-      }
-      return null;
-    }
-
     async function copyText(text, button) {
       const value = String(text || "").trim();
       let copied = false;
@@ -203,7 +137,7 @@
         }
         if (button) {
           setPairingButtonFeedback(button, "success", "Pairing code refreshed", "Pairing code refreshed");
-          setPairingActionStatus("Refreshed", "success");
+          setPairingActionStatus("Refreshed. Reloading page…", "success");
           window.setTimeout(() => {
             if (button.dataset.defaultHtml) {
               button.innerHTML = button.dataset.defaultHtml;
@@ -213,8 +147,7 @@
             button.setAttribute("title", previousTitle);
           }, 1200);
         }
-        await waitForSetupStateChange();
-        window.location.reload();
+        window.setTimeout(() => window.location.reload(), 700);
       } catch {
         if (button) {
           setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
@@ -249,8 +182,8 @@
         const resp = await fetch("/pairing/credentials", { method: "DELETE" });
         dialog.close();
         if (resp.ok) {
-          await waitForSetupStateChange();
-          window.location.reload();
+          setPairingActionStatus("Unpaired. Reloading page…", "success");
+          window.setTimeout(() => window.location.reload(), 700);
         } else {
           alert("Unpair failed (" + resp.status + "). Try again.");
         }
@@ -262,34 +195,9 @@
         btn.textContent = "Unpair";
       }
     }
-
-    function startSetupStateWatcher() {
-      let busy = false;
-      const tick = async () => {
-        if (busy || document.visibilityState !== "visible") {
-          return;
-        }
-        busy = true;
-        try {
-          const state = await fetchSetupState();
-          if (state && setupStateHasChanged(state)) {
-            window.location.reload();
-          }
-        } catch {
-          // Ignore transient network hiccups and try again on the next tick.
-        } finally {
-          busy = false;
-        }
-      };
-
-      tick();
-      window.setInterval(tick, 2500);
-    }
   </script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      startSetupStateWatcher();
-
       const countdown = document.querySelector("[data-pairing-countdown]");
       const expiry = document.querySelector("[data-pairing-expiry]");
       const progress = document.querySelector("[data-pairing-progress]");
@@ -334,7 +242,7 @@
 {% endblock %}
 
 {% block body %}
-<main class="setup-shell" data-setup-state='{{ setup_state | tojson }}'>
+<main class="setup-shell">
   <section class="setup-hero">
     <div class="setup-eyebrow">Raspberry Pi Camera</div>
     <h1>Setup</h1>
@@ -420,6 +328,7 @@
             <span class="pairing-progress__fill" data-pairing-progress></span>
           </div>
           <span>Keep this page open while the code is active.</span>
+          <span class="setup-debug__hint">If pairing finishes in the app, refresh this page to show the updated status or a new code.</span>
         </div>
       {% elif pairing.status == status_error %}
         <p class="offline">{{ pairing.error or 'Pairing error. Retrying.' }}</p>
