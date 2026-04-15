@@ -32,7 +32,7 @@ from app.utils.files import clear_directory
 from app.utils.upload_queue import UploadQueue
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import AsyncIterator, Mapping
     from pathlib import Path
 
     from relab_rpi_cam_models.stream import StreamMode, StreamView
@@ -57,6 +57,28 @@ class CameraControlsNotSupportedError(RuntimeError):
 def _unlink_quiet(path: Path) -> None:
     with contextlib.suppress(FileNotFoundError):
         path.unlink()
+
+
+def _encode_jpeg_atomic(
+    image: object,
+    image_path: Path,
+    exif: bytes,
+) -> bytes:
+    """Encode a PIL image to ``image_path`` atomically and return the bytes.
+
+    Writes to a sibling ``.tmp`` file first then ``os.replace``s it onto the final
+    name, so a disk-full, crash, or concurrent reader never sees a half-written JPEG.
+    Runs off the event loop via ``asyncio.to_thread``.
+    """
+    tmp_path = image_path.with_suffix(image_path.suffix + ".tmp")
+    try:
+        image.save(tmp_path, exif=exif, format="JPEG", quality=90)  # type: ignore[attr-defined]
+        image_bytes = tmp_path.read_bytes()
+        tmp_path.replace(image_path)
+    except BaseException:
+        _unlink_quiet(tmp_path)
+        raise
+    return image_bytes
 
 
 class CameraManager:
@@ -108,21 +130,27 @@ class CameraManager:
         """Return the most recently uploaded image URL, if any."""
         return self._last_image_url
 
-    async def _acquire_lock(self) -> None:
-        """Acquire the camera lock with a timeout."""
+    @contextlib.asynccontextmanager
+    async def _locked(self) -> AsyncIterator[None]:
+        """Acquire the camera lock with a timeout, yielding inside the critical section.
+
+        Callers should use ``async with self._locked():`` so exceptions, early returns,
+        and cancellation all release the lock automatically.
+        """
         try:
             await asyncio.wait_for(self.lock.acquire(), timeout=self.lock_timeout)
         except TimeoutError as e:
             err_msg = f"Failed to acquire camera lock - timeout error: {e}"
             raise RuntimeError(err_msg) from e
+        try:
+            yield
+        finally:
+            self.lock.release()
 
     async def setup_camera(self, mode: CameraMode) -> None:
         """Prepare the configured backend for the requested camera mode."""
-        await self._acquire_lock()
-        try:
+        async with self._locked():
             await self.backend.open(mode)
-        finally:
-            self.lock.release()
 
     async def capture_jpeg(
         self,
@@ -133,31 +161,30 @@ class CameraManager:
         This is a pure push flow: the Pi never serves captured bytes via HTTP. On
         a successful synchronous upload the local file is deleted. On failure the
         file is moved into the upload queue for exponential-backoff retry.
+
+        The camera lock is held across the entire frame-to-disk path (capture, encode,
+        atomic rename) so a concurrent stream start cannot race the encoder or truncate
+        the JPEG on the way out.
         """
         upload_meta = upload_metadata or {}
 
-        await self._acquire_lock()
-        try:
-            result = await self.backend.capture_image()
-        finally:
-            self.lock.release()
-
-        img_metadata = build_image_metadata(result.image, result.camera_properties, result.capture_metadata)
         image_id = uuid.uuid4().hex
-        image_path = settings.image_path / f"{image_id}.jpg"
-        await asyncio.to_thread(
-            result.image.save,
-            image_path,
-            exif=image_metadata_to_exif(img_metadata),
-            format="JPEG",
-            quality=90,
-        )
-
         filename = f"{image_id}.jpg"
+        image_path = settings.image_path / filename
+
+        async with self._locked():
+            result = await self.backend.capture_image()
+            img_metadata = build_image_metadata(result.image, result.camera_properties, result.capture_metadata)
+            image_bytes = await asyncio.to_thread(
+                _encode_jpeg_atomic,
+                result.image,
+                image_path,
+                image_metadata_to_exif(img_metadata),
+            )
+
         capture_metadata_dict = img_metadata.model_dump(mode="json")
 
         try:
-            image_bytes = await asyncio.to_thread(image_path.read_bytes)
             stored = await self.sink.put(
                 image_id=image_id,
                 image_bytes=image_bytes,
@@ -200,9 +227,15 @@ class CameraManager:
         Prefer the lores stream when the hardware backend exposes it; fall back
         to a normal still capture on backends that do not keep a persistent
         preview buffer available in tests or on non-Picamera2 hardware.
+
+        The ``is_active`` stream check is performed inside the lock so it cannot
+        race a concurrent ``start_streaming``; the JPEG encode is also done inside
+        the lock so the frame cannot be invalidated mid-encode.
         """
-        await self._acquire_lock()
-        try:
+        async with self._locked():
+            if self.stream.is_active:
+                raise ActiveStreamError(self.stream)
+
             backend_camera = self.backend.camera
             if backend_camera is not None:
                 await self.backend.open(CameraMode.VIDEO)
@@ -210,12 +243,10 @@ class CameraManager:
             else:
                 result = await self.backend.capture_image()
                 frame = result.image
-        finally:
-            self.lock.release()
 
-        buffer = BytesIO()
-        await asyncio.to_thread(frame.save, buffer, format="JPEG", quality=82, optimize=True)
-        return buffer.getvalue()
+            buffer = BytesIO()
+            await asyncio.to_thread(frame.save, buffer, format="JPEG", quality=82, optimize=True)
+            return buffer.getvalue()
 
     def _require_streaming_backend(self) -> StreamingCameraBackend:
         """Return the backend narrowed to StreamingCameraBackend, or raise."""
@@ -232,38 +263,26 @@ class CameraManager:
     async def get_controls(self) -> CameraControlsView:
         """Return supported controls for the active backend."""
         backend = self._require_controllable_backend()
-        await self._acquire_lock()
-        try:
+        async with self._locked():
             return await backend.get_controls()
-        finally:
-            self.lock.release()
 
     async def get_controls_capabilities(self) -> CameraControlsCapabilities:
         """Return UI-friendly control capabilities."""
         backend = self._require_controllable_backend()
-        await self._acquire_lock()
-        try:
+        async with self._locked():
             return await backend.get_controls_capabilities()
-        finally:
-            self.lock.release()
 
     async def set_controls(self, patch: CameraControlsPatch) -> CameraControlsView:
         """Apply backend-native controls through the active backend."""
         backend = self._require_controllable_backend()
-        await self._acquire_lock()
-        try:
+        async with self._locked():
             return await backend.set_controls(patch.controls)
-        finally:
-            self.lock.release()
 
     async def set_focus(self, request: FocusControlRequest) -> CameraControlsView:
         """Apply friendly focus controls through the active backend."""
         backend = self._require_controllable_backend()
-        await self._acquire_lock()
-        try:
+        async with self._locked():
             return await backend.set_focus(request)
-        finally:
-            self.lock.release()
 
     async def start_streaming(
         self,
@@ -271,21 +290,23 @@ class CameraManager:
         *,
         youtube_config: YoutubeStreamConfig | None = None,
     ) -> StreamView:
-        """Start streaming for the requested provider/mode."""
-        backend = self._require_streaming_backend()
-        if self.stream.is_active:
-            raise ActiveStreamError(self.stream)
+        """Start streaming for the requested provider/mode.
 
-        await self._acquire_lock()
-        try:
+        The ``is_active`` check is performed inside the lock so two concurrent
+        ``start_streaming`` calls cannot both pass the early-return guard and
+        race to start the backend.
+        """
+        backend = self._require_streaming_backend()
+
+        async with self._locked():
+            if self.stream.is_active:
+                raise ActiveStreamError(self.stream)
             try:
                 result = await backend.start_stream(mode, youtube_config=youtube_config)
                 self.stream_service.start(result)
             except Exception:
                 self.stream_service.reset()
                 raise
-        finally:
-            self.lock.release()
 
         if (stream_info := await self.get_stream_info()) is None:
             err_msg = "Failed to get stream information"
@@ -296,16 +317,12 @@ class CameraManager:
     async def stop_streaming(self) -> None:
         """Stop an active stream."""
         backend = self._require_streaming_backend()
-        await self._acquire_lock()
-        try:
-            if self.stream.is_active:
-                await backend.stop_stream()
-                self.stream_service.reset()
-            else:
+        async with self._locked():
+            if not self.stream.is_active:
                 err_msg = "No stream active"
                 raise RuntimeError(err_msg)
-        finally:
-            self.lock.release()
+            await backend.stop_stream()
+            self.stream_service.reset()
 
     async def cleanup(self, *, force: bool = False) -> None:
         """Clean up camera and streaming resources. If force is True, this happens even if there is an active stream."""
@@ -317,11 +334,8 @@ class CameraManager:
 
         await clear_directory(settings.image_path, time_to_live_s=settings.image_ttl_s)
 
-        await self._acquire_lock()
-        try:
+        async with self._locked():
             await self.backend.cleanup()
-        finally:
-            self.lock.release()
 
     async def get_stream_info(self) -> StreamView | None:
         """Get stream information including metadata if active."""

@@ -45,11 +45,13 @@ def reload_authorized_hashes() -> None:
 def _is_authorized(api_key: str) -> bool:
     """Check if an API key matches any authorized key using timing-safe comparison.
 
-    This performs a timing-safe comparison against the live `settings.`
-    `authorized_api_keys` list to avoid storing module-level mutable state.
+    Snapshots ``settings.authorized_api_keys`` into a local tuple before iterating so
+    a concurrent ``apply_local_mode`` / ``apply_relay_credentials`` ``.append()`` can
+    never interleave with verification — readers either see the pre-mutation set or
+    the post-mutation set, never a partially-built one.
     """
-    # Compare against each configured key using timing-safe compare.
-    return any(hmac.compare_digest(api_key, candidate) for candidate in settings.authorized_api_keys)
+    authorized: tuple[str, ...] = tuple(settings.authorized_api_keys)
+    return any(hmac.compare_digest(api_key, candidate) for candidate in authorized)
 
 
 def _now_utc() -> datetime:

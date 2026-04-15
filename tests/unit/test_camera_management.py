@@ -327,6 +327,63 @@ class TestCameraManagerCapture:
         status = await manager.get_status()
         assert str(status.last_image_url) == EXAMPLE_IMAGE_URL
 
+    async def test_capture_jpeg_writes_atomically(self, tmp_path: Path) -> None:
+        """capture_jpeg must not leave a partially-written JPEG if encoding fails.
+
+        Regression guard: previously the encode-then-read-bytes sequence ran outside
+        the camera lock and used a non-atomic ``image.save`` call, so disk-full or a
+        racing reader could observe a truncated JPEG. The atomic tmp-rename path must
+        leave neither the ``.tmp`` nor the final file behind on failure.
+        """
+        backend = FakeBackend()
+        image = Image.new("RGB", (64, 64), color="blue")
+        disk_full_msg = "simulated disk full"
+
+        def _boom_save(*_args: object, **_kwargs: object) -> None:
+            raise OSError(disk_full_msg)
+
+        # Replace ``save`` on the instance so encoding fails mid-capture.
+        image.save = _boom_save  # type: ignore[method-assign]
+
+        backend.capture_image.return_value = CaptureResult(
+            image=image,
+            camera_properties={"Model": "mock-camera"},
+            capture_metadata={"FrameDuration": 33_333},
+        )
+
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
+        original = settings.image_path
+        settings.image_path = tmp_path / "images"
+        settings.image_path.mkdir()
+        try:
+            with pytest.raises(OSError, match=disk_full_msg):
+                await manager.capture_jpeg()
+        finally:
+            settings.image_path = original
+
+        # Neither the target nor the .tmp sidecar should exist.
+        leftover = list((tmp_path / "images").iterdir())
+        assert leftover == [], f"atomic encode leaked files: {leftover}"
+
+
+class TestCameraManagerSnapshot:
+    """Tests for CameraManager.capture_snapshot_jpeg stream-state handling."""
+
+    async def test_snapshot_refuses_when_stream_active(self) -> None:
+        """The is_active check must run inside the camera lock.
+
+        Regression guard: previously the check lived in the router and ran pre-lock,
+        so a stream-start race could slip past it. Exposed here by pre-activating
+        the stream and asserting ``capture_snapshot_jpeg`` raises instead of capturing.
+        """
+        manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
+        manager.stream.mode = StreamMode.YOUTUBE
+        manager.stream.url = AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast")
+        manager.stream.started_at = datetime.now(UTC)
+
+        with pytest.raises(ActiveStreamError):
+            await manager.capture_snapshot_jpeg()
+
 
 class TestCameraManagerStopStreaming:
     """Tests for CameraManager.stop_streaming method."""

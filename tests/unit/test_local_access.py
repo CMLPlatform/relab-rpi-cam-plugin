@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import socket
+from types import SimpleNamespace
 
 from app.api.routers.local_access import _get_candidate_urls
 
