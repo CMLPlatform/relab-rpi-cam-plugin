@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block title %}
+  RELab RPI Cam Plugin
+{% endblock %}
+
+{% block body %}
+  <div class="container">
+    <div class="header" style="display: flex; flex-direction: row; align-items: center;">
+      <img src="{{ url_for('static', path='/logo.png') }}" alt="RELab Logo" style="width: 100px;  margin-right: 15px;" />
+      <h1>
+        <span style="color: #777;">Reverse Engineering Lab</span><br />
+        Raspberry Pi Camera Plugin
+      </h1>
+    </div>
+    <div class="content">
+      <p>Welcome to the RELab Raspberry Pi Camera Plugin API!</p>
+      <p>
+        This API allows you to remotely capture images and stream video from a Raspberry Pi camera. For more info on RELab, visit the <a href="https://github.com/CMLplatform/relab" target="_blank">GitHub page</a>.
+      </p>
+    </div>
+    <div>
+      {% if not logged_in %}
+        <a href="{{ url_for('login_form') }}" class="btn">Login</a>
+      {% endif %}
+      <a href="{{ url_for('setup_page') }}" class="btn">Setup</a>
+      <a href="{{ url_for('swagger_ui_html') }}" class="btn">API Docs</a>
+      {% if logged_in %}
+        <a href="{{ url_for('redirect_stream_viewer') }}" class="btn">Stream Viewer</a>
+        <form action="{{ url_for('logout') }}" method="post" style="display: inline;">
+          <button type="submit" class="btn logout">Logout</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}
