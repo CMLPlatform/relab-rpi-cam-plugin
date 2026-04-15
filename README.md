@@ -109,6 +109,68 @@ bucket.
 Profiles combine freely: `COMPOSE_PROFILES=standalone,observability-ship`
 runs the RustFS sidecar *and* ships logs to your central Loki.
 
+## Local (direct) connection mode
+
+In addition to the WebSocket relay, the plugin supports a **direct connection mode** for use when the Pi is physically connected to a desktop or tablet via Ethernet or USB-C (to Ethernet adapter). This eliminates the relay hop and reduces LL-HLS preview latency from ~1.5–3 s to ~0.4–0.8 s. It also works with no internet access.
+
+### Enable local mode
+
+Add to `.env`:
+
+```sh
+LOCAL_MODE_ENABLED=true
+# Optional: allow specific CORS origins for direct browser access
+# LOCAL_ALLOWED_ORIGINS='["http://192.168.1.42"]'
+```
+
+On first startup the plugin auto-generates a local API key and persists it to the credentials file. Open `/setup` to copy it — the key survives container restarts.
+
+### Zero-config discovery with Avahi (mDNS)
+
+Install Avahi on the Pi so the RELab app can discover it without typing an IP address:
+
+```sh
+sudo apt install avahi-daemon avahi-utils
+```
+
+Create a service advertisement file:
+
+```xml
+<!-- /etc/avahi/services/relab-rpi-cam.service -->
+<service-group>
+  <name>relab-rpi-cam-%h</name>
+  <service>
+    <type>_relab-rpi-cam._tcp</type>
+    <port>8018</port>
+    <txt-record>camera_id=REPLACE_WITH_RELAY_CAMERA_ID</txt-record>
+  </service>
+</service-group>
+```
+
+Restrict Avahi to the direct-link interface so it does not broadcast on your LAN:
+
+```sh
+# /etc/avahi/avahi-daemon.conf — add or update:
+allow-interfaces=eth0   # or usb0 if using USB gadget mode
+deny-interfaces=wlan0,wlan1
+```
+
+```sh
+sudo systemctl enable avahi-daemon && sudo systemctl restart avahi-daemon
+```
+
+After this, the Pi is resolvable as `relab-rpi-cam-<hostname>.local` on macOS and Windows 10+ without any DNS configuration.
+
+### Hardware notes
+
+- **Any Ethernet port** — Works on all RPi models and any Linux SBC. Connect directly with a cable or through a USB-C to Ethernet adapter. Link-local addressing (169.254.x.x) is negotiated automatically if no DHCP is present.
+- **USB gadget mode (USB-C data)** — Only available on RPi Zero 2W and some RPi 4 revisions (not RPi 5). Configure via `dtoverlay=dwc2` + `g_ether` module. The Pi appears at `192.168.7.1` on the host.
+- **Hardware-agnostic contract** — Any camera device that implements `GET /camera`, `POST /images`, and `GET /hls/*` with `X-API-Key` authentication works with the RELab frontend's local connection mode.
+
+### Security
+
+The local API key is the only authentication gate on the direct interface. Physical access to the cable is the primary trust boundary — appropriate for lab use. Keep the key private; it is distinct from relay credentials and can be revoked by disabling `LOCAL_MODE_ENABLED`.
+
 ## Troubleshooting
 
 **Camera not detected?** Run `rpicam-hello --list-cameras`

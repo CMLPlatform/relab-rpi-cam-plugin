@@ -23,7 +23,7 @@ from app.api.dependencies.camera_management import (
 from app.api.exceptions import CameraInitializationError
 from app.api.routers.main import router as main_router
 from app.api.routers.setup import router as setup_router
-from app.core.config import apply_relay_credentials, settings
+from app.core.config import apply_local_mode, apply_relay_credentials, settings
 from app.utils.files import cleanup_images, setup_directory
 from app.utils.logging import configure_library_loggers, setup_logging
 from app.utils.pairing import log_pairing_mode_started, run_pairing
@@ -122,6 +122,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # Load relay credentials from pairing file (if present)
     apply_relay_credentials()
+    # Load or generate local-mode API key (no-op when local_mode_enabled=False)
+    apply_local_mode()
 
     # Set up temporary directories
     await setup_directory(settings.image_path)
@@ -229,13 +231,16 @@ async def rate_limit_middleware(request: Request, call_next: Callable) -> Respon
     return await _rate_limiter.handle(request, call_next)
 
 
-# Add CORS middleware to allow requests from the main API host
+# Add CORS middleware to allow requests from the main API host and any
+# configured local-mode origins (direct Ethernet / USB-C clients).
+_cors_origins = [str(origin).rstrip("/") for origin in settings.allowed_cors_origins]
+_cors_origins += [o.rstrip("/") for o in settings.local_allowed_origins]
+
 app.add_middleware(
     CORSMiddleware,
-    # CORS origins cannot have trailing slashes
-    allow_origins=[str(origin).rstrip("/") for origin in settings.allowed_cors_origins],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
     # Only allow necessary headers for security
     allow_headers=["Content-Type", "Authorization", "Accept", settings.auth_key_name],
 )

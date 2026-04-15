@@ -150,5 +150,45 @@
       {% endif %}
     </div>
   </section>
+
+  {% if local_mode_enabled %}
+  <section class="setup-status">
+    <div class="setup-status-grid">
+      {% if local_api_key %}
+        <div class="status-chip status-chip--live">Local mode active</div>
+      {% else %}
+        <div class="status-chip status-chip--muted">Local mode (starting…)</div>
+      {% endif %}
+      <h2>Direct Connection (Ethernet / USB-C)</h2>
+      <p>
+        The camera accepts direct connections from clients on the same link. Enter the API key
+        below when the ReLab app asks for it, or use it with the <code>X-API-Key</code> header.
+      </p>
+      {% if local_api_key %}
+        <table>
+          <tr>
+            <td>Local API key</td>
+            <td>
+              <code id="local-api-key">{{ local_api_key }}</code>
+              <button class="btn" style="margin-left:8px;padding:2px 8px;font-size:0.8em"
+                onclick="navigator.clipboard.writeText(document.getElementById('local-api-key').textContent).then(()=>this.textContent='Copied!').catch(()=>{})">
+                Copy
+              </button>
+            </td>
+          </tr>
+          <tr><td>HLS preview port</td><td><code>:8888</code> — reachable at <code>http://&lt;this-ip&gt;:8888/cam-preview/index.m3u8</code></td></tr>
+          <tr><td>API port</td><td><code>:8018</code> — reachable at <code>http://&lt;this-ip&gt;:8018</code></td></tr>
+        </table>
+        <p style="font-size:0.85em;opacity:0.7">
+          mDNS: if Avahi is running, this camera is discoverable as
+          <code>relab-rpi-cam-{{ request.headers.get('host', '').split(':')[0] }}.local</code>
+          on the local link.
+        </p>
+      {% else %}
+        <p>API key is being generated — reload in a moment.</p>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
 </main>
 {% endblock %}
