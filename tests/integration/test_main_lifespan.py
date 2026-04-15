@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 
 import app.main as main_mod
+import app.utils.pairing as pairing_mod
 from app.core.config import settings
 
 PAIRING_MODE_LOG = "PAIRING MODE | state=awaiting_claim setup=/setup pairing_backend=https://example.com"
@@ -112,6 +113,7 @@ class TestLifespan:
         monkeypatch.setattr(settings, "relay_private_key_pem", "")
         monkeypatch.setattr(settings, "pairing_backend_url", "https://example.com")
         monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
+        monkeypatch.setattr(pairing_mod, "_lan_setup_url", lambda _port: None)
         monkeypatch.setattr(main_mod, "apply_relay_credentials", lambda: None)
         monkeypatch.setattr(main_mod, "setup_directory", AsyncMock())
         monkeypatch.setattr(main_mod, "repeat_task", lambda _task_func, _seconds, task_name: DummyTask(task_name))

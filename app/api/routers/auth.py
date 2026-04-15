@@ -18,8 +18,10 @@ async def login(
     """Validate an API key and create a browser session."""
     if not _is_authorized(api_key):
         raise HTTPException(status_code=403, detail="Invalid API Key")
-    # Validate redirect_url is relative (local) to prevent open redirect attacks
-    if not redirect_url.startswith("/"):
+    # Validate redirect_url is a relative path to prevent open redirect attacks.
+    # Reject protocol-relative URLs like //evil.com which start with "/" but
+    # are treated as external redirects by browsers.
+    if not redirect_url.startswith("/") or redirect_url.startswith("//"):
         redirect_url = "/"
     session_token = create_session()
     response = RedirectResponse(url=redirect_url, status_code=303)

@@ -57,6 +57,8 @@ async def proxy_hls(
     ],
 ) -> Response:
     """Fetch an LL-HLS resource from the local MediaMTX and return it verbatim."""
+    if any(segment in (".", "..") for segment in hls_path.split("/")):
+        raise HTTPException(status_code=400, detail="Invalid HLS path")
     target_url = f"{_MEDIAMTX_HLS_BASE}/{hls_path}"
     try:
         async with httpx.AsyncClient(timeout=_HLS_TIMEOUT) as client:

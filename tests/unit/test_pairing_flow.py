@@ -184,6 +184,7 @@ class TestPairingCycle:
         )
         monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
         monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
+        monkeypatch.setattr(pairing_mod, "_lan_setup_url", lambda _port: None)
         monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         client: Any = FakeClient(

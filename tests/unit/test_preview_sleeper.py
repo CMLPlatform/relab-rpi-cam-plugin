@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -102,9 +101,7 @@ class TestShouldBeRunning:
         """Connected but last command too long ago — sleep."""
         monkeypatch.setattr(type(settings), "relay_enabled", property(lambda _self: True))
         relay_state.mark_relay_connected()
-        relay_state.mark_relay_activity()
-        # Force the monotonic clock forward by overriding the module-level timer.
-        cast("Any", relay_state)._last_activity_monotonic = 0.0
+        monkeypatch.setattr("app.utils.preview_sleeper.seconds_since_last_activity", lambda: 301.0)
         sleeper = PreviewSleeper(pipeline=pipeline, hibernate_after_s=300)
         assert sleeper.should_be_running() is False
 
@@ -142,8 +139,7 @@ class TestTick:
         monkeypatch.setattr(type(settings), "relay_enabled", property(lambda _self: True))
         # Connected but idle: should_be_running → False
         relay_state.mark_relay_connected()
-        relay_state.mark_relay_activity()
-        cast("Any", relay_state)._last_activity_monotonic = 0.0
+        monkeypatch.setattr("app.utils.preview_sleeper.seconds_since_last_activity", lambda: 301.0)
         pipeline.is_running = True
 
         sleeper = PreviewSleeper(pipeline=pipeline, hibernate_after_s=300)
@@ -197,8 +193,7 @@ class TestTick:
         """A RuntimeError from pipeline.stop is logged, not propagated."""
         monkeypatch.setattr(type(settings), "relay_enabled", property(lambda _self: True))
         relay_state.mark_relay_connected()
-        relay_state.mark_relay_activity()
-        cast("Any", relay_state)._last_activity_monotonic = 0.0
+        monkeypatch.setattr("app.utils.preview_sleeper.seconds_since_last_activity", lambda: 301.0)
         pipeline.is_running = True
         pipeline.stop.side_effect = RuntimeError("ffmpeg already dead")
 
