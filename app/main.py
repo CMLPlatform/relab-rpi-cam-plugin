@@ -231,17 +231,34 @@ async def rate_limit_middleware(request: Request, call_next: Callable) -> Respon
     return await _rate_limiter.handle(request, call_next)
 
 
-# Add CORS middleware to allow requests from the main API host and any
-# configured local-mode origins (direct Ethernet / USB-C clients).
-_cors_origins = [str(origin).rstrip("/") for origin in settings.allowed_cors_origins]
-_cors_origins += [o.rstrip("/") for o in settings.local_allowed_origins]
+# Add CORS middleware.
+#
+# When local_mode_enabled (default: True) the Pi accepts requests from any
+# browser origin with allow_origins=["*"]. This is the correct policy for a
+# local-network API that authenticates with X-API-Key headers (not cookies):
+#   - Wildcard + allow_credentials=False is browser-compatible
+#   - Physical LAN access + the API key (delivered via relay) is the auth boundary
+#   - The setup HTML page is always opened directly (same-origin), so no CORS needed
+#
+# When local_mode_enabled=False (opt-out) the middleware falls back to the
+# explicit allow-list defined in settings, keeping the relay-only security model.
+if settings.local_mode_enabled:
+    _cors_kwargs: dict = {
+        "allow_origins": ["*"],
+        "allow_credentials": False,
+    }
+else:
+    _cors_origins = [str(origin).rstrip("/") for origin in settings.allowed_cors_origins]
+    _cors_origins += [o.rstrip("/") for o in settings.local_allowed_origins]
+    _cors_kwargs = {
+        "allow_origins": _cors_origins,
+        "allow_credentials": True,
+    }
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=True,
+    **_cors_kwargs,
     allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
-    # Only allow necessary headers for security
     allow_headers=["Content-Type", "Authorization", "Accept", settings.auth_key_name],
 )
 

@@ -85,11 +85,12 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Local (direct Ethernet / USB-C) mode
-    # When enabled, the plugin auto-generates a persistent local_api_key on startup
-    # (saved to the credentials JSON) and accepts it alongside relay and user-configured
-    # keys. The frontend can discover the Pi via mDNS and switch to direct HLS/API access.
-    local_mode_enabled: bool = False
-    local_api_key: str = ""  # Auto-generated if empty and local_mode_enabled=True
+    # The plugin always auto-generates a persistent local_api_key on startup (saved to the
+    # credentials JSON). The key is delivered to the frontend automatically via the relay's
+    # /local-access-info endpoint — no manual copying required.
+    # Set LOCAL_MODE_ENABLED=false to disable local API access entirely (opt-out).
+    local_mode_enabled: bool = True
+    local_api_key: str = ""  # Auto-generated on first startup, persisted to credentials JSON
     # Extra CORS origins allowed for direct-connect clients, e.g. "http://192.168.1.42"
     # Accepts a JSON array string or comma-separated list (same format as authorized_api_keys).
     local_allowed_origins: list[str] = []
@@ -260,15 +261,17 @@ def _persist_local_api_key(key: str) -> None:
 
 
 def apply_local_mode() -> None:
-    """Load or generate the local API key when local mode is enabled.
+    """Load or generate the local API key on startup.
+
+    Always runs regardless of ``local_mode_enabled`` so the key exists for
+    relay delivery via ``/local-access-info``. The key is only injected into
+    ``authorized_api_keys`` when ``local_mode_enabled`` is True, so setting
+    ``LOCAL_MODE_ENABLED=false`` disables direct-connection authentication
+    while keeping the key available for the relay bootstrap endpoint.
 
     Should be called once during application startup (lifespan) after
     ``apply_relay_credentials()``, so credentials are fully loaded first.
-    Does nothing when ``local_mode_enabled`` is False.
     """
-    if not settings.local_mode_enabled:
-        return
-
     # Priority: env-provided > credentials file > auto-generate
     local_api_key = settings.local_api_key
     if not local_api_key:
@@ -281,9 +284,11 @@ def apply_local_mode() -> None:
         logger.info("Local mode: generated new API key and persisted to credentials file")
 
     settings.local_api_key = local_api_key
-    if local_api_key not in settings.authorized_api_keys:
+    if settings.local_mode_enabled and local_api_key not in settings.authorized_api_keys:
         settings.authorized_api_keys.append(local_api_key)
-    logger.info("Local mode active — direct connection API key loaded")
+        logger.info("Local mode active — direct connection API key loaded")
+    else:
+        logger.info("Local API key generated (local_mode_enabled=False — direct auth disabled)")
 
 
 def set_runtime_relay_credentials(
