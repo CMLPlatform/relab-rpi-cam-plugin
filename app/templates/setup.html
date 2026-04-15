@@ -143,13 +143,16 @@
       {% endif %}
       <h2>Connection</h2>
       {% if relay_enabled %}
-        <table>
-          <tr><td>Backend URL</td><td><code>{{ relay_backend_url or 'not set' }}</code></td></tr>
-          <tr><td>Camera ID</td><td>{% if relay_camera_id %}<code>{{ relay_camera_id }}</code>{% else %}<em>not set</em>{% endif %}</td></tr>
-        </table>
         <div>
           <button class="btn btn--danger" onclick="unpair()">Unpair</button>
         </div>
+        <details style="margin-top:4px">
+          <summary style="cursor:pointer;font-size:0.85em;opacity:0.6">Connection details</summary>
+          <table style="margin-top:8px">
+            <tr><td>Backend URL</td><td><code>{{ relay_backend_url or 'not set' }}</code></td></tr>
+            <tr><td>Camera ID</td><td>{% if relay_camera_id %}<code>{{ relay_camera_id }}</code>{% else %}<em>not set</em>{% endif %}</td></tr>
+          </table>
+        </details>
       {% else %}
         <p>WebSocket relay credentials have not been configured yet.</p>
       {% endif %}
@@ -165,10 +168,11 @@
       {% else %}
         <div class="status-chip status-chip--muted">Local mode disabled</div>
       {% endif %}
-      <h2>Direct Connection (Ethernet / USB-C)</h2>
+      <h2>Direct Connection</h2>
       <p>
-        The camera accepts direct connections from clients on the same link. Enter the API key
-        below when the ReLab app asks for it, or use it with the <code>X-API-Key</code> header.
+        Connect an Ethernet cable (or USB-C to Ethernet adapter) between this camera and your
+        desktop. The ReLab app automatically receives the local API key through the relay and
+        configures direct access — no manual setup required.
       </p>
       {% if local_api_key %}
         <table>
@@ -182,11 +186,11 @@
               </button>
             </td>
           </tr>
-          <tr><td>HLS preview port</td><td><code>:8888</code> — reachable at <code>http://&lt;this-ip&gt;:8888/cam-preview/index.m3u8</code></td></tr>
-          <tr><td>API port</td><td><code>:8018</code> — reachable at <code>http://&lt;this-ip&gt;:8018</code></td></tr>
+          <tr><td>HLS preview</td><td><code>http://&lt;this-ip&gt;:8888/cam-preview/index.m3u8</code></td></tr>
+          <tr><td>API</td><td><code>http://&lt;this-ip&gt;:8018</code></td></tr>
         </table>
         <p style="font-size:0.85em;opacity:0.7">
-          This generates a local API key, displays it here, and adds it to the allowed key list.
+          Only needed for manual setup or non-ReLab clients (<code>X-API-Key</code> header).
           The WebSocket relay keeps running in parallel — remote access is unaffected.
         </p>
       {% endif %}

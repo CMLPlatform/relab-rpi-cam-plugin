@@ -111,6 +111,43 @@ class RateLimiter:
         return response
 
 
+def _log_startup_banner() -> None:
+    """Print a concise operator-facing summary to logs / journalctl.
+
+    Useful when accessing the Pi over SSH without a browser.  The banner shows
+    the current operating mode, the setup page URL, and a hint for retrieving
+    the local API key from the command line.
+    """
+    import socket as _socket
+
+    try:
+        hostname = _socket.gethostname()
+    except OSError:
+        hostname = "localhost"
+
+    setup_url = f"http://{hostname}.local:{settings.base_url.port or 8018}/setup"
+
+    if settings.relay_enabled:
+        mode_line = f"PAIRED      camera_id={settings.relay_camera_id}"
+    elif settings.pairing_backend_url:
+        mode_line = "PAIRING     waiting for code to be claimed in the ReLab app"
+    else:
+        mode_line = "IDLE        no pairing backend configured"
+
+    local_key_hint = "run:  just show-key" if settings.local_api_key else "not yet generated"
+
+    sep = "═" * 54
+    banner = (
+        f"\n{sep}\n"
+        f"  ReLab RPi Camera  v{version}\n"
+        f"  Setup    : {setup_url}\n"
+        f"  Mode     : {mode_line}\n"
+        f"  Local key: {local_key_hint}\n"
+        f"{sep}"
+    )
+    logger.info(banner)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Lifespan event handler for FastAPI application.
@@ -122,8 +159,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # Load relay credentials from pairing file (if present)
     apply_relay_credentials()
-    # Load or generate local-mode API key (no-op when local_mode_enabled=False)
+    # Load or generate local-mode API key
     apply_local_mode()
+    # Print operator-facing startup summary to logs / stdout
+    _log_startup_banner()
 
     # Set up temporary directories
     await setup_directory(settings.image_path)
