@@ -6,6 +6,7 @@ import secrets
 import tempfile
 import warnings
 from collections.abc import Iterable
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal, cast
 
@@ -240,10 +241,8 @@ def _persist_local_api_key(key: str) -> None:
     _CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
     existing: dict[str, object] = {}
     if _CREDENTIALS_FILE.exists():
-        try:
+        with suppress(json.JSONDecodeError, OSError):
             existing = json.loads(_CREDENTIALS_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
     existing["local_api_key"] = key
     with tempfile.NamedTemporaryFile(
         mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
@@ -254,8 +253,6 @@ def _persist_local_api_key(key: str) -> None:
         Path(tmp_path).replace(_CREDENTIALS_FILE)
         _CREDENTIALS_FILE.chmod(0o600)
     except OSError:
-        from contextlib import suppress
-
         with suppress(OSError):
             Path(tmp_path).unlink()
         raise

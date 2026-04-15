@@ -3,11 +3,12 @@
 import pytest
 
 from app.core.config import Settings
-
-WSS_URL = "wss://example.com/ws"
-WS_URL = "ws://example.com/ws"
-HTTP_URL = "http://example.com"
-HTTPS_URL = "https://example.com"
+from tests.constants import (
+    EXAMPLE_RELAY_BACKEND_URL,
+    EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
+    EXAMPLE_RELAY_HTTP_URL,
+    EXAMPLE_RELAY_HTTPS_URL,
+)
 
 
 class TestRelayUrlValidation:
@@ -20,24 +21,24 @@ class TestRelayUrlValidation:
 
     def test_wss_scheme_is_accepted(self) -> None:
         """Should accept URLs with the wss:// scheme."""
-        s = Settings(relay_backend_url=WSS_URL)
-        assert s.relay_backend_url == WSS_URL
+        s = Settings(relay_backend_url=EXAMPLE_RELAY_BACKEND_URL)
+        assert s.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL
 
     def test_ws_scheme_is_accepted_with_warning(self) -> None:
         """Should accept ws:// URLs but emit a warning about unencrypted connections."""
         with pytest.warns(UserWarning, match="unencrypted ws://"):
-            s = Settings(relay_backend_url=WS_URL)
-        assert s.relay_backend_url == WS_URL
+            s = Settings(relay_backend_url=EXAMPLE_RELAY_BACKEND_URL_UNSECURE)
+        assert s.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL_UNSECURE
 
     def test_http_scheme_is_rejected(self) -> None:
         """Should reject URLs with the http:// scheme since it's not secure for WebSocket connections."""
         with pytest.raises(ValueError, match="wss://"):
-            Settings(relay_backend_url=HTTP_URL)
+            Settings(relay_backend_url=EXAMPLE_RELAY_HTTP_URL)
 
     def test_https_scheme_is_rejected(self) -> None:
         """Should reject URLs with the https:// scheme since it's not valid for WebSocket connections."""
         with pytest.raises(ValueError, match="wss://"):
-            Settings(relay_backend_url=HTTPS_URL)
+            Settings(relay_backend_url=EXAMPLE_RELAY_HTTPS_URL)
 
 
 class TestAuthorizedApiKeysValidation:

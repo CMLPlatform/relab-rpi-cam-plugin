@@ -12,7 +12,7 @@ import pytest
 from app.core.config import settings
 from app.utils import backend_client as backend_client_mod
 from app.utils.backend_client import BackendUploadError, upload_image
-from tests.constants import SAMPLE_SERVER_IMAGE_ID, SAMPLE_SERVER_IMAGE_URL
+from tests.constants import BACKEND_IMAGE_URL, SAMPLE_SERVER_IMAGE_ID
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
@@ -56,7 +56,7 @@ class TestUploadImage:
         """A 200 JSON response with image_id+image_url should populate UploadedImageInfo."""
         response = _fake_response(
             200,
-            {"image_id": SAMPLE_SERVER_IMAGE_ID, "image_url": SAMPLE_SERVER_IMAGE_URL},
+            {"image_id": SAMPLE_SERVER_IMAGE_ID, "image_url": BACKEND_IMAGE_URL},
         )
         with _patch_async_client(response):
             result = await upload_image(
@@ -67,7 +67,7 @@ class TestUploadImage:
             )
 
         assert result.image_id == SAMPLE_SERVER_IMAGE_ID
-        assert str(result.image_url) == SAMPLE_SERVER_IMAGE_URL
+        assert str(result.image_url) == BACKEND_IMAGE_URL
 
     async def test_relative_image_url_is_prefixed_with_base_url(self) -> None:
         """A relative image_url from the backend should be resolved against the pairing base URL."""
@@ -84,7 +84,7 @@ class TestUploadImage:
             )
 
         assert result.image_id == SAMPLE_SERVER_IMAGE_ID
-        assert str(result.image_url) == "https://backend.example/images/abc.jpg"
+        assert str(result.image_url) == BACKEND_IMAGE_URL
 
     async def test_http_error_wrapped_in_backend_upload_error(self) -> None:
         """An httpx transport error should surface as BackendUploadError."""

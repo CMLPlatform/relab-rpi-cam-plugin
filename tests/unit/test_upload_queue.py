@@ -12,6 +12,7 @@ from pydantic import AnyUrl
 
 from app.api.services.image_sinks.base import ImageSink, ImageSinkError, StoredImage
 from app.utils.upload_queue import UploadQueue, UploadQueueWorker
+from tests.constants import EXAMPLE_IMAGE_URL
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -28,7 +29,7 @@ class _FakeSink:
         if self._fail:
             msg = "fake sink is failing"
             raise ImageSinkError(msg)
-        return StoredImage(image_id="srv-1", image_url=AnyUrl("https://example.com/img.jpg"))
+        return StoredImage(image_id="srv-1", image_url=AnyUrl(EXAMPLE_IMAGE_URL))
 
 
 @pytest.fixture

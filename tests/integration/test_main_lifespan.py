@@ -12,8 +12,9 @@ from fastapi import FastAPI
 import app.main as main_mod
 import app.utils.pairing as pairing_mod
 from app.core.config import settings
+from tests.constants import EXAMPLE_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL
 
-PAIRING_MODE_LOG = "PAIRING MODE | state=awaiting_claim setup=/setup pairing_backend=https://example.com"
+PAIRING_MODE_LOG = f"PAIRING MODE | state=awaiting_claim setup=/setup pairing_backend={EXAMPLE_BACKEND_URL}"
 
 
 @pytest.fixture(autouse=True)
@@ -66,7 +67,7 @@ class TestLifespan:
     async def test_relay_enabled_starts_relay_and_cleans_up(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that when relay credentials are set, the relay is started on startup and cleaned up on shutdown."""
         app = FastAPI()
-        monkeypatch.setattr(settings, "relay_backend_url", "wss://example.com/ws")
+        monkeypatch.setattr(settings, "relay_backend_url", EXAMPLE_RELAY_BACKEND_URL)
         monkeypatch.setattr(settings, "relay_camera_id", "cam-1")
         monkeypatch.setattr(settings, "relay_auth_scheme", "device_assertion")
         monkeypatch.setattr(settings, "relay_key_id", "key-1")
@@ -111,7 +112,7 @@ class TestLifespan:
         monkeypatch.setattr(settings, "relay_camera_id", "")
         monkeypatch.setattr(settings, "relay_key_id", "")
         monkeypatch.setattr(settings, "relay_private_key_pem", "")
-        monkeypatch.setattr(settings, "pairing_backend_url", "https://example.com")
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
         monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
         monkeypatch.setattr(pairing_mod, "_lan_setup_url", lambda _port: None)
         monkeypatch.setattr(main_mod, "apply_relay_credentials", lambda: None)

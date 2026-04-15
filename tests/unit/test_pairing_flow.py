@@ -12,10 +12,14 @@ import pytest
 from app.api.dependencies.auth import reload_authorized_hashes
 from app.core.config import settings
 from app.utils import pairing as pairing_mod
-from tests.constants import PAIRING_POLL_TIMEOUT_LOG, PAIRING_REGISTER_TIMEOUT_LOG, TRACEBACK_TEXT
+from tests.constants import (
+    EXAMPLE_BACKEND_URL,
+    EXAMPLE_RELAY_BACKEND_URL,
+    PAIRING_POLL_TIMEOUT_LOG,
+    PAIRING_REGISTER_TIMEOUT_LOG,
+    TRACEBACK_TEXT,
+)
 
-EXAMPLE_BACKEND_URL = "https://example.com"
-RELAY_BACKEND_URL = "wss://example.com/ws"
 RELAY_CAMERA_ID = "cam-1"
 RELAY_AUTH_SCHEME = "device_assertion"
 RELAY_KEY_ID = "key-1"
@@ -196,7 +200,7 @@ class TestPairingCycle:
                     {
                         "status": pairing_mod.STATUS_PAIRED,
                         "camera_id": RELAY_CAMERA_ID,
-                        "ws_url": RELAY_BACKEND_URL,
+                        "ws_url": EXAMPLE_RELAY_BACKEND_URL,
                         "auth_scheme": RELAY_AUTH_SCHEME,
                         "key_id": RELAY_KEY_ID,
                     },
@@ -213,7 +217,7 @@ class TestPairingCycle:
             await pairing_mod._pairing_cycle(cast("Any", client), EXAMPLE_BACKEND_URL, on_paired)
 
             on_paired.assert_awaited_once()
-            assert settings.relay_backend_url == RELAY_BACKEND_URL
+            assert settings.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL
             assert settings.relay_camera_id == RELAY_CAMERA_ID
             assert settings.relay_auth_scheme == RELAY_AUTH_SCHEME
             assert settings.relay_key_id == RELAY_KEY_ID
@@ -257,7 +261,7 @@ class TestPairingCycle:
                     {
                         "status": pairing_mod.STATUS_PAIRED,
                         "camera_id": RELAY_CAMERA_ID,
-                        "ws_url": RELAY_BACKEND_URL,
+                        "ws_url": EXAMPLE_RELAY_BACKEND_URL,
                         "auth_scheme": RELAY_AUTH_SCHEME,
                         "key_id": RELAY_KEY_ID,
                     },
@@ -298,7 +302,7 @@ class TestPairingCycle:
                     {
                         "status": pairing_mod.STATUS_PAIRED,
                         "camera_id": RELAY_CAMERA_ID,
-                        "ws_url": RELAY_BACKEND_URL,
+                        "ws_url": EXAMPLE_RELAY_BACKEND_URL,
                         "auth_scheme": RELAY_AUTH_SCHEME,
                         "key_id": RELAY_KEY_ID,
                     },
@@ -339,7 +343,7 @@ class TestPairingCycle:
                     {
                         "status": pairing_mod.STATUS_PAIRED,
                         "camera_id": RELAY_CAMERA_ID,
-                        "ws_url": RELAY_BACKEND_URL,
+                        "ws_url": EXAMPLE_RELAY_BACKEND_URL,
                         "auth_scheme": RELAY_AUTH_SCHEME,
                         "key_id": RELAY_KEY_ID,
                     },
@@ -352,7 +356,7 @@ class TestPairingCycle:
             {
                 "status": pairing_mod.STATUS_PAIRED,
                 "camera_id": RELAY_CAMERA_ID,
-                "ws_url": RELAY_BACKEND_URL,
+                "ws_url": EXAMPLE_RELAY_BACKEND_URL,
                 "auth_scheme": RELAY_AUTH_SCHEME,
                 "key_id": RELAY_KEY_ID,
             },
@@ -414,21 +418,21 @@ class TestPairingCycle:
         private_key = pairing_mod._private_key_pem(pairing_mod._generate_private_key())
 
         pairing_mod._save_relay_credentials(
-            RELAY_BACKEND_URL,
+            EXAMPLE_RELAY_BACKEND_URL,
             RELAY_CAMERA_ID,
             RELAY_AUTH_SCHEME,
             RELAY_KEY_ID,
             private_key,
         )
         assert json.loads(creds_file.read_text()) == {
-            "relay_backend_url": RELAY_BACKEND_URL,
+            "relay_backend_url": EXAMPLE_RELAY_BACKEND_URL,
             "relay_camera_id": RELAY_CAMERA_ID,
             "relay_auth_scheme": RELAY_AUTH_SCHEME,
             "relay_key_id": RELAY_KEY_ID,
             "relay_private_key_pem": private_key,
         }
         assert pairing_mod.load_relay_credentials() == {
-            "relay_backend_url": RELAY_BACKEND_URL,
+            "relay_backend_url": EXAMPLE_RELAY_BACKEND_URL,
             "relay_camera_id": RELAY_CAMERA_ID,
             "relay_auth_scheme": RELAY_AUTH_SCHEME,
             "relay_key_id": RELAY_KEY_ID,

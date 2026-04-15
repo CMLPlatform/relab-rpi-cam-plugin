@@ -26,6 +26,7 @@ from app.api.services.camera_backend import CaptureResult, StreamingCameraBacken
 from app.api.services.camera_manager import CameraControlsNotSupportedError, CameraManager
 from app.api.services.stream_service import StreamService
 from app.core.config import settings
+from tests.constants import EXAMPLE_IMAGE_URL, YOUTUBE_WATCH_URL_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -237,7 +238,7 @@ class TestCameraManagerStartStreaming:
         backend = FakeBackend()
         backend.start_stream.return_value = StreamStartResult(
             mode=StreamMode.YOUTUBE,
-            url=AnyUrl("https://youtube.com/watch?v=valid-broadcast"),
+            url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
         )
         manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
 
@@ -303,7 +304,7 @@ class TestCameraManagerCapture:
             put = AsyncMock(
                 return_value=StoredImage(
                     image_id=stub_image_id,
-                    image_url=AnyUrl("https://example.com/img.jpg"),
+                    image_url=AnyUrl(EXAMPLE_IMAGE_URL),
                 )
             )
 
@@ -340,7 +341,7 @@ class TestCameraManagerStopStreaming:
         backend = FakeBackend()
         manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
         manager.stream.mode = StreamMode.YOUTUBE
-        manager.stream.url = AnyUrl("https://youtube.com/watch?v=valid-broadcast")
+        manager.stream.url = AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast")
         manager.stream.started_at = datetime.now(UTC)
 
         await manager.stop_streaming()
@@ -440,7 +441,7 @@ class TestStreamService:
         service.start(
             StreamStartResult(
                 mode=StreamMode.YOUTUBE,
-                url=AnyUrl("https://youtube.com/watch?v=valid-broadcast"),
+                url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
             )
         )
 
@@ -453,7 +454,7 @@ class TestStreamService:
         service.start(
             StreamStartResult(
                 mode=StreamMode.YOUTUBE,
-                url=AnyUrl("https://youtube.com/watch?v=valid-broadcast"),
+                url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
             )
         )
 
@@ -467,7 +468,7 @@ class TestStreamService:
         service.start(
             StreamStartResult(
                 mode=StreamMode.YOUTUBE,
-                url=AnyUrl("https://youtube.com/watch?v=valid-broadcast"),
+                url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
             )
         )
 

@@ -7,17 +7,28 @@ HLS_M3U8_CONTENT_TYPE = "application/vnd.apple.mpegurl"
 HLS_MP4_CONTENT_TYPE = "video/mp4"
 HLS_PREVIEW_ENCODER_FRAGMENT = "preview encoder"
 
+# Shared URL bases and prefixes
+BACKEND_EXAMPLE_BASE_URL = "https://backend.example"
+EXAMPLE_BACKEND_URL = "https://example.com"
+EXAMPLE_RELAY_BACKEND_URL = "wss://example.com/ws"
+EXAMPLE_RELAY_BACKEND_URL_UNSECURE = "ws://example.com/ws"
+EXAMPLE_RELAY_HTTP_URL = "http://example.com"
+EXAMPLE_RELAY_HTTPS_URL = "https://example.com"
+EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID = f"{EXAMPLE_RELAY_BACKEND_URL}?camera_id=cam-42"
+EXAMPLE_IMAGE_URL = f"{EXAMPLE_BACKEND_URL}/img.jpg"
+YOUTUBE_WATCH_URL_PREFIX = "https://youtube.com/watch?v="
+YOUTUBE_EMBED_URL_PREFIX = "https://www.youtube.com/embed/"
+
 # Sample image upload constants used in integration tests
 UPLOADED_STATUS = "uploaded"
 QUEUED_STATUS = "queued"
 SAMPLE_IMAGE_ID = "a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8"
-SAMPLE_IMAGE_URL = "https://backend.example/images/a1b2c3d4.jpg"
+SAMPLE_IMAGE_URL = f"{BACKEND_EXAMPLE_BASE_URL}/images/a1b2c3d4.jpg"
 
-# Sample server-side upload values used by unit tests
+# Shared backend upload values used by unit tests
+BACKEND_IMAGE_URL = f"{BACKEND_EXAMPLE_BASE_URL}/images/abc.jpg"
 SAMPLE_SERVER_IMAGE_ID = "server-abc"
-SAMPLE_SERVER_IMAGE_URL = "https://backend.example/images/abc.jpg"
 BACKEND_PUSH_IMAGE_ID = "srv-abc"
-BACKEND_PUSH_IMAGE_URL = "https://backend.example/images/abc.jpg"
 BACKEND_PUSH_IMAGE_BYTES = b"jpeg-body"
 BACKEND_PUSH_FILENAME = "local-1.jpg"
 
@@ -90,7 +101,10 @@ PICAMERA2_LORES_STREAM_NAME = "lores"
 PICAMERA2_CAM_HIRES_PATH = "cam-hires"
 PICAMERA2_STARTUP_TIMEOUT = "startup timeout"
 PICAMERA2_CAMERA_NOT_INITIALIZED = "Camera backend has not been initialized"
-YOUTUBE_PUBLIC_URL = "https://youtube.com/watch?v=public-id"
+YOUTUBE_TEST_BROADCAST_URL = f"{YOUTUBE_WATCH_URL_PREFIX}TEST_BROADCAST_KEY_123"
+YOUTUBE_WATCH_URL = f"{YOUTUBE_WATCH_URL_PREFIX}broadcast-key"
+YOUTUBE_EMBED_URL = f"{YOUTUBE_EMBED_URL_PREFIX}broadcast-key"
+YOUTUBE_PUBLIC_URL = f"{YOUTUBE_WATCH_URL_PREFIX}public-id"
 CAMERA_DEVICE_NOT_FOUND = "Camera device not found"
 
 # Compose override template samples

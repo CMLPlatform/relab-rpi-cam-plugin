@@ -8,20 +8,40 @@
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
   <script>
     const HLS_SRC = "/hls/cam-preview/index.m3u8";
+    const PREVIEW_RETRY_DELAY_MS = 1200;
+    const PREVIEW_MAX_RETRIES = 8;
     let hls = null;
+    let previewRetryTimer = null;
+    let previewWanted = false;
 
-    function startPreview() {
+    function resetPreviewMedia() {
+      const video = document.getElementById("preview-video");
+      if (hls) { hls.destroy(); hls = null; }
+      video.removeAttribute("src");
+      video.load();
+    }
+
+    function startPreview(attempt = 0) {
+      previewWanted = true;
       const video = document.getElementById("preview-video");
       const btn = document.getElementById("preview-btn");
       const chip = document.getElementById("preview-chip");
       const msg = document.getElementById("preview-msg");
 
       btn.textContent = "Stop Preview";
-      msg.textContent = "";
+      msg.textContent = attempt > 0 ? "Starting preview — waking the encoder..." : "";
 
       const onError = () => {
+        resetPreviewMedia();
+        if (attempt < PREVIEW_MAX_RETRIES) {
+          msg.textContent = "Starting preview — waking the encoder...";
+          previewRetryTimer = window.setTimeout(() => {
+            if (previewWanted) startPreview(attempt + 1);
+          }, PREVIEW_RETRY_DELAY_MS);
+          return;
+        }
         stopPreview();
-        msg.textContent = "Preview unavailable — the encoder may be sleeping (relay idle or not connected).";
+        msg.textContent = "Preview unavailable — check that the camera and local MediaMTX sidecar are running.";
       };
 
       if (Hls.isSupported()) {
@@ -50,17 +70,19 @@
       const btn = document.getElementById("preview-btn");
       const chip = document.getElementById("preview-chip");
 
-      if (hls) { hls.destroy(); hls = null; }
-      video.removeAttribute("src");
-      video.load();
+      previewWanted = false;
+      if (previewRetryTimer) {
+        window.clearTimeout(previewRetryTimer);
+        previewRetryTimer = null;
+      }
+      resetPreviewMedia();
       btn.textContent = "Load Preview";
       chip.className = "status-chip status-chip--muted";
       chip.textContent = "Preview";
     }
 
     function togglePreview() {
-      const video = document.getElementById("preview-video");
-      (hls || video.src) ? stopPreview() : startPreview();
+      previewWanted ? stopPreview() : startPreview();
     }
   </script>
 {% endblock %}

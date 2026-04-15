@@ -176,7 +176,17 @@
               </button>
             </td>
           </tr>
-          <tr><td>HLS preview port</td><td><code>:8888</code> — reachable at <code>http://&lt;this-ip&gt;:8888/cam-preview/index.m3u8</code></td></tr>
+          <tr>
+            <td>HLS preview</td>
+            <td>
+              <code>http://&lt;this-ip&gt;:8018/hls/cam-preview/index.m3u8</code>
+              <span> — app-managed preview that wakes the encoder and keeps it awake while viewed.</span>
+            </td>
+          </tr>
+          <tr>
+            <td>Raw HLS port</td>
+            <td><code>:8888</code> — MediaMTX endpoint for advanced clients.</td>
+          </tr>
           <tr><td>API port</td><td><code>:8018</code> — reachable at <code>http://&lt;this-ip&gt;:8018</code></td></tr>
         </table>
         <p style="font-size:0.85em;opacity:0.7">

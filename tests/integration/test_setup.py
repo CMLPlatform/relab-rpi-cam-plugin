@@ -10,7 +10,7 @@ from httpx import AsyncClient
 
 from app.api.routers import setup as setup_router
 from app.core.config import settings
-from tests.constants import HTML_CONTENT_TYPE
+from tests.constants import EXAMPLE_RELAY_BACKEND_URL, HTML_CONTENT_TYPE
 
 SETUP_TITLE = "RPi Camera — Setup"
 SETUP_COPY_TEXT = "Pair this camera with the ReLab app"
@@ -64,7 +64,7 @@ class TestSetupPage:
             settings.relay_key_id,
             settings.relay_private_key_pem,
         )
-        settings.relay_backend_url = "wss://example.com/ws"
+        settings.relay_backend_url = EXAMPLE_RELAY_BACKEND_URL
         settings.relay_camera_id = "cam-1"
         settings.relay_key_id = "key-1"
         settings.relay_private_key_pem = "private-key"
@@ -116,7 +116,7 @@ class TestSetupPage:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Unpair button is visible when relay credentials are configured."""
-        monkeypatch.setattr(settings, "relay_backend_url", "wss://example.com/ws")
+        monkeypatch.setattr(settings, "relay_backend_url", EXAMPLE_RELAY_BACKEND_URL)
         monkeypatch.setattr(settings, "relay_camera_id", "cam-1")
         monkeypatch.setattr(settings, "relay_key_id", "key-1")
         monkeypatch.setattr(settings, "relay_private_key_pem", "pem")

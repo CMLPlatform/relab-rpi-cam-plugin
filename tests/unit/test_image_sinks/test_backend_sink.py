@@ -12,10 +12,10 @@ from app.api.services.image_sinks.backend_sink import BackendPushSink
 from app.api.services.image_sinks.base import ImageSinkError, StoredImage
 from app.utils.backend_client import BackendUploadError, UploadedImageInfo
 from tests.constants import (
+    BACKEND_IMAGE_URL,
     BACKEND_PUSH_FILENAME,
     BACKEND_PUSH_IMAGE_BYTES,
     BACKEND_PUSH_IMAGE_ID,
-    BACKEND_PUSH_IMAGE_URL,
 )
 
 
@@ -30,7 +30,7 @@ class TestBackendPushSink:
         mock_upload = AsyncMock(
             return_value=UploadedImageInfo(
                 image_id=BACKEND_PUSH_IMAGE_ID,
-                image_url=AnyUrl(BACKEND_PUSH_IMAGE_URL),
+                image_url=AnyUrl(BACKEND_IMAGE_URL),
             )
         )
         monkeypatch.setattr(backend_sink_mod, "upload_image", mock_upload)
@@ -46,7 +46,7 @@ class TestBackendPushSink:
 
         assert isinstance(result, StoredImage)
         assert result.image_id == BACKEND_PUSH_IMAGE_ID
-        assert str(result.image_url) == BACKEND_PUSH_IMAGE_URL
+        assert str(result.image_url) == BACKEND_IMAGE_URL
 
         mock_upload.assert_awaited_once()
         kwargs = mock_upload.await_args_list[0].kwargs

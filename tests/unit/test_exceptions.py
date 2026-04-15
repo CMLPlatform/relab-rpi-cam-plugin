@@ -7,6 +7,7 @@ from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.exceptions import ActiveStreamError, CameraInitializationError
 from app.api.services.stream_state import ActiveStreamState
+from tests.constants import YOUTUBE_WATCH_URL_PREFIX
 
 _STREAM_ACTIVE_PREFIX = "Stream active in"
 _STREAM_STOP_HINT = "Stop streaming first"
@@ -20,10 +21,10 @@ class TestActiveStreamError:
 
     def test_message_includes_mode_and_url(self) -> None:
         """Error message embeds the active stream's mode and URL."""
-        stream = ActiveStreamState(mode=StreamMode.YOUTUBE, url=AnyUrl("https://youtube.com/watch?v=abc"))
+        stream = ActiveStreamState(mode=StreamMode.YOUTUBE, url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}abc"))
         err = ActiveStreamError(stream)
         assert err.mode == StreamMode.YOUTUBE
-        assert str(err.url).startswith("https://youtube.com/")
+        assert str(err.url).startswith(YOUTUBE_WATCH_URL_PREFIX)
         assert _STREAM_ACTIVE_PREFIX in str(err)
         assert _STREAM_STOP_HINT in str(err)
 

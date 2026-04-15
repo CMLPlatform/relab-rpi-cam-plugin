@@ -11,6 +11,7 @@ from relab_rpi_cam_models.stream import StreamMode
 from app.api.schemas.camera_controls import FocusControlRequest, FocusMode
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services.picamera2_backend import Picamera2Backend
+from tests.constants import YOUTUBE_PUBLIC_URL
 
 # ``libcamera`` is only installable on Raspberry Pi OS (ships via apt, not pip).
 # Skip this module entirely on dev hosts so the rest of the suite can run.
@@ -105,7 +106,7 @@ class TestPicamera2Backend:
         result = await backend.start_stream(StreamMode.YOUTUBE, youtube_config=config)
 
         assert result.mode == StreamMode.YOUTUBE
-        assert result.url == AnyUrl("https://youtube.com/watch?v=public-id")
+        assert result.url == AnyUrl(YOUTUBE_PUBLIC_URL)
         # The MediaMTX egress is configured BEFORE the encoder publishes — no
         # half-started state on failure.
         mediamtx.set_youtube_egress.assert_awaited_once_with("cam-hires", "good")

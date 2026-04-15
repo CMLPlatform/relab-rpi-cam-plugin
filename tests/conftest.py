@@ -24,6 +24,7 @@ from app.api.services.camera_backend import CaptureResult, StreamingCameraBacken
 from app.api.services.camera_manager import CameraManager
 from app.core.config import settings
 from app.main import app
+from tests.constants import YOUTUBE_TEST_BROADCAST_URL
 
 TEST_API_KEY = "test-api-key-12345"
 
@@ -40,7 +41,7 @@ class FakeBackend:
         self.current_mode: CameraMode | None = None
         self.cleaned_up = False
         self.stream_active = False
-        self.stream_url = AnyUrl("https://youtube.com/watch?v=TEST_BROADCAST_KEY_123")
+        self.stream_url = AnyUrl(YOUTUBE_TEST_BROADCAST_URL)
         self.image = Image.new("RGB", (100, 100), color="red")
         self.camera_properties = {"Model": "mock-camera"}
 

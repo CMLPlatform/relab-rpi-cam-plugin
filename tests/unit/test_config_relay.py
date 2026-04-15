@@ -5,8 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.core.config import Settings, apply_relay_credentials
+from tests.constants import EXAMPLE_RELAY_BACKEND_URL
 
-RELAY_BACKEND_URL = "wss://example.com/ws"
 RELAY_CAMERA_ID = "cam-1"
 RELAY_AUTH_SCHEME = "device_assertion"
 RELAY_KEY_ID = "key-1"
@@ -24,7 +24,7 @@ class TestRelayEnabledProperty:
     def test_enabled_when_all_fields_set(self) -> None:
         """Relay should be enabled if all required fields are set."""
         s = Settings(
-            relay_backend_url="wss://example.com/ws",
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
             relay_camera_id="cam-1",
             relay_auth_scheme=RELAY_AUTH_SCHEME,
             relay_key_id=RELAY_KEY_ID,
@@ -34,7 +34,7 @@ class TestRelayEnabledProperty:
 
     def test_disabled_when_partial(self) -> None:
         """Relay should be disabled if only some fields are set."""
-        s = Settings(relay_backend_url="wss://example.com/ws")
+        s = Settings(relay_backend_url=EXAMPLE_RELAY_BACKEND_URL)
         assert s.relay_enabled is False
 
     def test_disabled_when_only_key(self) -> None:
@@ -49,7 +49,7 @@ class TestApplyRelayCredentials:
     def test_loads_credentials_from_file(self, tmp_path: Path) -> None:
         """Should load credentials from the file and apply to settings."""
         creds = {
-            "relay_backend_url": RELAY_BACKEND_URL,
+            "relay_backend_url": EXAMPLE_RELAY_BACKEND_URL,
             "relay_camera_id": RELAY_CAMERA_ID,
             "relay_auth_scheme": RELAY_AUTH_SCHEME,
             "relay_key_id": RELAY_KEY_ID,
@@ -71,7 +71,7 @@ class TestApplyRelayCredentials:
             mock_settings.local_relay_api_key = ""
             mock_settings.authorized_api_keys = []
             apply_relay_credentials()
-            assert mock_settings.relay_backend_url == RELAY_BACKEND_URL
+            assert mock_settings.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL
             assert mock_settings.relay_camera_id == RELAY_CAMERA_ID
             assert mock_settings.relay_auth_scheme == RELAY_AUTH_SCHEME
             assert mock_settings.relay_key_id == RELAY_KEY_ID
