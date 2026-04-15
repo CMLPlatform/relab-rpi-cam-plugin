@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import AnyUrl, BaseModel
 
 from .stream import StreamView
 
@@ -19,3 +19,4 @@ class CameraStatusView(BaseModel):
 
     current_mode: CameraMode | None = None
     stream: StreamView | None = None
+    last_image_url: AnyUrl | None = None

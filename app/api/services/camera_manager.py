@@ -8,6 +8,7 @@ import logging
 import uuid
 from typing import TYPE_CHECKING
 
+from pydantic import AnyUrl
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 from relab_rpi_cam_models.images import ImageCaptureResponse, ImageCaptureStatus
 
@@ -74,6 +75,7 @@ class CameraManager:
         self._sink: ImageSink | None = sink
         self._upload_queue_override = upload_queue
         self._upload_queue: UploadQueue | None = None
+        self._last_image_url: AnyUrl | None = None
         self.stream_service = StreamService()
         self.lock = asyncio.Lock()
         self.lock_timeout = 10
@@ -159,6 +161,7 @@ class CameraManager:
             )
         except ImageSinkError as exc:
             logger.warning("Image sink for %s failed; enqueueing for retry: %s", image_id, exc)
+            self._last_image_url = None
             await self.upload_queue.enqueue(
                 image_id=image_id,
                 image_path=image_path,
@@ -175,6 +178,7 @@ class CameraManager:
             )
 
         await asyncio.to_thread(_unlink_quiet, image_path)
+        self._last_image_url = stored.image_url
 
         return ImageCaptureResponse(
             image_id=stored.image_id,
@@ -308,4 +312,5 @@ class CameraManager:
         return CameraStatusView(
             current_mode=self.backend.current_mode,
             stream=stream_info if self.stream.is_active else None,
+            last_image_url=self._last_image_url,
         )

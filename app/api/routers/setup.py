@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from app.core.config import clear_runtime_relay_credentials, settings
 from app.core.templates_config import templates
+from app.utils.backend_client import notify_self_unpair
 from app.utils.pairing import (
     PAIRING_CODE_TTL_SECONDS,
     STATUS_PAIRED,
@@ -75,6 +76,10 @@ async def unpair(request: Request) -> Response:
         # Small delay so the 204 response travels back through the relay WS
         # before the relay task receives its CancelledError.
         await asyncio.sleep(0.1)
+
+        # Notify the backend to delete this camera's registration. Best-effort:
+        # errors are logged but never block the local unpair from completing.
+        await notify_self_unpair()
 
         for task in asyncio.all_tasks():
             if task.get_name() in ("ws_relay", "pairing"):
