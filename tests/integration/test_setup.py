@@ -28,6 +28,7 @@ PAIRING_FAILED_TEXT = "Pairing failed"
 PAIRED_SUCCESS_TEXT = "Connecting now."
 THIS_IP_PLACEHOLDER = "&lt;this-ip&gt;"
 COPY_PAIRING_CODE_LABEL = "Copy pairing code"
+NEW_PAIRING_CODE_LABEL = "Generate a new pairing code"
 LATENCY_BOOST_TEXT = "Native RELab app latency boost"
 STANDALONE_CLIENTS_TEXT = "Standalone / non-ReLab clients"
 LOCAL_KEY_WARNING_TEXT = "The local key does not let you register this camera in the ReLab app."
@@ -120,6 +121,7 @@ class TestSetupPage:
         assert PAIRING_TTL_ATTR in resp.text
         assert "Enter this code in ReLab." in resp.text
         assert COPY_PAIRING_CODE_LABEL in resp.text
+        assert NEW_PAIRING_CODE_LABEL in resp.text
         assert PAIRED_TEXT not in resp.text
 
     async def test_setup_page_shows_pairing_error(
@@ -233,3 +235,39 @@ class TestUnpair:
         assert resp.status_code == 204
         assert deleted == [True]
         assert cleared == [True]
+
+
+class TestPairingCodeRefresh:
+    """Tests for POST /pairing/code/refresh."""
+
+    async def test_refresh_returns_204(self, unauthed_client: AsyncClient) -> None:
+        """Endpoint returns 204 No Content immediately."""
+        with patch("app.api.routers.setup.asyncio.sleep"):
+            resp = await unauthed_client.post("/pairing/code/refresh")
+        assert resp.status_code == 204
+
+    async def test_refresh_restarts_pairing_without_deleting_credentials(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """Refreshing the code should restart pairing without touching credentials."""
+        created_tasks: list[asyncio.Task[None]] = []
+        reset_called: list[bool] = []
+
+        def _create_task(coro: object, name: str | None = None) -> asyncio.Task[None]:
+            task = asyncio.get_running_loop().create_task(coro, name=name)
+            created_tasks.append(task)
+            return task
+
+        with (
+            patch("app.api.routers.setup.reset_pairing_state", side_effect=lambda: reset_called.append(True)),
+            patch("app.api.routers.setup.run_pairing", AsyncMock(return_value=None)),
+            patch("app.api.routers.setup.asyncio.sleep"),
+            patch("app.api.routers.setup.asyncio.create_task", side_effect=_create_task),
+        ):
+            resp = await unauthed_client.post("/pairing/code/refresh")
+            await created_tasks[0]
+
+        assert resp.status_code == 204
+        assert reset_called == [True]
+        assert any(task.get_name() == "pairing" for task in created_tasks)

@@ -399,6 +399,11 @@ def _clear_active_pairing_code() -> None:
     _state.expires_at = None
 
 
+def reset_pairing_state() -> None:
+    """Clear the active pairing code and return the observable state to idle."""
+    _clear_transient_pairing_state(status="idle")
+
+
 async def _complete_pairing(
     data: dict[str, object],
     private_key: ec.EllipticCurvePrivateKey,
