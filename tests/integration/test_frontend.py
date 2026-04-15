@@ -1,14 +1,21 @@
 """Tests for frontend routes (landing page)."""
 
+from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from httpx import AsyncClient
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
+from app.api.dependencies.auth import verify_request
+from app.api.routers import hls as hls_mod
 from app.api.services.camera_manager import CameraManager
-from tests.constants import HTML_CONTENT_TYPE
+from app.main import app
+from tests.constants import HTML_CONTENT_TYPE, YOUTUBE_TEST_BROADCAST_URL
 
-YOUTUBE_WATCH_URL = "https://youtube.com/watch?v=TEST_BROADCAST_KEY_123"
 YOUTUBE_DOMAIN = "youtube.com"
+HLS_PLAYLIST = "#EXTM3U\n"
+HLS_ROUTE_PATH = "/hls/{hls_path:path}"
 
 
 class TestHomepage:
@@ -32,10 +39,10 @@ class TestHomepage:
     ) -> None:
         """Homepage shows a Watch on YouTube link when a YouTube stream is active."""
         camera_manager.stream.mode = StreamMode.YOUTUBE
-        camera_manager.stream.url = AnyUrl(YOUTUBE_WATCH_URL)
+        camera_manager.stream.url = AnyUrl(YOUTUBE_TEST_BROADCAST_URL)
         resp = await client.get("/")
         assert resp.status_code == 200
-        assert YOUTUBE_WATCH_URL in resp.text
+        assert YOUTUBE_TEST_BROADCAST_URL in resp.text
 
     async def test_homepage_no_youtube_link_when_no_stream(
         self,
@@ -45,3 +52,28 @@ class TestHomepage:
         resp = await client.get("/")
         assert resp.status_code == 200
         assert YOUTUBE_DOMAIN not in resp.text
+
+    async def test_hls_preview_proxy_is_available_without_auth(self, unauthed_client: AsyncClient) -> None:
+        """Local preview HLS stays usable before pairing/login."""
+        upstream = MagicMock()
+        upstream.status_code = 200
+        upstream.content = HLS_PLAYLIST.encode()
+        upstream.headers = {"content-type": "application/vnd.apple.mpegurl"}
+
+        http_client = MagicMock()
+        http_client.get = AsyncMock(return_value=upstream)
+        http_client.__aenter__ = AsyncMock(return_value=http_client)
+        http_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
+            resp = await unauthed_client.get("/hls/cam-preview/index.m3u8")
+
+        assert resp.status_code == 200
+        assert resp.text == HLS_PLAYLIST
+
+    def test_hls_preview_route_does_not_require_api_auth(self) -> None:
+        """Regression test: HLS must stay available before pairing/login."""
+        hls_route = next(route for route in app.routes if getattr(route, "path", "") == HLS_ROUTE_PATH)
+        hls_route_any = cast("Any", hls_route)
+        dependency_calls = [dependency.call for dependency in hls_route_any.dependant.dependencies]
+        assert verify_request not in dependency_calls

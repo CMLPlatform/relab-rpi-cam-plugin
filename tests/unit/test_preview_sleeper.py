@@ -132,6 +132,17 @@ class TestShouldBeRunning:
         sleeper = PreviewSleeper(pipeline=pipeline, hibernate_after_s=300)
         assert sleeper.should_be_running() is True
 
+    def test_local_hls_activity_keeps_encoder_awake_before_pairing(
+        self,
+        pipeline: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Local HLS keeps the encoder awake even when no relay is configured."""
+        monkeypatch.setattr(type(settings), "relay_enabled", property(lambda _self: False))
+        relay_state.mark_hls_activity()
+        sleeper = PreviewSleeper(pipeline=pipeline, hibernate_after_s=300)
+        assert sleeper.should_be_running() is True
+
     def test_stale_hls_activity_does_not_keep_encoder_awake(
         self,
         pipeline: MagicMock,

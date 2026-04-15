@@ -11,8 +11,8 @@ import pytest
 from app.core.config import Settings
 from app.utils import relay as relay_mod
 from app.utils.relay import _build_relay_url, _handle_command, _receive_loop, _relay_configured, _send_error
+from tests.constants import EXAMPLE_RELAY_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
-RELAY_URL = "wss://example.com/ws?camera_id=cam-42"
 RELAY_AUTH_SCHEME = "device_assertion"
 RELAY_KEY_ID = "key-1"
 RELAY_PRIVATE_KEY_PEM = "private-key"
@@ -21,6 +21,8 @@ DETAIL = "oops"
 PONG_TYPE = "pong"
 RELAY_403_FRAGMENT = "Relay received 403"
 RELAY_COMMAND_ERROR = "boom"
+HLS_SEGMENT_BYTES = b"\x00\x00\x00\x18ftypmp42"
+HLS_SEGMENT_CONTENT_TYPE = "video/mp4"
 
 
 class TestRelayConfigured:
@@ -34,7 +36,7 @@ class TestRelayConfigured:
     def test_returns_true_when_all_set(self) -> None:
         """Should return True if all required credentials are set."""
         s = Settings(
-            relay_backend_url="wss://example.com/ws",
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
             relay_camera_id="cam-1",
             relay_auth_scheme=RELAY_AUTH_SCHEME,
             relay_key_id=RELAY_KEY_ID,
@@ -45,7 +47,7 @@ class TestRelayConfigured:
 
     def test_returns_false_when_partial(self) -> None:
         """Should return False if only some credentials are set."""
-        s = Settings(relay_backend_url="wss://example.com/ws", relay_camera_id="cam-1")
+        s = Settings(relay_backend_url=EXAMPLE_RELAY_BACKEND_URL, relay_camera_id="cam-1")
         with patch("app.utils.relay.settings", s):
             assert _relay_configured() is False
 
@@ -55,10 +57,10 @@ class TestBuildRelayUrl:
 
     def test_builds_url_with_camera_id(self) -> None:
         """Should build the relay URL with the camera_id query parameter."""
-        s = Settings(relay_backend_url="wss://example.com/ws/", relay_camera_id="cam-42")
+        s = Settings(relay_backend_url=f"{EXAMPLE_RELAY_BACKEND_URL}/", relay_camera_id="cam-42")
         with patch("app.utils.relay.settings", s):
             url = _build_relay_url()
-            assert url == RELAY_URL
+            assert url == EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
 
 class TestSendError:
@@ -85,7 +87,7 @@ class TestWebsocketConnect:
         monkeypatch.setattr(relay_mod.websockets, "connect", AsyncMock(return_value=raw_ws))
         monkeypatch.setattr(relay_mod, "build_device_assertion", lambda: "jwt")
 
-        async with relay_mod._websocket_connect("wss://example.com/ws") as ws:
+        async with relay_mod._websocket_connect(EXAMPLE_RELAY_BACKEND_URL) as ws:
             assert ws is not None
 
         raw_ws.close.assert_awaited_once()
@@ -151,6 +153,22 @@ class TestHandleCommand:
             assert ws.send.await_count == 1
             ws.send_bytes.assert_awaited_once_with(b"abc")
 
+    async def test_handles_hls_video_segment_response_as_binary(self) -> None:
+        """HLS video segments should travel over the relay as binary frames."""
+
+        def _hls_handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=HLS_SEGMENT_BYTES, headers={"content-type": HLS_SEGMENT_CONTENT_TYPE})
+
+        transport = httpx.MockTransport(_hls_handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+            ws = AsyncMock()
+            await _handle_command(ws, http, {"id": "msg-hls", "method": "GET", "path": "/hls/cam-preview/seg.mp4"})
+
+        header = json.loads(ws.send.call_args.args[0])
+        assert header["has_binary"] is True
+        assert header["content_type"] == HLS_SEGMENT_CONTENT_TYPE
+        ws.send_bytes.assert_awaited_once_with(HLS_SEGMENT_BYTES)
+
     async def test_handles_text_response(self) -> None:
         """Should send text responses as JSON frames."""
 
@@ -202,7 +220,11 @@ class TestRunRelay:
     async def test_reconnects_after_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should attempt to reconnect after a failure with exponential backoff."""
         monkeypatch.setattr(relay_mod, "_relay_configured", lambda: True)
-        monkeypatch.setattr(relay_mod, "_build_relay_url", lambda: "wss://example.com/ws?camera_id=cam-1")
+        monkeypatch.setattr(
+            relay_mod,
+            "_build_relay_url",
+            lambda: f"{EXAMPLE_RELAY_BACKEND_URL}?camera_id=cam-1",
+        )
         monkeypatch.setattr(relay_mod, "_receive_loop", AsyncMock(side_effect=RuntimeError("boom")))
         monkeypatch.setattr(relay_mod.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError()))
 

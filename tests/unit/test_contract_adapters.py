@@ -13,6 +13,7 @@ from app.api.services.contract_adapters import (
     image_metadata_to_exif,
 )
 from app.api.services.stream_state import ActiveStreamState, StreamStateError
+from tests.constants import YOUTUBE_WATCH_URL_PREFIX
 
 MOCK_CAMERA_MODEL = "mock"
 YOUTUBE_PROVIDER = "youtube"
@@ -58,7 +59,7 @@ class TestActiveStreamState:
         """Active runtime state should adapt into a shared stream view."""
         state = ActiveStreamState(
             mode=StreamMode.YOUTUBE,
-            url=AnyUrl("https://youtube.com/watch?v=dQw4w9WgXcQ"),
+            url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}dQw4w9WgXcQ"),
             started_at=datetime.now(UTC) - timedelta(seconds=5),
         )
         info = state.to_view({"Model": MOCK_CAMERA_MODEL}, {"FrameDuration": 33_333})

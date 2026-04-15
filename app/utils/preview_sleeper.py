@@ -9,17 +9,16 @@ sessions but adds up over the lifetime of an idle device.
 The sleeper arbitrates between three signals to decide whether the encoder
 should be running:
 
-1. **Relay connectivity.** If the Pi is supposed to talk to a backend and
-   the WebSocket relay is currently down (or was never up), nobody can reach
-   us — the encoder goes to sleep until the relay comes back.
-2. **Relay idle timer.** If the relay is connected but hasn't seen any
+1. **Local HLS activity.** The app-managed HLS proxy records playlist and
+   segment fetches. Any recent local preview viewer keeps the encoder awake,
+   even before relay credentials exist.
+2. **Relay connectivity.** If the Pi is supposed to talk to a backend and
+   the WebSocket relay is currently down (or was never up), remote users can't
+   reach us — the encoder sleeps unless local HLS activity is present.
+3. **Relay idle timer.** If the relay is connected but hasn't seen any
    commands for ``preview_hibernate_after_s`` seconds, the encoder sleeps.
    Any incoming command (including the HLS segment proxy calls) wakes it
    back up.
-3. **Standalone mode.** When the plugin is not configured with a pairing
-   backend at all (``settings.relay_enabled`` is false and pairing is not in
-   progress), the sleeper stays idle and the encoder runs continuously so
-   users on the same LAN can hit MediaMTX directly.
 
 ``preview_hibernate_after_s = 0`` disables hibernation entirely — the
 encoder runs as long as the app process does, regardless of relay state.
@@ -86,19 +85,9 @@ class PreviewSleeper:
 
     def should_be_running(self) -> bool:
         """Decide whether the encoder should currently be running."""
-        # Hibernation disabled entirely (or we're in standalone mode with no
-        # relay): always-on. ``relay_enabled`` is true once pairing credentials
-        # are on disk — before that we're in pairing mode and nobody is
-        # watching anyway, so we sleep.
+        # Hibernation disabled entirely: always-on.
         if self._hibernate_after_s <= 0:
             return True
-
-        if not settings.relay_enabled:
-            # Pairing mode or standalone. In standalone mode users reach the
-            # preview directly via the Pi's LAN IP and we can't tell if
-            # they're watching — prefer keeping it off until they explicitly
-            # pair. The always-on case is ``hibernate_after_s = 0`` above.
-            return False
 
         # Local HLS viewers (browser preview player) keep the encoder awake
         # independently of relay connectivity — if someone is actively fetching
@@ -106,6 +95,11 @@ class PreviewSleeper:
         hls_idle = seconds_since_last_hls_activity()
         if hls_idle is not None and hls_idle <= self._hibernate_after_s:
             return True
+
+        if not settings.relay_enabled:
+            # Pairing/standalone without a local viewer: sleep until the
+            # app-managed HLS proxy records a preview request.
+            return False
 
         if not is_relay_connected():
             return False
@@ -145,7 +139,7 @@ class PreviewSleeper:
         currently_running = self._pipeline.is_running
 
         if desired and not currently_running:
-            logger.info("Preview sleeper: waking encoder (relay activity resumed)")
+            logger.info("Preview sleeper: waking encoder (relay or local HLS activity resumed)")
             try:
                 await self._pipeline.start(camera)
             except RuntimeError as exc:
@@ -154,7 +148,7 @@ class PreviewSleeper:
 
         if not desired and currently_running:
             logger.info(
-                "Preview sleeper: hibernating encoder (relay idle or disconnected; hibernate_after=%.0fs)",
+                "Preview sleeper: hibernating encoder (relay/local HLS idle; hibernate_after=%.0fs)",
                 self._hibernate_after_s,
             )
             try:
