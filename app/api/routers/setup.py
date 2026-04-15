@@ -1,15 +1,27 @@
-"""Setup endpoint for RPi camera onboarding."""
+"""Setup and pairing management endpoints."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+import asyncio
+import logging
 
-from app.core.config import settings
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, Response
+
+from app.core.config import clear_runtime_relay_credentials, settings
 from app.core.templates_config import templates
-from app.utils.pairing import PAIRING_CODE_TTL_SECONDS, STATUS_PAIRED, get_pairing_state
+from app.utils.pairing import (
+    PAIRING_CODE_TTL_SECONDS,
+    STATUS_PAIRED,
+    delete_relay_credentials,
+    get_pairing_state,
+    run_pairing,
+)
+from app.utils.relay import run_relay
 
 _STATUS_ERROR = "error"
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["setup"])
 
@@ -36,3 +48,45 @@ async def setup_page(request: Request) -> HTMLResponse:
             "pairing_code_ttl_seconds": PAIRING_CODE_TTL_SECONDS,
         },
     )
+
+
+@router.delete("/pairing/credentials", status_code=204)
+async def unpair(request: Request) -> Response:
+    """Clear relay credentials and restart the pairing flow.
+
+    Returns 204 immediately so the response can propagate back through the
+    relay WebSocket before the relay task is cancelled. The actual reset runs
+    100 ms later in a background task.
+
+    Called two ways:
+    - By the ReLab backend through the relay when a camera is deleted.
+    - By the local browser UI "Unpair" button on the setup page.
+    """
+    bg_tasks: set[asyncio.Task[None]] = request.app.state.background_tasks
+
+    async def _on_repaired() -> None:
+        task = asyncio.create_task(run_relay(), name="ws_relay")
+        bg_tasks.add(task)
+        logger.info("Re-paired — WebSocket relay restarted")
+
+    async def _do_reset() -> None:
+        # Small delay so the 204 response travels back through the relay WS
+        # before the relay task receives its CancelledError.
+        await asyncio.sleep(0.1)
+
+        for task in asyncio.all_tasks():
+            if task.get_name() in ("ws_relay", "pairing"):
+                task.cancel()
+
+        delete_relay_credentials()
+        clear_runtime_relay_credentials()
+
+        if settings.pairing_backend_url:
+            task = asyncio.create_task(run_pairing(_on_repaired), name="pairing")
+            bg_tasks.add(task)
+            logger.info("Unpairing complete — pairing flow restarted")
+        else:
+            logger.info("Unpairing complete — no pairing backend configured, staying idle")
+
+    asyncio.create_task(_do_reset(), name="pairing_reset")
+    return Response(status_code=204)

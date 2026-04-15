@@ -16,6 +16,21 @@
 
 {% block extra_scripts %}
   <script>
+    async function unpair() {
+      if (!confirm("Unpair this camera? It will disconnect from the backend and re-enter pairing mode.")) return;
+      try {
+        const resp = await fetch("/pairing/credentials", { method: "DELETE" });
+        if (resp.ok) {
+          window.location.reload();
+        } else {
+          alert("Unpair failed (" + resp.status + "). Try again.");
+        }
+      } catch {
+        alert("Unpair request failed. Check your connection.");
+      }
+    }
+  </script>
+  <script>
     document.addEventListener("DOMContentLoaded", () => {
       const countdown = document.querySelector("[data-pairing-countdown]");
       const expiry = document.querySelector("[data-pairing-expiry]");
@@ -127,6 +142,9 @@
           <tr><td>Backend URL</td><td><code>{{ relay_backend_url or 'not set' }}</code></td></tr>
           <tr><td>Camera ID</td><td>{% if relay_camera_id %}<code>{{ relay_camera_id }}</code>{% else %}<em>not set</em>{% endif %}</td></tr>
         </table>
+        <div>
+          <button class="btn btn--danger" onclick="unpair()">Unpair</button>
+        </div>
       {% else %}
         <p>WebSocket relay credentials have not been configured yet.</p>
       {% endif %}

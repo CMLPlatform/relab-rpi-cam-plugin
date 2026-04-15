@@ -127,8 +127,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
     await setup_directory(settings.image_path)
     logger.info("Temporary file directories set up")
 
-    # Start WebSocket relay or pairing mode
-    background_tasks: set[asyncio.Task[None]] = set()
+    # Start WebSocket relay or pairing mode.
+    # Reuse the set initialised at module level (on the real app) so the unpair
+    # endpoint always sees the live task set. When the lifespan is called on a
+    # fresh FastAPI() instance (e.g. in tests), fall back to a new set.
+    if not hasattr(app.state, "background_tasks"):
+        app.state.background_tasks = set()
+    background_tasks: set[asyncio.Task[None]] = app.state.background_tasks
 
     if settings.relay_enabled:
         background_tasks.add(asyncio.create_task(run_relay(), name="ws_relay"))
@@ -249,6 +254,10 @@ async def camera_initialization_exception_handler(
 
 
 app.add_exception_handler(CameraInitializationError, camera_initialization_exception_handler)
+
+# Initialise state attributes so they exist before the lifespan runs
+# (needed by tests and by any cold-path request that arrives before startup).
+app.state.background_tasks: set[asyncio.Task[None]] = set()
 
 # Include routers
 app.include_router(main_router)

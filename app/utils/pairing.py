@@ -492,3 +492,17 @@ def load_relay_credentials() -> dict[str, str | bool] | None:
     except (json_mod.JSONDecodeError, OSError):
         logger.warning("Failed to read %s", _CREDENTIALS_FILE)
         return None
+
+
+def delete_relay_credentials() -> None:
+    """Delete the on-disk credentials file and reset the in-memory pairing state to idle.
+
+    Does not touch runtime settings (relay_backend_url etc.) — call
+    ``clear_runtime_relay_credentials()`` separately for that.
+    """
+    try:
+        _CREDENTIALS_FILE.unlink(missing_ok=True)
+        logger.info("Relay credentials deleted from %s", _CREDENTIALS_FILE)
+    except OSError as exc:
+        logger.warning("Failed to delete relay credentials file: %s", exc)
+    _clear_transient_pairing_state(status="idle")

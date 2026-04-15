@@ -194,6 +194,15 @@ def apply_relay_credentials() -> None:
         )
 
 
+def clear_runtime_relay_credentials() -> None:
+    """Zero out all relay credential fields in the runtime settings."""
+    settings.relay_backend_url = ""
+    settings.relay_camera_id = ""
+    settings.relay_auth_scheme = ""
+    settings.relay_key_id = ""
+    settings.relay_private_key_pem = ""
+
+
 def set_runtime_relay_credentials(
     *,
     relay_backend_url: str,

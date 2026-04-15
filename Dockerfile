@@ -35,12 +35,12 @@ COPY app/ app/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable --no-dev
 
-# Standalone builder: add the [s3] extra (aioboto3) on top of the paired venv.
+# Standalone builder: add the [s3] group (aioboto3) on top of the paired venv.
 # S3CompatibleSink guards its import with try/except so paired-mode images run
 # fine without it; this stage is only referenced by the runtime-standalone target.
 FROM builder AS builder-standalone
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-editable --no-dev --extra s3
+    uv sync --locked --no-editable --no-dev --group s3
 
 # Runtime stage: minimal paired-mode image (no S3 dependencies).
 FROM python:3.13-slim-trixie AS runtime
