@@ -124,9 +124,9 @@ body.setup-page {
     line-height: 1.6;
     display: block;
     background:
-        radial-gradient(circle at top left, rgba(0, 92, 175, 0.14), transparent 40%),
-        radial-gradient(circle at top right, rgba(42, 157, 143, 0.12), transparent 34%),
-        linear-gradient(180deg, #f7f9fc 0%, #eef3f8 100%);
+        radial-gradient(circle at top left, rgba(14, 165, 233, 0.12), transparent 34%),
+        radial-gradient(circle at top right, rgba(16, 185, 129, 0.11), transparent 30%),
+        linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
 }
 
 body.setup-page h1,
@@ -137,30 +137,31 @@ body.setup-page p {
 }
 
 .setup-shell {
-    width: min(560px, calc(100vw - 32px));
+    width: min(760px, calc(100vw - 32px));
     margin: 0 auto;
-    padding: 36px 0 48px;
+    padding: 32px 0 52px;
     display: grid;
-    gap: 18px;
+    gap: 16px;
 }
 
 .setup-hero,
 .setup-panel,
 .setup-status {
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(148, 163, 184, 0.24);
-    border-radius: 24px;
-    box-shadow: 0 16px 44px rgba(15, 23, 42, 0.08);
-    backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 26px;
+    box-shadow: 0 18px 52px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(14px);
 }
 
 .setup-hero {
-    padding: 20px 22px;
+    padding: 22px 24px;
 }
 
 .setup-hero h1 {
-    font-size: clamp(2rem, 4vw, 3rem);
-    margin-bottom: 10px;
+    font-size: clamp(2.2rem, 4vw, 3.2rem);
+    margin-bottom: 8px;
+    letter-spacing: -0.03em;
 }
 
 .setup-hero p {
@@ -170,18 +171,18 @@ body.setup-page p {
 
 .setup-eyebrow {
     color: #0f766e;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
-    margin-bottom: 10px;
+    letter-spacing: 0.14em;
+    margin-bottom: 8px;
 }
 
 .setup-panel {
-    padding: 24px;
+    padding: 22px 24px;
     display: grid;
     grid-template-columns: 1fr;
-    gap: 22px;
+    gap: 18px;
     align-items: start;
 }
 
@@ -192,7 +193,8 @@ body.setup-page p {
 
 .setup-copy h2,
 .setup-status h2 {
-    font-size: 1.35rem;
+    font-size: 1.2rem;
+    letter-spacing: -0.02em;
 }
 
 .setup-copy p,
@@ -205,9 +207,9 @@ body.setup-page p {
     align-items: center;
     gap: 8px;
     width: fit-content;
-    padding: 6px 12px;
+    padding: 7px 12px;
     border-radius: 999px;
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     font-weight: 800;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -228,28 +230,184 @@ body.setup-page p {
     background: rgba(71, 85, 105, 0.08);
 }
 
+.pairing-code-shell {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    width: min(100%, 640px);
+}
+
 .pairing-code {
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: min(100%, 560px);
-    padding: 20px 28px;
+    min-width: 0;
+    padding: 18px 20px;
     border-radius: 24px;
-    border: 1px solid rgba(15, 23, 42, 0.12);
+    border: 1px solid rgba(15, 23, 42, 0.1);
     background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
     color: #f8fafc;
-    font: 800 clamp(3.4rem, 11vw, 6.2rem)/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    letter-spacing: 0.22em;
-    text-indent: 0.22em;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 12px 28px rgba(15, 23, 42, 0.22);
+    font: 800 clamp(2.4rem, 7vw, 4.5rem)/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    letter-spacing: 0.16em;
+    text-indent: 0.16em;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 12px 24px rgba(15, 23, 42, 0.14);
     user-select: all;
+}
+
+.setup-copy-code-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+    margin: 0;
+    padding: 0 13px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.7);
+    color: #0f172a;
+    font-size: 0;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.setup-copy-code-btn:hover {
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(148, 163, 184, 0.32);
+}
+
+.setup-copy-code-btn:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.35);
+    outline-offset: 2px;
+}
+
+.setup-copy-code-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    flex: none;
+}
+
+.setup-copy-code-btn .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .pairing-meta {
     display: grid;
-    gap: 6px;
+    gap: 8px;
     color: #475569;
-    font-size: 0.95rem;
+    font-size: 0.92rem;
+}
+
+.setup-debug {
+    width: 100%;
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    padding-top: 14px;
+}
+
+.setup-debug summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #0f172a;
+    list-style: none;
+    padding: 4px 6px;
+    border-radius: 12px;
+    transition: background-color 0.18s ease;
+}
+
+.setup-debug summary::after,
+.setup-advanced > summary::after {
+    content: "⌄";
+    font-size: 1rem;
+    line-height: 1;
+    color: #64748b;
+    transition: transform 0.18s ease;
+}
+
+.setup-debug[open] summary::after,
+.setup-advanced[open] > summary::after {
+    transform: rotate(180deg);
+}
+
+.setup-debug summary:hover,
+.setup-debug summary:focus-visible,
+.setup-advanced > summary:hover,
+.setup-advanced > summary:focus-visible {
+    background: rgba(15, 23, 42, 0.04);
+    outline: none;
+}
+
+.setup-debug summary::-webkit-details-marker {
+    display: none;
+}
+
+.setup-debug__body {
+    display: grid;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.setup-debug__summary-hint {
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.setup-debug__row {
+    display: grid;
+    gap: 6px;
+}
+
+.setup-debug__label {
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+.setup-debug__value {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.setup-debug__text {
+    color: #475569;
+}
+
+.setup-debug__hint {
+    display: block;
+    margin-top: 4px;
+}
+
+.setup-copy-btn {
+    margin: 0;
+    padding: 7px 12px;
+    font-size: 0.85rem;
+    line-height: 1;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.08);
+    color: #0f172a;
+}
+
+.setup-copy-btn:hover {
+    background: rgba(15, 23, 42, 0.14);
 }
 
 .pairing-validity {
@@ -265,8 +423,8 @@ body.setup-page p {
 }
 
 .pairing-progress {
-    width: min(100%, 320px);
-    height: 8px;
+    width: min(100%, 340px);
+    height: 7px;
     border-radius: 999px;
     background: rgba(148, 163, 184, 0.22);
     overflow: hidden;
@@ -285,37 +443,146 @@ body.setup-page p {
 }
 
 .setup-status {
-    padding: 16px 18px;
+    padding: 20px 22px;
+}
+
+.setup-status--advanced {
+    padding-top: 14px;
 }
 
 .setup-status-grid {
     display: grid;
-    gap: 16px;
+    gap: 14px;
     justify-items: start;
+}
+
+.setup-status details {
+    width: 100%;
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    padding-top: 14px;
+}
+
+.setup-status summary {
+    list-style: none;
+}
+
+.setup-status summary::-webkit-details-marker {
+    display: none;
+}
+
+.setup-advanced {
+    width: 100%;
+}
+
+.setup-advanced > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    width: 100%;
+    cursor: pointer;
+    list-style: none;
+    padding: 4px 6px;
+    border-radius: 12px;
+    transition: background-color 0.18s ease;
+}
+
+.setup-advanced__summary {
+    color: #64748b;
+    font-size: 0.92rem;
+    text-align: right;
+}
+
+.setup-advanced > summary:hover,
+.setup-advanced > summary:focus-visible {
+    background: rgba(15, 23, 42, 0.04);
+    outline: none;
+}
+
+.setup-advanced__body {
+    display: grid;
+    gap: 14px;
+    margin-top: 14px;
+}
+
+.setup-advanced__grid {
+    display: grid;
+    gap: 12px;
+}
+
+.setup-advanced__list {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 8px;
+    color: #475569;
+}
+
+.setup-advanced__callout {
+    position: relative;
+    padding: 13px 14px 13px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(245, 158, 11, 0.18);
+    border-left: 4px solid rgba(245, 158, 11, 0.82);
+    background:
+        linear-gradient(180deg, rgba(254, 249, 195, 0.72), rgba(255, 251, 235, 0.9));
+    color: #7c2d12;
+    font-weight: 600;
+    box-shadow: 0 6px 18px rgba(245, 158, 11, 0.08);
+}
+
+.setup-advanced__callout::before {
+    content: "Important";
+    display: inline-flex;
+    align-items: center;
+    margin-bottom: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(124, 45, 18, 0.08);
+    color: #9a3412;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.setup-advanced__footnote {
+    color: #64748b;
+    font-size: 0.88rem;
 }
 
 .setup-status table {
     width: 100%;
     border-collapse: collapse;
-    margin: 8px 0 0;
+    margin: 0;
+    overflow: hidden;
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(248, 250, 252, 0.72);
 }
 
 .setup-status td {
-    padding: 8px 12px;
-    border: 1px solid rgba(148, 163, 184, 0.22);
+    padding: 11px 14px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
     word-break: break-all;
+    vertical-align: top;
 }
 
 .setup-status td:first-child {
     font-weight: 700;
-    width: 160px;
+    width: 180px;
     word-break: normal;
+    color: #0f172a;
+}
+
+.setup-status tr:last-child td {
+    border-bottom: 0;
 }
 
 .setup-status code {
     background: rgba(15, 23, 42, 0.06);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: 6px;
     font-size: 0.9em;
 }
 
@@ -367,13 +634,31 @@ body.setup-page p {
         padding-top: 18px;
     }
 
+    .setup-hero,
+    .setup-panel,
+    .setup-status {
+        border-radius: 22px;
+    }
+
     .pairing-code {
         width: 100%;
         justify-content: center;
-        font-size: clamp(3rem, 18vw, 4.8rem);
+        font-size: clamp(2.5rem, 15vw, 4rem);
+    }
+
+    .pairing-code-shell {
+        flex-direction: column;
+    }
+
+    .setup-copy-code-btn {
+        align-self: flex-start;
     }
 
     .pairing-progress {
         width: 100%;
+    }
+
+    .setup-status td:first-child {
+        width: 128px;
     }
 }

@@ -36,7 +36,7 @@ class LocalAccessInfo(BaseModel):
     The frontend tries each in parallel; the first that responds wins."""
 
     mdns_name: str | None
-    """mDNS hostname if resolvable, e.g. "relab-rpi-cam-mypi.local"."""
+    """Optional mDNS hostname hint if one is available."""
 
 
 def _get_candidate_urls() -> list[str]:
@@ -67,6 +67,7 @@ def _get_candidate_urls() -> list[str]:
 
 
 def _get_mdns_name() -> str | None:
+    """Return an mDNS-style hostname hint, if the current environment provides one."""
     try:
         return f"{socket.gethostname()}.local"
     except OSError:

@@ -185,11 +185,16 @@ def log_pairing_mode_started() -> None:
 
 
 def _format_pairing_ready_message(code: str) -> str:
-    """Return a single-line pairing message that stays readable in Docker logs."""
+    """Return a bannered pairing message that stays readable in Docker logs."""
+    sep = "═" * 54
     return (
-        f"PAIRING READY | code={_sanitize_log_value(code)} | setup={_pairing_setup_location()} | "
-        f"pairing_backend={core_config.settings.pairing_backend_url.rstrip('/')} | "
-        "claim_in='RELab app > Cameras > Add Camera'"
+        f"\n{sep}\n"
+        f"  PAIRING READY\n"
+        f"  PAIRING CODE: {_sanitize_log_value(code)}\n"
+        f"  Setup    : {_pairing_setup_location()}\n"
+        f"  Backend  : {core_config.settings.pairing_backend_url.rstrip('/')}\n"
+        f"  Claim in : RELab app > Cameras > Add Camera\n"
+        f"{sep}"
     )
 
 
@@ -290,7 +295,6 @@ async def _pairing_cycle(
 ) -> None:
     """Single pairing attempt: register a code and poll until claimed."""
     registration = await _register_pairing_code(client, base_url)
-    _log_pairing_ready(registration.code)
     _state.status = "waiting"
     data = await _poll_pairing_status(client, base_url, registration.code, registration.fingerprint)
     await _complete_pairing(data, registration.private_key, on_paired)
@@ -313,6 +317,7 @@ def _prepare_registration_state(registration: PairingRegistration) -> None:
     _set_pairing_code_state(registration.code, registration.fingerprint)
     _state.status = "registering"
     _state.error = None
+    _log_pairing_ready(registration.code)
 
 
 def _registration_payload(registration: PairingRegistration) -> dict[str, object]:

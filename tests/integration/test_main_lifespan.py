@@ -15,6 +15,8 @@ from app.core.config import settings
 from tests.constants import EXAMPLE_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL
 
 PAIRING_MODE_LOG = f"PAIRING MODE | state=awaiting_claim setup=/setup pairing_backend={EXAMPLE_BACKEND_URL}"
+STARTUP_BANNER_SETUP_URL = "Setup    : http://<this-ip>:8018/setup"
+STARTUP_BANNER_PAIRING_NOTE = "Note     : pairing code will appear below in a boxed log banner"
 
 
 @pytest.fixture(autouse=True)
@@ -63,6 +65,28 @@ async def _run_lifespan_once(app: FastAPI) -> None:
 
 class TestLifespan:
     """Tests for the FastAPI lifespan hook."""
+
+    async def test_startup_banner_uses_placeholder_setup_url(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+        """The startup banner should not advertise a container-looking mDNS hostname."""
+        app = FastAPI()
+        monkeypatch.setattr(settings, "relay_backend_url", "")
+        monkeypatch.setattr(settings, "relay_camera_id", "")
+        monkeypatch.setattr(settings, "relay_key_id", "")
+        monkeypatch.setattr(settings, "relay_private_key_pem", "")
+        monkeypatch.setattr(settings, "pairing_backend_url", "")
+        monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
+        monkeypatch.setattr(main_mod, "apply_relay_credentials", lambda: None)
+        monkeypatch.setattr(main_mod, "setup_directory", AsyncMock())
+        monkeypatch.setattr(main_mod, "repeat_task", lambda _task_func, _seconds, task_name: DummyTask(task_name))
+        cleanup_mock = AsyncMock()
+        monkeypatch.setattr(main_mod.camera_manager, "cleanup", cleanup_mock)
+
+        with caplog.at_level(logging.INFO):
+            await _run_lifespan_once(app)
+
+        assert STARTUP_BANNER_SETUP_URL in caplog.text
+        assert STARTUP_BANNER_PAIRING_NOTE not in caplog.text
+        assert ".local" not in caplog.text
 
     async def test_relay_enabled_starts_relay_and_cleans_up(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that when relay credentials are set, the relay is started on startup and cleaned up on shutdown."""
@@ -141,4 +165,5 @@ class TestLifespan:
 
         assert created == ["pairing", "ws_relay"]
         assert PAIRING_MODE_LOG in caplog.text
+        assert STARTUP_BANNER_PAIRING_NOTE in caplog.text
         cleanup_mock.assert_awaited_once_with(force=True)

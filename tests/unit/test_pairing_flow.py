@@ -102,6 +102,31 @@ class TestPairingHelpers:
         assert pairing_mod._state.status == PAIRING_STATE_ERROR
         assert pairing_mod._state.error == PAIRING_RETRY_ERROR
 
+    def test_prepare_registration_state_logs_pairing_code(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """The pairing code should be logged as soon as a registration is prepared."""
+        registration = pairing_mod.PairingRegistration(
+            code=PAIRING_CODE_1,
+            fingerprint="FP1",
+            private_key=cast("Any", None),
+            key_id=RELAY_KEY_ID,
+            public_key_jwk={},
+        )
+        logged: list[str] = []
+        original = pairing_mod._log_pairing_ready
+        pairing_mod._log_pairing_ready = lambda code: logged.append(code)
+        try:
+            with caplog.at_level(logging.INFO):
+                pairing_mod._prepare_registration_state(registration)
+        finally:
+            pairing_mod._log_pairing_ready = original
+
+        assert logged == [PAIRING_CODE_1]
+        assert pairing_mod._state.status == "registering"
+        assert f"PAIRING CODE: {PAIRING_CODE_1}" in pairing_mod._format_pairing_ready_message(PAIRING_CODE_1)
+
     def test_log_pairing_connect_error_for_loopback_container_backend(
         self,
         monkeypatch: pytest.MonkeyPatch,

@@ -34,7 +34,6 @@ build:
 clean:
     rm -rf dist/ .venv/ .pytest_cache/ __pycache__/
 
-# Print the local direct-connection API key.
-# Uses the running Docker container when available; otherwise falls back to host lookup.
+# Print the local direct-connection API key from the local key endpoint.
 show-key:
-    @if docker compose ps -q app >/dev/null 2>&1 && [ -n "$(docker compose ps -q app 2>/dev/null)" ]; then docker compose exec -T app python3 scripts/show_key.py; else python3 scripts/show_key.py; fi
+    @python3 -c 'import sys; from urllib.request import urlopen; sys.stdout.write(urlopen("http://127.0.0.1:8018/local-key", timeout=2).read().decode("utf-8", "replace").strip() + "\n")'

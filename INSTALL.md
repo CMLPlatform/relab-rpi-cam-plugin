@@ -74,6 +74,8 @@ The simplest approach. No credential exchange required.
 1. **Done**\
    The Pi automatically receives credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
 
+   This automatic pairing flow is for the native RELab app. If you open the setup page from the RELab web frontend over HTTPS, the browser will block any attempt to probe the Pi's HTTP API as mixed content, so the web UI cannot auto-switch to direct mode.
+
 When you run the plugin via Docker Compose, `compose.yml` persists this directory with a named
 volume at `/home/rpicam/.config/relab`, so paired relay credentials survive container restarts.
 
@@ -129,13 +131,13 @@ volume at `/home/rpicam/.config/relab`, so paired relay credentials survive cont
    When pairing mode is active, the terminal prints a line like:
 
    ```text
-   +----------------------------------------------+
-   | PAIRING READY                                |
-   | code: ABC123                                 |
-   | setup: /setup                                |
-   | backend: https://api.cml-relab.org          |
-   | claim in: RELab app > Cameras > Add Camera  |
-   +----------------------------------------------+
+   ══════════════════════════════════════════════════════
+     PAIRING READY
+     PAIRING CODE: ABC123
+     Setup    : /setup
+     Backend  : https://api.cml-relab.org
+     Claim in : RELab app > Cameras > Add Camera
+   ══════════════════════════════════════════════════════
    ```
 
 ## Testing
@@ -177,6 +179,8 @@ Verify camera is properly connected to the CSI port.
 ### Pairing code not showing
 
 - Ensure `PAIRING_BACKEND_URL` is set in `.env`
+
+- If you're using the RELab web frontend in a browser over HTTPS, direct-mode auto-detection will not work because the browser blocks HTTP requests to the Pi as mixed content. Use the native RELab app or read the pairing code from `/setup` or logs.
 
 - If the plugin runs in Docker, `http://localhost:8011` points at the plugin container itself, not your host machine. Use `http://host.docker.internal:8011`, your host's LAN IP, or the real HTTPS API URL instead.
 
