@@ -27,10 +27,20 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, HTTPException, Response
 from fastapi import Path as FastAPIPath
+from pydantic import AfterValidator
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/hls", tags=["hls"])
+
+
+def _no_traversal(v: str) -> str:
+    """Reject path segments that would navigate outside the MediaMTX root."""
+    if any(seg in (".", "..") for seg in v.split("/")):
+        msg = "Path traversal not allowed"
+        raise ValueError(msg)
+    return v
+
 
 # MediaMTX LL-HLS listener. Runs on the host network so the app container
 # reaches it via the docker host-gateway alias.
@@ -54,12 +64,13 @@ async def proxy_hls(
             description="MediaMTX-relative path, e.g. ``cam-preview/index.m3u8``",
             pattern=r"^[a-zA-Z0-9_\-/\.]+$",
         ),
+        AfterValidator(_no_traversal),
     ],
 ) -> Response:
     """Fetch an LL-HLS resource from the local MediaMTX and return it verbatim."""
-    if any(segment in (".", "..") for segment in hls_path.split("/")):
-        raise HTTPException(status_code=400, detail="Invalid HLS path")
-    target_url = f"{_MEDIAMTX_HLS_BASE}/{hls_path}"
+    # Confine user input to the path component only — scheme and host come from
+    # the trusted constant, preventing any influence on the request destination.
+    target_url = httpx.URL(_MEDIAMTX_HLS_BASE).copy_with(path=f"/{hls_path}")
     try:
         async with httpx.AsyncClient(timeout=_HLS_TIMEOUT) as client:
             response = await client.get(target_url)
