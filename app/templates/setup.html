@@ -55,6 +55,25 @@
       button.setAttribute("title", title);
     }
 
+    function setPairingActionStatus(text, state) {
+      const el = document.getElementById("pairing-action-status");
+      if (!el) {
+        return;
+      }
+      el.dataset.state = state || "";
+      el.textContent = text || "";
+      if (el._pairingActionStatusTimer) {
+        window.clearTimeout(el._pairingActionStatusTimer);
+        el._pairingActionStatusTimer = null;
+      }
+      if (text) {
+        el._pairingActionStatusTimer = window.setTimeout(() => {
+          el.textContent = "";
+          el.dataset.state = "";
+        }, 1200);
+      }
+    }
+
     async function copyText(text, button) {
       const value = String(text || "").trim();
       let copied = false;
@@ -76,6 +95,7 @@
         const previousTitle = button.getAttribute("title") || previousLabel;
         const nextLabel = copied ? "Copied pairing code" : "Copy pairing code failed";
         setPairingButtonFeedback(button, copied ? "copied" : "failed", nextLabel, nextLabel);
+        setPairingActionStatus(copied ? "Copied" : "Copy failed", copied ? "success" : "failed");
         window.setTimeout(() => {
           if (button.dataset.defaultHtml) {
             button.innerHTML = button.dataset.defaultHtml;
@@ -95,12 +115,14 @@
         button.setAttribute("aria-label", "Refreshing pairing code…");
         button.setAttribute("title", "Refreshing pairing code…");
       }
+      setPairingActionStatus("Generating new code…", "pending");
 
       try {
         const resp = await fetch("/pairing/code/refresh", { method: "POST" });
         if (!resp.ok) {
           if (button) {
             setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
+            setPairingActionStatus("Refresh failed", "failed");
             window.setTimeout(() => {
               if (button.dataset.defaultHtml) {
                 button.innerHTML = button.dataset.defaultHtml;
@@ -115,6 +137,7 @@
         }
         if (button) {
           setPairingButtonFeedback(button, "success", "Pairing code refreshed", "Pairing code refreshed");
+          setPairingActionStatus("Refreshed", "success");
           window.setTimeout(() => {
             if (button.dataset.defaultHtml) {
               button.innerHTML = button.dataset.defaultHtml;
@@ -128,6 +151,7 @@
       } catch {
         if (button) {
           setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
+          setPairingActionStatus("Refresh failed", "failed");
           window.setTimeout(() => {
             if (button.dataset.defaultHtml) {
               button.innerHTML = button.dataset.defaultHtml;
@@ -291,6 +315,7 @@
             <span class="sr-only">New code</span>
           </button>
         </div>
+        <div class="pairing-action-status" id="pairing-action-status" aria-live="polite"></div>
         <div class="pairing-meta">
           <span
             class="pairing-validity"
