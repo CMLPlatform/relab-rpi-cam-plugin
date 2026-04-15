@@ -21,7 +21,6 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -82,8 +81,6 @@ class ThermalGovernor:
         self._high_bitrate = high_bitrate
         self._low_bitrate = low_bitrate
         self._state = GovernorState()
-        self._task: asyncio.Task[None] | None = None
-        self._stop_event = asyncio.Event()
         self._camera_getter: Callable[[], Picamera2Like | None] | None = None
 
     @property
@@ -91,41 +88,31 @@ class ThermalGovernor:
         """Whether the governor currently holds the encoder at the low bitrate."""
         return self._state.throttled
 
-    def start(self, camera_getter: Callable[[], Picamera2Like | None]) -> None:
-        """Start the governor's background polling task.
+    def configure(self, *, camera_getter: Callable[[], Picamera2Like | None]) -> None:
+        """Bind the live camera getter used by the governor loop.
 
         ``camera_getter`` is a zero-arg callable returning the live Picamera2
         handle (or None if the camera isn't initialised). Calling a getter
         avoids stashing a Camera reference that might go stale on cleanup.
         """
-        if self._task is not None and not self._task.done():
-            return
         self._camera_getter = camera_getter
-        self._stop_event.clear()
-        self._task = asyncio.create_task(self._run(), name="thermal-governor")
 
-    async def stop(self) -> None:
-        """Cancel the background task."""
-        if self._task is None:
-            return
-        self._stop_event.set()
-        self._task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await self._task
-        self._task = None
+    async def run_forever(self) -> None:
+        """Run the governor until the owning runtime cancels it."""
+        if self._camera_getter is None:
+            err_msg = "ThermalGovernor requires configure(camera_getter=...) before run_forever()"
+            raise RuntimeError(err_msg)
+        await self._run()
 
     async def _run(self) -> None:
-        while not self._stop_event.is_set():
+        while True:
             try:
                 await self._tick()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("Thermal governor tick failed; continuing", extra=build_log_extra())
-            try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval_s)
-            except TimeoutError:
-                continue
+            await asyncio.sleep(self._poll_interval_s)
 
     async def _tick(self) -> None:
         """Evaluate temperature and toggle bitrate if needed."""

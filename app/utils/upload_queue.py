@@ -293,36 +293,18 @@ class UploadQueueWorker:
     def __init__(self, queue: UploadQueue, *, poll_interval_s: float = _WORKER_POLL_INTERVAL_SECONDS) -> None:
         self._queue = queue
         self._poll_interval_s = poll_interval_s
-        self._task: asyncio.Task[None] | None = None
-        self._stop_event = asyncio.Event()
 
-    def start(self) -> None:
-        """Start the background worker if it's not already running."""
-        if self._task is not None and not self._task.done():
-            return
-        self._stop_event.clear()
-        self._task = asyncio.create_task(self._run(), name="upload-queue-worker")
-
-    async def stop(self) -> None:
-        """Stop the background worker if it's running, waiting for it to finish."""
-        if self._task is None:
-            return
-        self._stop_event.set()
-        self._task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await self._task
-        self._task = None
+    async def run_forever(self) -> None:
+        """Drain the queue on a loop until the owning runtime cancels us."""
+        await self._run()
 
     async def _run(self) -> None:
         """Run the background worker loop, draining the queue at intervals."""
-        while not self._stop_event.is_set():
+        while True:
             try:
                 await self._queue.drain_once()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("Upload queue drain failed; continuing", extra=build_log_extra())
-            try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval_s)
-            except TimeoutError:
-                continue
+            await asyncio.sleep(self._poll_interval_s)

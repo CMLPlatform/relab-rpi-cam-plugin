@@ -270,42 +270,19 @@ class TestTick:
         pipeline.stop.assert_awaited_once()
 
 
-class TestStartStopLifecycle:
-    """``start`` and ``stop`` manage the background task handle."""
+class TestRunLifecycle:
+    """Runtime-owned preview sleeper lifecycle behavior."""
 
-    async def test_start_is_idempotent(
+    async def test_run_forever_requires_camera_getter(
         self,
         pipeline: MagicMock,
-        camera_getter: MagicMock,
         relay_state: RelayRuntimeState,
     ) -> None:
-        """Calling ``start`` twice should not spawn a second task."""
-        sleeper = PreviewSleeper(pipeline=pipeline, relay_state=relay_state, hibernate_after_s=0, poll_interval_s=0.01)
-        sleeper.start(camera_getter)
-        first_task = sleeper._task
-        sleeper.start(camera_getter)  # second call is a noop
-        assert sleeper._task is first_task
-        await sleeper.stop()
-
-    async def test_stop_is_noop_when_never_started(self, pipeline: MagicMock, relay_state: RelayRuntimeState) -> None:
-        """Calling ``stop`` without ``start`` is safe."""
+        """The sleeper should fail fast if runtime forgot to configure it."""
         sleeper = PreviewSleeper(pipeline=pipeline, relay_state=relay_state, hibernate_after_s=0)
-        await sleeper.stop()
-        pipeline.start.assert_not_called()
-        pipeline.stop.assert_not_called()
 
-    async def test_stop_cancels_running_task_and_clears_handle(
-        self,
-        pipeline: MagicMock,
-        camera_getter: MagicMock,
-        relay_state: RelayRuntimeState,
-    ) -> None:
-        """After ``stop``, the task handle should be cleared for a clean restart."""
-        sleeper = PreviewSleeper(pipeline=pipeline, relay_state=relay_state, hibernate_after_s=0, poll_interval_s=0.01)
-        sleeper.start(camera_getter)
-        assert sleeper._task is not None
-        await sleeper.stop()
-        assert sleeper._task is None
+        with pytest.raises(RuntimeError, match="configure"):
+            await sleeper.run_forever()
 
 
 class TestRunCancelCleanup:
@@ -329,13 +306,15 @@ class TestRunCancelCleanup:
             hibernate_after_s=0,
             poll_interval_s=10.0,
         )
-        sleeper.start(camera_getter)
+        sleeper.configure(camera_getter=camera_getter)
+        task = asyncio.create_task(sleeper.run_forever())
         # Yield so the task enters ``_run`` and hits the ``await asyncio.sleep``
         # point inside the try block — otherwise a cancel on a pending task
         # raises CancelledError before the except handler runs.
         await asyncio.sleep(0)
 
-        await sleeper.stop()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
         pipeline.stop.assert_awaited()
 
@@ -358,11 +337,13 @@ class TestRunCancelCleanup:
             hibernate_after_s=0,
             poll_interval_s=10.0,
         )
-        sleeper.start(camera_getter)
+        sleeper.configure(camera_getter=camera_getter)
+        task = asyncio.create_task(sleeper.run_forever())
         await asyncio.sleep(0)
 
         # Must not raise — the cleanup error is logged and swallowed.
-        await sleeper.stop()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
     async def test_cancel_skips_pipeline_stop_when_no_camera(
         self,
@@ -376,9 +357,11 @@ class TestRunCancelCleanup:
             hibernate_after_s=0,
             poll_interval_s=10.0,
         )
-        sleeper.start(lambda: None)
+        sleeper.configure(camera_getter=lambda: None)
+        task = asyncio.create_task(sleeper.run_forever())
         await asyncio.sleep(0)
 
-        await sleeper.stop()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
         pipeline.stop.assert_not_called()

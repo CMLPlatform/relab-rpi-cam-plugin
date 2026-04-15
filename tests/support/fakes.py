@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
@@ -24,10 +25,10 @@ from app.utils.pairing import PairingService, PairingState
 from app.utils.preview_sleeper import PreviewSleeper
 from app.utils.relay import RelayService
 from app.utils.thermal_governor import ThermalGovernor
+from app.utils.upload_queue import UploadQueueWorker
 from tests.constants import YOUTUBE_TEST_BROADCAST_URL
 
 if TYPE_CHECKING:
-    import asyncio
     from collections.abc import Awaitable, Callable, Coroutine
 
     from relab_rpi_cam_models.stream import StreamMode
@@ -215,17 +216,18 @@ class FakePreviewSleeper(PreviewSleeper):
             relay_state=runtime.relay_state,
             relay_enabled_getter=lambda: runtime.runtime_state.relay_enabled,
         )
-        self.start_calls = 0
-        self.stop_calls = 0
+        self.configure_calls = 0
+        self.run_calls = 0
 
-    def start(self, camera_getter: Callable[[], object | None]) -> None:
-        """Record sleeper startup without spawning background work."""
+    def configure(self, *, camera_getter: Callable[[], object | None]) -> None:
+        """Record sleeper configuration without spawning background work."""
         del camera_getter
-        self.start_calls += 1
+        self.configure_calls += 1
 
-    async def stop(self) -> None:
-        """Record sleeper shutdown without touching the pipeline."""
-        self.stop_calls += 1
+    async def run_forever(self) -> None:
+        """Record sleeper loop startup and then idle until cancelled."""
+        self.run_calls += 1
+        await cast("asyncio.Future[None]", asyncio.Future())
 
 
 class FakeThermalGovernor(ThermalGovernor):
@@ -233,17 +235,30 @@ class FakeThermalGovernor(ThermalGovernor):
 
     def __init__(self, runtime: AppRuntime) -> None:
         super().__init__(runtime.preview_pipeline)
-        self.start_calls = 0
-        self.stop_calls = 0
+        self.configure_calls = 0
+        self.run_calls = 0
 
-    def start(self, camera_getter: Callable[[], object | None]) -> None:
-        """Record governor startup without spawning background work."""
+    def configure(self, *, camera_getter: Callable[[], object | None]) -> None:
+        """Record governor configuration without spawning background work."""
         del camera_getter
-        self.start_calls += 1
+        self.configure_calls += 1
 
-    async def stop(self) -> None:
-        """Record governor shutdown without touching the pipeline."""
-        self.stop_calls += 1
+    async def run_forever(self) -> None:
+        """Record governor loop startup and then idle until cancelled."""
+        self.run_calls += 1
+        await cast("asyncio.Future[None]", asyncio.Future())
+
+
+class FakeUploadQueueWorker(UploadQueueWorker):
+    """Upload queue worker double that records runtime-managed lifecycle."""
+
+    def __init__(self) -> None:
+        self.run_calls = 0
+
+    async def run_forever(self) -> None:
+        """Record worker startup and then idle until cancelled."""
+        self.run_calls += 1
+        await cast("asyncio.Future[None]", asyncio.Future())
 
 
 class SpyRuntime(AppRuntime):

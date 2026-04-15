@@ -110,7 +110,7 @@ async def unpair(request: Request) -> Response:
         # errors are logged but never block the local unpair from completing.
         await notify_self_unpair()
 
-        runtime.cancel_tasks({"ws_relay", "pairing"})
+        await runtime.stop_tasks({"ws_relay", "pairing"})
 
         delete_relay_credentials()
         clear_runtime_relay_credentials(runtime.runtime_state)
@@ -148,7 +148,7 @@ async def refresh_pairing_code(request: Request) -> Response:
 
         runtime.pairing_service.reset_state()
 
-        runtime.cancel_tasks({"pairing"})
+        await runtime.stop_tasks({"pairing"})
 
         if settings.pairing_backend_url and not runtime.runtime_state.relay_enabled:
             runtime.create_task(runtime.pairing_service.run_forever(_on_paired), name="pairing")

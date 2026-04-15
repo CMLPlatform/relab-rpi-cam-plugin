@@ -143,18 +143,30 @@ class TestTick:
 
 
 class TestLifecycle:
-    """Background task start/stop should be clean and cancellable."""
+    """Runtime-owned lifecycle should be clean and cancellable."""
 
-    async def test_start_then_stop_does_not_raise(
+    async def test_run_forever_requires_camera_getter(
+        self,
+        pipeline: MagicMock,
+    ) -> None:
+        """The governor should fail fast if runtime forgot to configure it."""
+        gov = ThermalGovernor(pipeline)
+
+        with pytest.raises(RuntimeError, match="configure"):
+            await gov.run_forever()
+
+    async def test_run_then_cancel_does_not_raise(
         self,
         pipeline: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The governor must start and stop cleanly even when polling is fast."""
+        """The governor must run and cancel cleanly even when polling is fast."""
         monkeypatch.setattr(thermal_governor_mod, "collect_telemetry", AsyncMock(return_value=_snapshot(50.0)))
 
         gov = ThermalGovernor(pipeline, poll_interval_s=0.01, sustain_drop_s=0.0, sustain_restore_s=0.0)
-        gov.start(camera_getter=MagicMock)
+        gov.configure(camera_getter=MagicMock())
+        task = asyncio.create_task(gov.run_forever())
 
         await asyncio.sleep(0.05)
-        await gov.stop()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

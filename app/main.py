@@ -225,24 +225,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # Start the thermal governor. It watches CPU temperature and dynamically
     # drops the lores preview encoder bitrate when the SoC runs hot.
-    runtime.thermal_governor.start(camera_getter=runtime.camera_getter)
+    runtime.start_thermal_governor()
     logger.info("Thermal governor started")
 
     # Start the preview sleeper. It polls every ~15s and decides whether the
     # lores encoder should be running based on relay connectivity + activity.
-    runtime.preview_sleeper.start(camera_getter=runtime.camera_getter)
+    runtime.start_preview_sleeper()
     logger.info(
         "Preview sleeper started (hibernate_after=%ds)",
         settings.preview_hibernate_after_s,
     )
 
+    runtime.start_upload_queue_worker()
+    logger.info("Upload queue worker started")
+
     yield
 
     # Shutdown order: sleeper first (so it stops the encoder cleanly), then
     # thermal governor (it also touches the encoder), then the rest.
-    await runtime.preview_sleeper.stop()
-    await runtime.thermal_governor.stop()
-
+    await runtime.stop_runtime_workers()
     runtime.cancel_tasks()
     await runtime.wait_for_managed_tasks()
 

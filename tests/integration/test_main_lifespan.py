@@ -18,6 +18,7 @@ from tests.support.fakes import (
     FakePreviewSleeper,
     FakeRelayService,
     FakeThermalGovernor,
+    FakeUploadQueueWorker,
     StubCameraManager,
 )
 
@@ -40,6 +41,7 @@ def runtime(monkeypatch: pytest.MonkeyPatch) -> AppRuntime:
     runtime.camera_manager = StubCameraManager()
     runtime.preview_sleeper = FakePreviewSleeper(runtime)
     runtime.thermal_governor = FakeThermalGovernor(runtime)
+    runtime.upload_queue_worker = FakeUploadQueueWorker()
     runtime.relay_service = FakeRelayService(runtime)
     runtime.pairing_service = LoggingPairingService()
     runtime.observability_handle = None
@@ -115,6 +117,11 @@ class TestLifespan:
         assert {task.get_name() for task in runtime.background_tasks | runtime.recurring_tasks} == set()
         camera_manager = cast("StubCameraManager", runtime.camera_manager)
         assert camera_manager.cleanup_calls == [True]
+        assert cast("FakeThermalGovernor", runtime.thermal_governor).configure_calls == 1
+        assert cast("FakeThermalGovernor", runtime.thermal_governor).run_calls == 1
+        assert cast("FakePreviewSleeper", runtime.preview_sleeper).configure_calls == 1
+        assert cast("FakePreviewSleeper", runtime.preview_sleeper).run_calls == 1
+        assert cast("FakeUploadQueueWorker", runtime.upload_queue_worker).run_calls == 1
 
     async def test_pairing_mode_starts_relay_after_pairing(
         self,

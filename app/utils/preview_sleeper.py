@@ -67,26 +67,17 @@ class PreviewSleeper:
             hibernate_after_s if hibernate_after_s is not None else settings.preview_hibernate_after_s
         )
         self._poll_interval_s = poll_interval_s
-        self._task: asyncio.Task[None] | None = None
 
-    def start(self, camera_getter: Callable[[], Picamera2Like | None]) -> None:
-        """Kick off the background task. Idempotent."""
-        if self._task is not None:
-            return
+    def configure(self, *, camera_getter: Callable[[], Picamera2Like | None]) -> None:
+        """Bind the live camera getter used by the sleeper loop."""
         self._camera_getter = camera_getter
-        self._task = asyncio.create_task(self._run(), name="preview_sleeper")
 
-    async def stop(self) -> None:
-        """Cancel the background task and wait for it to exit."""
-        if self._task is None:
-            return
-        self._task.cancel()
-        try:
-            await self._task
-        except asyncio.CancelledError:
-            pass
-        finally:
-            self._task = None
+    async def run_forever(self) -> None:
+        """Run the preview sleeper loop until the owning runtime cancels it."""
+        if self._camera_getter is None:
+            err_msg = "PreviewSleeper requires configure(camera_getter=...) before run_forever()"
+            raise RuntimeError(err_msg)
+        await self._run()
 
     def should_be_running(self) -> bool:
         """Decide whether the encoder should currently be running."""
