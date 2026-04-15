@@ -9,6 +9,7 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
+from app.api.routers.local_access import _get_candidate_urls
 from app.core.config import DEFAULT_PAIRING_BACKEND_URL, clear_runtime_relay_credentials, settings
 from app.core.templates_config import templates
 from app.utils.backend_client import notify_self_unpair
@@ -53,7 +54,10 @@ async def setup_page(request: Request) -> HTMLResponse:
     pairing = get_pairing_state()
     pairing_expires_at_iso = pairing.expires_at.isoformat() if pairing.expires_at else ""
 
-    connection_host = "<this-ip>"
+    candidate_urls = _get_candidate_urls()
+    # Strip scheme and port so the template can compose its own URLs.
+    lan_ips = [u.removeprefix("http://").removesuffix(":8018") for u in candidate_urls] or ["<this-ip>"]
+    connection_host = lan_ips[0]
     pairing_backend_reachable = settings.relay_enabled or await _pairing_backend_reachable()
 
     return templates.TemplateResponse(
@@ -74,6 +78,7 @@ async def setup_page(request: Request) -> HTMLResponse:
             "local_mode_enabled": settings.local_mode_enabled,
             "local_api_key": settings.local_api_key,
             "connection_host": connection_host,
+            "lan_ips": lan_ips,
             "pairing_backend_reachable": pairing_backend_reachable,
         },
     )

@@ -439,13 +439,13 @@
               <div class="setup-debug__row">
                 <span class="setup-debug__label">HLS preview</span>
                 <span class="setup-debug__text">
-                  <code>http://{{ connection_host }}:8888/cam-preview/index.m3u8</code>
+                  {% for ip in lan_ips %}<code>http://{{ ip }}:8018/hls/cam-preview/index.m3u8</code>{% if not loop.last %}<br>{% endif %}{% endfor %}
                 </span>
               </div>
               <div class="setup-debug__row">
                 <span class="setup-debug__label">API</span>
                 <span class="setup-debug__text">
-                  <code>http://{{ connection_host }}:8018</code>
+                  {% for ip in lan_ips %}<code>http://{{ ip }}:8018</code>{% if not loop.last %}<br>{% endif %}{% endfor %}
                 </span>
               </div>
             </div>
