@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import secrets
 import tempfile
 import warnings
@@ -238,7 +239,10 @@ def _persist_local_api_key(key: str) -> None:
     """Add/update local_api_key in the shared credentials JSON file.
 
     Reads any existing content (relay creds, etc.) and merges the key in so
-    nothing else is overwritten. Writes atomically to prevent corruption.
+    nothing else is overwritten. Writes atomically via a temp file in the same
+    directory, ``fchmod``s it to ``0o600`` before the rename, and ``fsync``s
+    both the file and the containing directory so the final path is never
+    briefly world-readable and is durable across a crash.
     """
     _CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
     existing: dict[str, object] = {}
@@ -246,17 +250,26 @@ def _persist_local_api_key(key: str) -> None:
         with suppress(json.JSONDecodeError, OSError):
             existing = json.loads(_CREDENTIALS_FILE.read_text())
     existing["local_api_key"] = key
-    with tempfile.NamedTemporaryFile(
-        mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
-    ) as tmp:
-        tmp_path = tmp.name
-        tmp.write(json.dumps(existing, indent=2))
+    payload = json.dumps(existing, indent=2)
+
+    tmp_path: Path | None = None
     try:
-        Path(tmp_path).replace(_CREDENTIALS_FILE)
-        _CREDENTIALS_FILE.chmod(0o600)
+        with tempfile.NamedTemporaryFile(
+            mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(payload)
+            tmp.flush()
+            # Tighten permissions BEFORE the rename so the final path is
+            # never observable as world-readable, even if we crash right after.
+            os.fchmod(tmp.fileno(), 0o600)
+            os.fsync(tmp.fileno())
+        tmp_path.replace(_CREDENTIALS_FILE)
+        tmp_path = None  # ownership transferred to the final path
     except OSError:
-        with suppress(OSError):
-            Path(tmp_path).unlink()
+        if tmp_path is not None:
+            with suppress(OSError):
+                tmp_path.unlink()
         raise
     logger.info("local_api_key persisted to %s", _CREDENTIALS_FILE)
 

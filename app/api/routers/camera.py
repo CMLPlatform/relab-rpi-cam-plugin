@@ -5,6 +5,7 @@ from fastapi.responses import Response
 from relab_rpi_cam_models.camera import CameraStatusView
 
 from app.api.dependencies.camera_management import CameraManagerDependency
+from app.api.exceptions import ActiveStreamError
 from app.api.schemas.camera_controls import (
     CameraControlsCapabilities,
     CameraControlsPatch,
@@ -34,10 +35,10 @@ async def get_camera_status(
 )
 async def get_camera_snapshot(camera_manager: CameraManagerDependency) -> Response:
     """Return a low-resolution JPEG snapshot from the camera."""
-    if camera_manager.stream.is_active:
-        raise HTTPException(status_code=409, detail="Preview unavailable while a stream is active.")
-
-    snapshot = await camera_manager.capture_snapshot_jpeg()
+    try:
+        snapshot = await camera_manager.capture_snapshot_jpeg()
+    except ActiveStreamError as exc:
+        raise HTTPException(status_code=409, detail="Preview unavailable while a stream is active.") from exc
     return Response(content=snapshot, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 

@@ -46,7 +46,7 @@ class TestSetupPage:
     def _default_pairing_backend_reachability(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Keep setup-page tests deterministic without making real network calls."""
         monkeypatch.setattr(setup_router, "_pairing_backend_reachable", AsyncMock(return_value=True))
-        monkeypatch.setattr(setup_router, "_get_candidate_urls", lambda: [])
+        monkeypatch.setattr(setup_router, "_get_candidate_urls", list)
         monkeypatch.setattr(
             setup_router,
             "get_pairing_state",
