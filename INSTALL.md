@@ -102,12 +102,12 @@ volume at `/home/rpicam/.config/relab`, so paired relay credentials survive cont
    docker compose logs -f app
    ```
 
-   To ship logs from a Pi to an external Loki-compatible collector:
+   To ship logs from a Pi to an external Loki-compatible collector, add to `.env`:
 
    ```sh
-   export OBSERVABILITY_INSTANCE=pi-01
-   export LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
-   docker compose --profile observability-ship up -d
+   COMPOSE_PROFILES=observability-ship
+   OBSERVABILITY_INSTANCE=pi-01
+   LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
    ```
 
    If you do not enable `observability-ship`, the app still writes bounded Docker logs and structured 7-day rotating logs to the mounted `app_logs` volume. Local Loki/Grafana is not bundled with this plugin; use a central observability stack when you need fleet log browsing.

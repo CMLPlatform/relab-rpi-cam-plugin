@@ -51,12 +51,12 @@ By default, Docker Compose runs only the camera plugin. Inspect logs with:
 docker compose logs -f app
 ```
 
-Optional remote observability is available with the `observability-ship` profile. It runs Alloy on the Pi and ships the app's structured file logs to an external Loki-compatible endpoint:
+Optional remote observability is available with the `observability-ship` profile. It runs Alloy on the Pi and ships the app's structured file logs to an external Loki-compatible endpoint. Add it to `COMPOSE_PROFILES` in your `.env`:
 
 ```sh
-export LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
-export OBSERVABILITY_INSTANCE=pi-01
-docker compose --profile observability-ship up -d
+COMPOSE_PROFILES=observability-ship
+LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
+OBSERVABILITY_INSTANCE=pi-01
 ```
 
 Without the profile, logs are still written to Docker logs and the 7-day rotating `app_logs` volume. Local Loki/Grafana is not bundled with this plugin; use your platform's central observability stack when you need fleet log browsing.
@@ -69,14 +69,26 @@ The plugin can also run fully standalone, writing captures straight to a local
 S3-compatible bucket (RustFS by default) instead of pushing them to the RELab
 backend. This is useful for hobbyist / bench / offline-first setups.
 
-Everything lives in the same `compose.yml` — switch modes with a profile
-flag, not a separate file.
+Everything lives in the same `compose.yml`. Standalone mode uses a separate
+build target that includes the S3 client (`aioboto3`); the default paired build
+does not. Set the following in `.env` and rebuild:
 
 ```sh
-# 1. Fill in the standalone section of .env (IMAGE_SINK=s3, S3_*, RUSTFS_*).
-#    See .env.example for the full list of variables.
-# 2. Start the stack with the standalone profile:
-docker compose --profile standalone up -d
+# Select the standalone build target and start the RustFS sidecar
+APP_BUILD_TARGET=runtime-standalone
+COMPOSE_PROFILES=standalone
+
+# S3 sink and RustFS credentials — see .env.example for the full list
+IMAGE_SINK=s3
+S3_ENDPOINT_URL=http://host.docker.internal:9000
+S3_BUCKET=rpi-cam
+S3_ACCESS_KEY_ID=rustfsadmin
+S3_SECRET_ACCESS_KEY=change-me-to-a-strong-password
+RUSTFS_SECRET_KEY=change-me-to-a-strong-password
+```
+
+```sh
+docker compose build && docker compose up -d
 ```
 
 Once up:
@@ -88,19 +100,13 @@ Once up:
   `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY`
 - Captures browsable under `http://<pi-lan-ip>:9000/rpi-cam/`
 
-The single Docker image ships with `aioboto3` pre-installed so the same
-artifact runs both paired and standalone — the `S3CompatibleSink` is
-lazy-imported and never loads unless `IMAGE_SINK=s3`. Retention policies,
-access logs, and lifecycle rules live on the RustFS bucket itself.
-
-To point the plugin at a different S3-compatible service (Backblaze B2,
+To point the plugin at an external S3-compatible service (Backblaze B2,
 Cloudflare R2, Wasabi, AWS S3, …), update `S3_ENDPOINT_URL`, credentials, and
-`S3_PUBLIC_URL_TEMPLATE` in `.env` and restart. No code changes. If you're
-running against a managed bucket (i.e. not the bundled RustFS), you can skip
-the `standalone` profile entirely and just run `docker compose up -d` — the
-plugin will still use the S3 sink based on your env vars.
+`S3_PUBLIC_URL_TEMPLATE` in `.env` and rebuild. No code changes required.
+Set `COMPOSE_PROFILES=` (empty) to skip the RustFS sidecar when using a managed
+bucket.
 
-Profiles combine freely: `docker compose --profile standalone --profile observability-ship up -d`
+Profiles combine freely: `COMPOSE_PROFILES=standalone,observability-ship`
 runs the RustFS sidecar *and* ships logs to your central Loki.
 
 ## Troubleshooting

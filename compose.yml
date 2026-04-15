@@ -1,27 +1,24 @@
 # Docker Compose stack for the RPi camera plugin.
 #
-# Everything runs from this single file. Optional services are gated behind
-# compose profiles so users opt in with a command-line flag instead of
-# duplicated compose files.
+# Paired mode (default — captures push to the RElab backend):
+#   docker compose up -d
 #
-#   Paired mode (default — the plugin pushes captures to the RElab backend):
-#     docker compose up -d
+# Standalone mode (no RElab backend — captures land in a local RustFS bucket):
+#   Set APP_BUILD_TARGET=runtime-standalone and COMPOSE_PROFILES=standalone in
+#   .env, then ``docker compose up -d``. The standalone build target adds
+#   aioboto3; configure IMAGE_SINK=s3 and S3_* vars alongside it.
 #
-#   Standalone mode (no RElab backend — captures land in a local RustFS bucket):
-#     docker compose --profile standalone up -d
-#
-#   With remote observability shipping (Loki logs + optional Prometheus metrics):
-#     docker compose --profile observability-ship up -d
-#
-# Profiles combine freely: e.g. ``--profile standalone --profile observability-ship``
-# runs the RustFS sidecar AND ships logs to your central stack.
+# With remote observability (Loki logs + optional Prometheus metrics):
+#   Add ``observability-ship`` to COMPOSE_PROFILES, e.g.
+#   ``COMPOSE_PROFILES=standalone,observability-ship``.
 
 services:
   app:
     image: relab-rpi-cam-plugin
     build:
       context: .
-      dockerfile: Dockerfile
+      # Override to ``runtime-standalone`` in .env for standalone mode.
+      target: ${APP_BUILD_TARGET:-runtime}
     restart: unless-stopped
     ports:
       - "8018:8018"
@@ -85,11 +82,10 @@ services:
       - observability-ship
 
   rustfs:
-    # S3-compatible object storage for the standalone mode. When this sidecar
-    # is running the plugin's ``S3CompatibleSink`` writes captures directly
-    # into the bucket over the docker host network — no Relab backend needed.
-    # See the ``standalone`` section of ``.env.example`` for the env vars the
-    # plugin uses to find this service.
+    # S3-compatible object storage for standalone mode. When this sidecar is
+    # running the plugin's S3CompatibleSink writes captures directly into the
+    # bucket over the docker host network — no Relab backend needed.
+    # See the ``standalone`` section of ``.env.example`` for the required vars.
     image: rustfs/rustfs:latest
     restart: unless-stopped
     ports:
