@@ -26,6 +26,7 @@ class _HTTPXInstrumentorProtocol(Protocol):
     def instrument(self, *, tracer_provider: TracerProvider) -> None: ...
     def uninstrument(self) -> None: ...
 
+
 logger = logging.getLogger(__name__)
 
 

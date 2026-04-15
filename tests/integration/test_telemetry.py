@@ -19,6 +19,7 @@ from tests.constants import (
 @pytest.fixture(autouse=True)
 def _mock_psutil(monkeypatch: pytest.MonkeyPatch) -> None:
     """Isolate tests from the host's real CPU/memory/disk state."""
+
     def _cpu_percent(*, interval: object = None, percpu: bool = False) -> float:
         del interval, percpu
         return 7.5
