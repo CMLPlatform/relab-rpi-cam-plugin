@@ -38,7 +38,7 @@
     "websockets>=14.0",
   ]
 
-  requires-python = ">=3.13" # Python 3.13+ available in Debian Trixie for picamera2
+  requires-python = ">=3.13,<3.14" # Python 3.13 is needed in Debian Trixie for picamera2
   version         = "0.2.0"  # NOTE: Versioning is handled by commitizen
 
   [project.urls]
