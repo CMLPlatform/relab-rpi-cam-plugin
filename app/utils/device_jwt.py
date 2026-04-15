@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 
 import jwt
 
-from app.core.config import settings
+from app.core.runtime_context import get_active_runtime
 
 DEVICE_ASSERTION_AUDIENCE = "relab-rpi-cam-relay"
 DEVICE_ASSERTION_TTL_SECONDS = 120
@@ -22,10 +22,11 @@ DEVICE_ASSERTION_TTL_SECONDS = 120
 
 def build_device_assertion() -> str:
     """Mint a fresh short-lived ES256 device assertion for the current camera."""
+    runtime_state = get_active_runtime().runtime_state
     now = int(datetime.now(UTC).timestamp())
     payload = {
-        "iss": f"camera:{settings.relay_camera_id}",
-        "sub": f"camera:{settings.relay_camera_id}",
+        "iss": f"camera:{runtime_state.relay_camera_id}",
+        "sub": f"camera:{runtime_state.relay_camera_id}",
         "aud": DEVICE_ASSERTION_AUDIENCE,
         "iat": now,
         "nbf": now,
@@ -34,7 +35,7 @@ def build_device_assertion() -> str:
     }
     return jwt.encode(
         payload,
-        settings.relay_private_key_pem,
+        runtime_state.relay_private_key_pem,
         algorithm="ES256",
-        headers={"kid": settings.relay_key_id},
+        headers={"kid": runtime_state.relay_key_id},
     )

@@ -3,16 +3,23 @@
 import asyncio
 import json
 from typing import Self
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
-from app.core.config import Settings
+from app.core.runtime_state import RuntimeState
 from app.utils import relay as relay_mod
-from app.utils.relay import _build_relay_url, _handle_command, _receive_loop, _relay_configured, _send_error
+from app.utils.relay import (
+    RelayService,
+    _extract_trace_headers,
+    _handle_command,
+    _receive_loop,
+    _send_error,
+)
+from app.utils.relay_state import RelayRuntimeState
+from tests.constants import EXAMPLE_RELAY_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
-RELAY_URL = "wss://example.com/ws?camera_id=cam-42"
 RELAY_AUTH_SCHEME = "device_assertion"
 RELAY_KEY_ID = "key-1"
 RELAY_PRIVATE_KEY_PEM = "private-key"
@@ -21,44 +28,49 @@ DETAIL = "oops"
 PONG_TYPE = "pong"
 RELAY_403_FRAGMENT = "Relay received 403"
 RELAY_COMMAND_ERROR = "boom"
+HLS_SEGMENT_BYTES = b"\x00\x00\x00\x18ftypmp42"
+HLS_SEGMENT_CONTENT_TYPE = "video/mp4"
+TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00"
+TRACESTATE = "vendor=value"
+BAGGAGE = "user_id=42"
 
 
-class TestRelayConfigured:
-    """Tests for relay configuration detection."""
+class TestRelayServiceConfig:
+    """Tests for runtime-backed relay configuration detection."""
 
     def test_returns_false_when_no_credentials(self) -> None:
         """Should return False if any required credential is missing."""
-        with patch("app.utils.relay.settings", Settings()):
-            assert _relay_configured() is False
+        service = RelayService(state=RelayRuntimeState(), runtime_state=RuntimeState())
+        assert service.is_configured() is False
 
     def test_returns_true_when_all_set(self) -> None:
         """Should return True if all required credentials are set."""
-        s = Settings(
-            relay_backend_url="wss://example.com/ws",
+        runtime_state = RuntimeState()
+        runtime_state.set_relay_credentials(
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
             relay_camera_id="cam-1",
             relay_auth_scheme=RELAY_AUTH_SCHEME,
             relay_key_id=RELAY_KEY_ID,
             relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
-        with patch("app.utils.relay.settings", s):
-            assert _relay_configured() is True
+        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        assert service.is_configured() is True
 
     def test_returns_false_when_partial(self) -> None:
         """Should return False if only some credentials are set."""
-        s = Settings(relay_backend_url="wss://example.com/ws", relay_camera_id="cam-1")
-        with patch("app.utils.relay.settings", s):
-            assert _relay_configured() is False
+        runtime_state = RuntimeState(relay_backend_url=EXAMPLE_RELAY_BACKEND_URL, relay_camera_id="cam-1")
+        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        assert service.is_configured() is False
 
 
-class TestBuildRelayUrl:
+class TestRelayServiceUrl:
     """Tests for relay URL construction."""
 
     def test_builds_url_with_camera_id(self) -> None:
         """Should build the relay URL with the camera_id query parameter."""
-        s = Settings(relay_backend_url="wss://example.com/ws/", relay_camera_id="cam-42")
-        with patch("app.utils.relay.settings", s):
-            url = _build_relay_url()
-            assert url == RELAY_URL
+        runtime_state = RuntimeState(relay_backend_url=f"{EXAMPLE_RELAY_BACKEND_URL}/", relay_camera_id="cam-42")
+        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        assert service.build_url() == EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
 
 class TestSendError:
@@ -85,7 +97,7 @@ class TestWebsocketConnect:
         monkeypatch.setattr(relay_mod.websockets, "connect", AsyncMock(return_value=raw_ws))
         monkeypatch.setattr(relay_mod, "build_device_assertion", lambda: "jwt")
 
-        async with relay_mod._websocket_connect("wss://example.com/ws") as ws:
+        async with relay_mod._websocket_connect(EXAMPLE_RELAY_BACKEND_URL) as ws:
             assert ws is not None
 
         raw_ws.close.assert_awaited_once()
@@ -98,20 +110,20 @@ class TestReceiveLoop:
         """Should ignore binary frames without crashing."""
         ws = AsyncMock()
         ws.recv = AsyncMock(side_effect=[b"\x00binary", OSError("closed")])
-        await _receive_loop(ws)
+        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
         # Should not crash, just log and continue until connection closes
 
     async def test_ignores_invalid_json(self) -> None:
         """Should ignore frames that aren't valid JSON without crashing."""
         ws = AsyncMock()
         ws.recv = AsyncMock(side_effect=["not json {{{", OSError("closed")])
-        await _receive_loop(ws)
+        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
 
     async def test_handles_ping(self) -> None:
         """Should respond to ping messages with a pong."""
         ws = AsyncMock()
         ws.recv = AsyncMock(side_effect=[json.dumps({"type": "ping"}), OSError("closed")])
-        await _receive_loop(ws)
+        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
         # Should have sent a pong
         ws.send.assert_called_once()
         pong = json.loads(ws.send.call_args[0][0])
@@ -121,7 +133,7 @@ class TestReceiveLoop:
         """Should ignore messages with unknown type without crashing."""
         ws = AsyncMock()
         ws.recv = AsyncMock(side_effect=[json.dumps({"type": "unknown"}), OSError("closed")])
-        await _receive_loop(ws)
+        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
 
     async def test_dispatches_request_messages(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should dispatch messages of type "request" to the command handler."""
@@ -130,13 +142,43 @@ class TestReceiveLoop:
         monkeypatch.setattr(relay_mod.asyncio, "create_task", lambda coro: asyncio.get_running_loop().create_task(coro))
         handler = AsyncMock()
         monkeypatch.setattr(relay_mod, "_handle_command", handler)
-        await _receive_loop(ws)
+        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
         await asyncio.sleep(0)
         handler.assert_awaited_once()
 
 
 class TestHandleCommand:
     """Tests for relay command dispatch."""
+
+    async def test_forwards_trace_headers_to_local_request(self) -> None:
+        """Trace propagation headers should survive the relay hop."""
+
+        def _handler(request: httpx.Request) -> httpx.Response:
+            assert request.headers["traceparent"] == TRACEPARENT
+            assert request.headers["tracestate"] == TRACESTATE
+            assert request.headers["baggage"] == BAGGAGE
+            return httpx.Response(200, json={"ok": True})
+
+        transport = httpx.MockTransport(_handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+            ws = AsyncMock()
+            await _handle_command(
+                ws,
+                http,
+                {
+                    "id": "msg-trace",
+                    "method": "GET",
+                    "path": "/json",
+                    "headers": {
+                        "TraceParent": TRACEPARENT,
+                        "tracestate": TRACESTATE,
+                        "Baggage": BAGGAGE,
+                    },
+                },
+            )
+
+        payload = json.loads(ws.send.call_args.args[0])
+        assert payload["data"] == {"ok": True}
 
     async def test_handles_binary_response(self) -> None:
         """Should send binary responses as bytes frames."""
@@ -150,6 +192,22 @@ class TestHandleCommand:
             await _handle_command(ws, http, {"id": "msg-1", "method": "GET", "path": "/image"})
             assert ws.send.await_count == 1
             ws.send_bytes.assert_awaited_once_with(b"abc")
+
+    async def test_handles_hls_video_segment_response_as_binary(self) -> None:
+        """HLS video segments should travel over the relay as binary frames."""
+
+        def _hls_handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=HLS_SEGMENT_BYTES, headers={"content-type": HLS_SEGMENT_CONTENT_TYPE})
+
+        transport = httpx.MockTransport(_hls_handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+            ws = AsyncMock()
+            await _handle_command(ws, http, {"id": "msg-hls", "method": "GET", "path": "/hls/cam-preview/seg.mp4"})
+
+        header = json.loads(ws.send.call_args.args[0])
+        assert header["has_binary"] is True
+        assert header["content_type"] == HLS_SEGMENT_CONTENT_TYPE
+        ws.send_bytes.assert_awaited_once_with(HLS_SEGMENT_BYTES)
 
     async def test_handles_text_response(self) -> None:
         """Should send text responses as JSON frames."""
@@ -191,18 +249,55 @@ class TestHandleCommand:
         assert RELAY_403_FRAGMENT in caplog.text
 
 
-class TestRunRelay:
-    """Tests for the top-level relay loop."""
+class TestExtractTraceHeaders:
+    """Tests for relay trace header filtering."""
 
-    async def test_returns_when_not_configured(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_keeps_only_supported_trace_headers(self) -> None:
+        """The relay should forward tracing headers and ignore unrelated ones."""
+        assert _extract_trace_headers(
+            {
+                "TraceParent": "parent",
+                "TrAcEsTaTe": "state",
+                "baggage": "bag",
+                "Authorization": "Bearer no",
+                "X-Whatever": "nope",
+            },
+        ) == {
+            "traceparent": "parent",
+            "tracestate": "state",
+            "baggage": "bag",
+        }
+
+    def test_ignores_non_string_header_names_and_values(self) -> None:
+        """Malformed header payloads should be dropped quietly."""
+        assert _extract_trace_headers(
+            {
+                "traceparent": "parent",
+                "baggage": 123,
+                1: "value",
+            },
+        ) == {"traceparent": "parent"}
+
+
+class TestRelayServiceRunForever:
+    """Tests for the runtime-owned relay loop."""
+
+    async def test_returns_when_not_configured(self) -> None:
         """Should return immediately if the relay is not configured."""
-        monkeypatch.setattr(relay_mod, "_relay_configured", lambda: False)
-        await relay_mod.run_relay()
+        service = RelayService(state=RelayRuntimeState(), runtime_state=RuntimeState())
+        await service.run_forever()
 
     async def test_reconnects_after_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should attempt to reconnect after a failure with exponential backoff."""
-        monkeypatch.setattr(relay_mod, "_relay_configured", lambda: True)
-        monkeypatch.setattr(relay_mod, "_build_relay_url", lambda: "wss://example.com/ws?camera_id=cam-1")
+        runtime_state = RuntimeState()
+        runtime_state.set_relay_credentials(
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
+            relay_camera_id="cam-1",
+            relay_auth_scheme=RELAY_AUTH_SCHEME,
+            relay_key_id=RELAY_KEY_ID,
+            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
+        )
+        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
         monkeypatch.setattr(relay_mod, "_receive_loop", AsyncMock(side_effect=RuntimeError("boom")))
         monkeypatch.setattr(relay_mod.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError()))
 
@@ -215,4 +310,4 @@ class TestRunRelay:
 
         monkeypatch.setattr(relay_mod, "_websocket_connect", lambda _url: _Conn())
         with pytest.raises(asyncio.CancelledError):
-            await relay_mod.run_relay()
+            await service.run_forever()

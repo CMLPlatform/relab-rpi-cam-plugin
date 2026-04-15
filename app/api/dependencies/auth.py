@@ -10,6 +10,8 @@ from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 
 from app.core.config import settings
+from app.core.runtime import get_active_runtime, get_request_runtime
+from app.core.runtime_state import RuntimeState
 
 # TODO: Improve API key handling
 #  - Add API key management endpoints in the Raspberry Pi API and the main API
@@ -30,26 +32,19 @@ def _hash_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-def reload_authorized_hashes() -> None:
-    """No-op kept for backward compatibility.
-
-    Historically this module cached pre-hashed API keys and exposed
-    `reload_authorized_hashes()` to refresh that cache after changing
-    `settings.authorized_api_keys`. The implementation now reads
-    `settings.authorized_api_keys` dynamically, so this function is a
-    no-op retained for tests and callers that expect it to exist.
-    """
-    return
+def reload_authorized_hashes(runtime_state: RuntimeState | None = None) -> frozenset[str]:
+    """Return the current immutable authorized-key snapshot used by auth checks."""
+    active_state = runtime_state or get_active_runtime().runtime_state
+    return frozenset(active_state.authorized_api_keys)
 
 
-def _is_authorized(api_key: str) -> bool:
+def _is_authorized(api_key: str, authorized_api_keys: frozenset[str]) -> bool:
     """Check if an API key matches any authorized key using timing-safe comparison.
 
-    This performs a timing-safe comparison against the live `settings.`
-    `authorized_api_keys` list to avoid storing module-level mutable state.
+    Readers use an immutable snapshot captured from runtime state for the
+    current request or explicit caller context.
     """
-    # Compare against each configured key using timing-safe compare.
-    return any(hmac.compare_digest(api_key, candidate) for candidate in settings.authorized_api_keys)
+    return any(hmac.compare_digest(api_key, candidate) for candidate in authorized_api_keys)
 
 
 def _now_utc() -> datetime:
@@ -91,8 +86,9 @@ async def verify_request(
     x_api_key_header: Annotated[str | None, Security(api_key_header)] = None,
 ) -> str:
     """Verify API access using a valid API key header or browser session."""
+    authorized_api_keys = reload_authorized_hashes(get_request_runtime(request).runtime_state)
     if x_api_key_header:
-        if not _is_authorized(x_api_key_header):
+        if not _is_authorized(x_api_key_header, authorized_api_keys):
             raise HTTPException(status_code=403, detail="Invalid API Key")
         return x_api_key_header
 

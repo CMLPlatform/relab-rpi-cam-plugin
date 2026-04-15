@@ -44,7 +44,7 @@ async def start_stream(
 @router.get("", summary="Get active stream")
 async def get_stream_status(camera_manager: CameraManagerDependency) -> StreamView:
     """Get current stream status."""
-    if (stream_info := await camera_manager.get_stream_info()) is None:
+    if (stream_info := await camera_manager.get_stream_view()) is None:
         raise HTTPException(404, "No stream active")
     return stream_info
 
@@ -57,7 +57,7 @@ async def get_stream_status(camera_manager: CameraManagerDependency) -> StreamVi
 )
 async def stop_stream(camera_manager: CameraManagerDependency) -> None:
     """Stop active YouTube stream."""
-    if not camera_manager.stream.is_active:
+    if not camera_manager.has_active_stream():
         raise HTTPException(404, "No stream active")
     try:
         return await camera_manager.stop_streaming()

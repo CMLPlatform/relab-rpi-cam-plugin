@@ -86,10 +86,10 @@ class TestCaptureEndpoint:
 
         assert stub_success_sink.put.await_count == 1
 
+    @pytest.mark.usefixtures("stub_success_sink")
     async def test_capture_deletes_local_file_after_upload(
         self,
         client: AsyncClient,
-        stub_success_sink: _StubSink,  # noqa: ARG002 — fixture seeds the sink
         tmp_path: Path,
     ) -> None:
         """After a successful push the local JPEG should be gone — single source of truth."""

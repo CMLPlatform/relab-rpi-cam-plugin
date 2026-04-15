@@ -6,6 +6,7 @@ Discovers camera-related device nodes (/dev/media*, /dev/video*, /dev/v4l-subdev
 This enables Picamera2 hardware access without requiring privileged mode.
 """
 
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +33,7 @@ def write_compose_override(device_paths: list[str], service_name: str = "app") -
         devices:
           - "/dev/video0:/dev/video0"
 
-    The function prints the YAML to stdout and returns it as a string.
+    The function writes the YAML to stdout and returns it as a string.
     """
     lines: list[str] = ["services:", f"  {service_name}:"]
     if device_paths:
@@ -42,7 +43,7 @@ def write_compose_override(device_paths: list[str], service_name: str = "app") -
         lines.append("    devices: []")
 
     final_text = "\n".join(lines) + "\n"
-    print(final_text)  # noqa: T201 # printing to stdout is intended
+    sys.stdout.write(final_text)
     return final_text
 
 

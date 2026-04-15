@@ -12,9 +12,21 @@ dev:
 test:
     uv run pytest --cov=app --cov=relab_rpi_cam_models --cov-report=term-missing
 
+test-unit:
+    uv run pytest tests/unit
+
+test-integration:
+    uv run pytest tests/integration
+
+test-slowest:
+    uv run pytest --durations=20 -q
+
+typecheck:
+    uv run ty check .
+
 lint:
     uv run ruff check --no-fix .
-    uv run ty check .
+    just typecheck
 
 format:
     uv run ruff check --fix .
@@ -23,7 +35,9 @@ format:
 pre-commit:
     uv run pre-commit run --all-files
 
-check: format lint test
+check:
+    just lint
+    just test
 
 audit:
     uv audit --preview-features audit --locked --no-dev
@@ -33,3 +47,7 @@ build:
 
 clean:
     rm -rf dist/ .venv/ .pytest_cache/ __pycache__/
+
+# Print the local direct-connection API key from the local key endpoint.
+show-key:
+    @python3 -c 'import sys; from urllib.request import urlopen; sys.stdout.write(urlopen("http://127.0.0.1:8018/local-key", timeout=2).read().decode("utf-8", "replace").strip() + "\n")'

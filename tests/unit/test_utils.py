@@ -11,7 +11,7 @@ import pytest
 from app.core.config import settings
 from app.utils import pairing as pairing_mod
 from app.utils.files import cleanup_images, clear_directory, setup_directory
-from app.utils.pairing import PAIRING_CODE_TTL_SECONDS, PairingState, _generate_code_and_fingerprint, get_pairing_state
+from app.utils.pairing import PAIRING_CODE_TTL_SECONDS, PairingState, _generate_code_and_fingerprint
 
 
 def _list_dir(path: Path) -> list[Path]:
@@ -94,7 +94,7 @@ class TestPairingState:
 
     def test_default_state_is_idle(self) -> None:
         """Default pairing state should be IDLE."""
-        state = get_pairing_state()
+        state = PairingState()
         assert isinstance(state, PairingState)
 
     def test_generate_code_format(self) -> None:
@@ -112,16 +112,10 @@ class TestPairingState:
 
     def test_pairing_code_state_tracks_expiry(self) -> None:
         """Active pairing state should carry a future expiry timestamp for the setup page."""
-        state = get_pairing_state()
-        original = (state.code, state.fingerprint, state.expires_at, state.status, state.error)
-
-        try:
-            before = datetime.now(UTC)
-            pairing_mod._set_pairing_code_state("ABC123", "fingerprint")
-            state = get_pairing_state()
-            assert state.expires_at is not None
-            lower_bound = before + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
-            upper_bound = datetime.now(UTC) + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
-            assert lower_bound <= state.expires_at <= upper_bound
-        finally:
-            state.code, state.fingerprint, state.expires_at, state.status, state.error = original
+        state = PairingState()
+        before = datetime.now(UTC)
+        pairing_mod._set_pairing_code_state(state, "ABC123", "fingerprint")
+        assert state.expires_at is not None
+        lower_bound = before + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
+        upper_bound = datetime.now(UTC) + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
+        assert lower_bound <= state.expires_at <= upper_bound

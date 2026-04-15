@@ -20,16 +20,17 @@ services:
       # Override to ``runtime-standalone`` in .env for standalone mode.
       target: ${APP_BUILD_TARGET:-runtime}
     restart: unless-stopped
-    ports:
-      - "8018:8018"
+    # Host networking lets the app reach MediaMTX (RTSP :8554, HLS :8888,
+    # control API :9997) over loopback, keeping those listeners localhost-only
+    # without any ``host.docker.internal`` bridge gymnastics. Port 8018 is bound
+    # directly on the host — equivalent to the previous ports mapping.
+    network_mode: host
     volumes:
       - /run/udev:/run/udev:ro
       - app_logs:/app/logs
       - relay_credentials:/home/rpicam/.config/relab
     env_file:
       - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     group_add:
       - video
     logging:

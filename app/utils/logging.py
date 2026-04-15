@@ -1,13 +1,67 @@
 """Custom logging configuration for the app."""
 
+import contextvars
+import importlib
 import json
 import logging
 import sys
 from datetime import UTC, datetime
 from logging.config import dictConfig
 from pathlib import Path
+from typing import TYPE_CHECKING
+from uuid import uuid4
 
-from app.core.config import settings
+from app.core.runtime_context import get_active_runtime
+
+if TYPE_CHECKING:
+    from app.core.config import Settings
+
+_request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
+
+
+def _get_settings() -> "Settings":
+    """Load static config lazily to avoid startup-time import cycles."""
+    return importlib.import_module("app.core.config").settings
+
+
+def new_request_id() -> str:
+    """Generate a short request id for correlating logs."""
+    return uuid4().hex
+
+
+def get_request_id() -> str | None:
+    """Return the current request id from context, if any."""
+    return _request_id_var.get()
+
+
+def bind_request_id(request_id: str) -> contextvars.Token[str | None]:
+    """Bind a request id to the current context."""
+    return _request_id_var.set(request_id)
+
+
+def reset_request_id(token: contextvars.Token[str | None]) -> None:
+    """Reset the request id context to its prior value."""
+    _request_id_var.reset(token)
+
+
+def build_log_extra(
+    *,
+    camera_id: str | None = None,
+    stream_mode: object | None = None,
+) -> dict[str, object]:
+    """Build common structured log fields for plugin events."""
+    extra: dict[str, object] = {}
+    runtime_camera_id: str | None = None
+    try:
+        runtime_camera_id = get_active_runtime().runtime_state.relay_camera_id or None
+    except RuntimeError:
+        runtime_camera_id = None
+    resolved_camera_id = camera_id or runtime_camera_id
+    if resolved_camera_id:
+        extra["camera_id"] = resolved_camera_id
+    if stream_mode is not None:
+        extra["stream_mode"] = str(stream_mode)
+    return extra
 
 
 class JsonFormatter(logging.Formatter):
@@ -21,6 +75,12 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        if request_id := getattr(record, "request_id", None) or get_request_id():
+            log_entry["request_id"] = request_id
+        if camera_id := getattr(record, "camera_id", None):
+            log_entry["camera_id"] = camera_id
+        if stream_mode := getattr(record, "stream_mode", None):
+            log_entry["stream_mode"] = str(stream_mode)
         if record.exc_info:
             log_entry["exception"] = self.formatException(record.exc_info)
         if record.stack_info:
@@ -54,8 +114,10 @@ def configure_library_loggers() -> None:
     logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
 
 
-def setup_logging(log_level: str = "INFO", log_file: Path | str = settings.log_path / "app.log") -> None:
+def setup_logging(log_level: str = "INFO", log_file: Path | str | None = None) -> None:
     """Logging setup with human-readable console output and structured JSON file logging."""
+    settings = _get_settings()
+    resolved_log_file = log_file or (settings.log_path / "app.log")
     # Create log directory if it doesn't exist
     settings.log_path.mkdir(exist_ok=True)
 
@@ -80,7 +142,7 @@ def setup_logging(log_level: str = "INFO", log_file: Path | str = settings.log_p
             },
             "file": {
                 "class": "logging.handlers.TimedRotatingFileHandler",
-                "filename": str(log_file),
+                "filename": str(resolved_log_file),
                 "when": "midnight",
                 "backupCount": 7,
                 "encoding": "utf-8",

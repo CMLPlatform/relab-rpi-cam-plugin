@@ -1,16 +1,21 @@
 """Tests for relay-related config behavior."""
 
-import json
-from pathlib import Path
 from unittest.mock import patch
 
-from app.core.config import Settings, apply_relay_credentials
+import pytest
 
-RELAY_BACKEND_URL = "wss://example.com/ws"
+from app.core.config import Settings, _add_authorized_api_key, apply_relay_credentials
+from app.core.runtime_state import RuntimeState
+from tests.constants import EXAMPLE_RELAY_BACKEND_URL
+
 RELAY_CAMERA_ID = "cam-1"
 RELAY_AUTH_SCHEME = "device_assertion"
 RELAY_KEY_ID = "key-1"
 RELAY_PRIVATE_KEY_PEM = "private-key"
+ENV_RELAY_BACKEND_URL = "wss://env-backend/ws/connect"
+ENV_RELAY_CAMERA_ID = "env-cam"
+ENV_RELAY_KEY_ID = "env-key"
+ENV_RELAY_PRIVATE_KEY_PEM = "env-private-key"
 
 
 class TestRelayEnabledProperty:
@@ -24,7 +29,7 @@ class TestRelayEnabledProperty:
     def test_enabled_when_all_fields_set(self) -> None:
         """Relay should be enabled if all required fields are set."""
         s = Settings(
-            relay_backend_url="wss://example.com/ws",
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
             relay_camera_id="cam-1",
             relay_auth_scheme=RELAY_AUTH_SCHEME,
             relay_key_id=RELAY_KEY_ID,
@@ -33,62 +38,95 @@ class TestRelayEnabledProperty:
         assert s.relay_enabled is True
 
     def test_disabled_when_partial(self) -> None:
-        """Relay should be disabled if only some fields are set."""
-        s = Settings(relay_backend_url="wss://example.com/ws")
-        assert s.relay_enabled is False
+        """Partial relay bootstrap config should be rejected."""
+        with pytest.raises(ValueError, match="Relay bootstrap config must set"):
+            Settings(relay_backend_url=EXAMPLE_RELAY_BACKEND_URL)
 
     def test_disabled_when_only_key(self) -> None:
-        """Relay should be disabled if only the private key is set."""
-        s = Settings(relay_private_key_pem=RELAY_PRIVATE_KEY_PEM)
-        assert s.relay_enabled is False
+        """Relay bootstrap config should reject lone private-key setup."""
+        with pytest.raises(ValueError, match="Relay bootstrap config must set"):
+            Settings(relay_private_key_pem=RELAY_PRIVATE_KEY_PEM)
 
 
 class TestApplyRelayCredentials:
     """Tests for the `apply_relay_credentials` function."""
 
-    def test_loads_credentials_from_file(self, tmp_path: Path) -> None:
-        """Should load credentials from the file and apply to settings."""
+    def test_loads_credentials_from_file(self) -> None:
+        """Should load credentials from the file and apply to runtime state."""
         creds = {
-            "relay_backend_url": RELAY_BACKEND_URL,
+            "relay_backend_url": EXAMPLE_RELAY_BACKEND_URL,
             "relay_camera_id": RELAY_CAMERA_ID,
             "relay_auth_scheme": RELAY_AUTH_SCHEME,
             "relay_key_id": RELAY_KEY_ID,
             "relay_private_key_pem": RELAY_PRIVATE_KEY_PEM,
         }
-        creds_file = tmp_path / "relay_credentials.json"
-        creds_file.write_text(json.dumps(creds))
+        runtime_state = RuntimeState()
 
-        with (
-            patch("app.utils.pairing._CREDENTIALS_FILE", creds_file),
-            patch("app.core.config.settings") as mock_settings,
-            patch("app.api.dependencies.auth.reload_authorized_hashes"),
-        ):
-            mock_settings.relay_backend_url = ""
-            mock_settings.relay_camera_id = ""
-            mock_settings.relay_auth_scheme = ""
-            mock_settings.relay_key_id = ""
-            mock_settings.relay_private_key_pem = ""
-            mock_settings.local_relay_api_key = ""
-            mock_settings.authorized_api_keys = []
-            apply_relay_credentials()
-            assert mock_settings.relay_backend_url == RELAY_BACKEND_URL
-            assert mock_settings.relay_camera_id == RELAY_CAMERA_ID
-            assert mock_settings.relay_auth_scheme == RELAY_AUTH_SCHEME
-            assert mock_settings.relay_key_id == RELAY_KEY_ID
-            assert mock_settings.relay_private_key_pem == RELAY_PRIVATE_KEY_PEM
-            assert mock_settings.local_relay_api_key.startswith("LOCAL_")
-            assert mock_settings.local_relay_api_key in mock_settings.authorized_api_keys
+        with patch("app.core.config.load_relay_credentials", return_value=creds):
+            apply_relay_credentials(runtime_state)
 
-    def test_noop_when_no_file(self, tmp_path: Path) -> None:
+        assert runtime_state.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL
+        assert runtime_state.relay_camera_id == RELAY_CAMERA_ID
+        assert runtime_state.relay_auth_scheme == RELAY_AUTH_SCHEME
+        assert runtime_state.relay_key_id == RELAY_KEY_ID
+        assert runtime_state.relay_private_key_pem == RELAY_PRIVATE_KEY_PEM
+        assert runtime_state.local_relay_api_key.startswith("LOCAL_")
+        assert runtime_state.local_relay_api_key in runtime_state.authorized_api_keys
+
+    def test_noop_when_no_file(self) -> None:
         """Should do nothing if the credentials file doesn't exist."""
-        creds_file = tmp_path / "relay_credentials.json"
+        runtime_state = RuntimeState()
         with (
-            patch("app.utils.pairing._CREDENTIALS_FILE", creds_file),
-            patch("app.core.config.settings") as mock_settings,
+            patch("app.core.config.load_relay_credentials", return_value={}),
             patch("app.api.dependencies.auth.reload_authorized_hashes"),
         ):
-            mock_settings.relay_backend_url = ""
-            mock_settings.relay_private_key_pem = ""
-            mock_settings.authorized_api_keys = []
-            apply_relay_credentials()
-            assert mock_settings.relay_backend_url == ""
+            apply_relay_credentials(runtime_state)
+        assert runtime_state.relay_backend_url == ""
+
+    def test_keeps_env_bootstrap_credentials_when_runtime_already_configured(self) -> None:
+        """Env/bootstrap relay config should win over persisted credentials."""
+        runtime_state = RuntimeState(
+            relay_backend_url=ENV_RELAY_BACKEND_URL,
+            relay_camera_id=ENV_RELAY_CAMERA_ID,
+            relay_auth_scheme=RELAY_AUTH_SCHEME,
+            relay_key_id=ENV_RELAY_KEY_ID,
+            relay_private_key_pem=ENV_RELAY_PRIVATE_KEY_PEM,
+        )
+        creds = {
+            "relay_backend_url": EXAMPLE_RELAY_BACKEND_URL,
+            "relay_camera_id": RELAY_CAMERA_ID,
+            "relay_auth_scheme": RELAY_AUTH_SCHEME,
+            "relay_key_id": RELAY_KEY_ID,
+            "relay_private_key_pem": RELAY_PRIVATE_KEY_PEM,
+        }
+
+        with patch("app.core.config.load_relay_credentials", return_value=creds):
+            apply_relay_credentials(runtime_state)
+
+        assert runtime_state.relay_backend_url == ENV_RELAY_BACKEND_URL
+        assert runtime_state.relay_camera_id == ENV_RELAY_CAMERA_ID
+        assert runtime_state.relay_key_id == ENV_RELAY_KEY_ID
+        assert runtime_state.relay_private_key_pem == ENV_RELAY_PRIVATE_KEY_PEM
+
+
+class TestAuthorizedApiKeysMutation:
+    """Tests for atomic authorized-key updates."""
+
+    def test_add_authorized_api_key_rebinds_with_deduplicated_list(self) -> None:
+        """Adding a key should replace the snapshot instead of mutating in place."""
+        runtime_state = RuntimeState(authorized_api_keys=frozenset({"one", "two"}))
+        original_keys = runtime_state.authorized_api_keys
+
+        _add_authorized_api_key(runtime_state, "three")
+
+        assert runtime_state.authorized_api_keys == frozenset({"one", "two", "three"})
+        assert runtime_state.authorized_api_keys is not original_keys
+
+    def test_add_authorized_api_key_skips_existing_key(self) -> None:
+        """Existing keys should not trigger a snapshot replacement."""
+        runtime_state = RuntimeState(authorized_api_keys=frozenset({"one", "two"}))
+        original_keys = runtime_state.authorized_api_keys
+
+        _add_authorized_api_key(runtime_state, "two")
+
+        assert runtime_state.authorized_api_keys is original_keys

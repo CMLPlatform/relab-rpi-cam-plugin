@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from pydantic import AnyUrl
 
 from app.api.services.image_sinks.base import ImageSinkError, StoredImage
+from app.utils.logging import build_log_extra
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -70,11 +71,12 @@ class S3CompatibleSink:
         *,
         image_id: str,
         image_bytes: bytes,
-        filename: str,  # noqa: ARG002 — kept for the ImageSink Protocol signature
-        capture_metadata: Mapping[str, object],  # noqa: ARG002
+        filename: str,
+        capture_metadata: Mapping[str, object],
         upload_metadata: Mapping[str, object],
     ) -> StoredImage:
         """Upload to S3 and return the public URL."""
+        del filename, capture_metadata
         if aioboto3 is None:
             msg = (
                 "aioboto3 is required for S3CompatibleSink. "
@@ -106,7 +108,7 @@ class S3CompatibleSink:
             raise ImageSinkError(msg) from exc
 
         public_url = self._build_public_url(key)
-        logger.info("Uploaded capture %s to S3 bucket %s (%s)", image_id, self._bucket, key)
+        logger.info("Uploaded capture %s to S3 bucket %s (%s)", image_id, self._bucket, key, extra=build_log_extra())
         return StoredImage(image_id=image_id, image_url=AnyUrl(public_url))
 
     async def _ensure_bucket(self, s3: _S3ClientProtocol) -> None:
@@ -117,8 +119,8 @@ class S3CompatibleSink:
             kwargs: dict[str, object] = {"Bucket": self._bucket}
             if self._region and self._region != _DEFAULT_REGION:
                 kwargs["CreateBucketConfiguration"] = {"LocationConstraint": self._region}
-            await s3.create_bucket(**kwargs)  # type: ignore[union-attr]
-            logger.info("Created S3 bucket %r at %s", self._bucket, self._endpoint_url)
+            await s3.create_bucket(**kwargs)
+            logger.info("Created S3 bucket %r at %s", self._bucket, self._endpoint_url, extra=build_log_extra())
         except Exception as exc:
             # Swallow "bucket already exists" errors from any S3-compatible server.
             # Both codes appear across AWS S3 / MinIO / RustFS depending on ownership.

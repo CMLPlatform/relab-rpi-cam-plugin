@@ -7,16 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.api.services import preview_pipeline as preview_pipeline_mod
-from app.api.services.preview_pipeline import (
-    PreviewPipelineManager,
-    get_preview_pipeline_manager,
-    reset_preview_pipeline_manager,
-)
-
-
-@pytest.fixture(autouse=True)
-def _reset_singleton() -> None:
-    reset_preview_pipeline_manager()
+from app.api.services.preview_pipeline import PreviewPipelineManager
 
 
 @pytest.fixture(autouse=True)
@@ -27,23 +18,6 @@ def stub_encoder_and_output(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     monkeypatch.setattr(preview_pipeline_mod, "H264Encoder", encoder_cls)
     monkeypatch.setattr(preview_pipeline_mod, "_build_ffmpeg_output", output_factory)
     return encoder_cls
-
-
-class TestSingleton:
-    """get_preview_pipeline_manager should return a process-wide singleton."""
-
-    def test_returns_same_instance(self) -> None:
-        """Consecutive calls must yield the same manager."""
-        a = get_preview_pipeline_manager()
-        b = get_preview_pipeline_manager()
-        assert a is b
-
-    def test_reset_forces_new_instance(self) -> None:
-        """reset_preview_pipeline_manager should clear the cached instance."""
-        a = get_preview_pipeline_manager()
-        reset_preview_pipeline_manager()
-        b = get_preview_pipeline_manager()
-        assert a is not b
 
 
 class TestStartStop:
