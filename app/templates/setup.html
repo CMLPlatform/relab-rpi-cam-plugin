@@ -393,11 +393,11 @@
             Usually automatic in the native RELab app. Open only for manual access.
           </p>
           <ul class="setup-advanced__list">
-            <li><strong>Native RELab app latency boost</strong> - auto-delivered, no copy-paste.</li>
-            <li><strong>Standalone / non-ReLab clients</strong> - use the key directly with <code>X-API-Key</code>.</li>
+            <li><strong>RELab app latency boost</strong> - once relay-paired, the app receives this key automatically and switches to direct access when an Ethernet cable is connected. Works in both the native app and modern browsers (Chrome/Edge). Latency drops from ~2 s to ~0.4 s.</li>
+            <li><strong>Standalone / non-ReLab clients</strong> - use the key directly with <code>X-API-Key</code> to call the camera API without the relay.</li>
           </ul>
           <div class="setup-advanced__callout">
-            The local key does not let you register this camera in the ReLab app. Registration requires relay pairing.
+            The local key does not let you register this camera in the ReLab app. Registration requires relay pairing (the 6-character code above).
           </div>
           {% if local_api_key %}
             <div class="setup-advanced__grid">
@@ -425,7 +425,8 @@
               </div>
             </div>
             <p class="setup-advanced__footnote">
-              Use this for manual setup or non-ReLab clients (<code>X-API-Key</code>). Automatic direct mode only works in the native RELab app; browsers served over HTTPS cannot probe this Pi's HTTP API because of mixed-content blocking.
+              Use this for manual setup or non-ReLab clients (<code>X-API-Key</code>).
+              The RELab app delivers and applies this key automatically — you only need to copy it for custom scripts or standalone mode.
             </p>
           {% endif %}
         </div>
