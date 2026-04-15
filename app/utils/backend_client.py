@@ -95,7 +95,10 @@ async def upload_image(
 
     try:
         image_id = str(payload["image_id"])
-        image_url = AnyUrl(str(payload["image_url"]))
+        raw_url = str(payload["image_url"])
+        if not raw_url.startswith("http"):
+            raw_url = f"{base_url}{raw_url}"
+        image_url = AnyUrl(raw_url)
     except (KeyError, TypeError, ValueError) as exc:
         msg_2 = f"Backend upload response missing fields: {payload!r}"
         raise BackendUploadError(msg_2) from exc

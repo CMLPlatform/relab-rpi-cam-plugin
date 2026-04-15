@@ -88,5 +88,6 @@ async def unpair(request: Request) -> Response:
         else:
             logger.info("Unpairing complete — no pairing backend configured, staying idle")
 
-    asyncio.create_task(_do_reset(), name="pairing_reset")
+    task = asyncio.create_task(_do_reset(), name="pairing_reset")
+    bg_tasks.add(task)
     return Response(status_code=204)
