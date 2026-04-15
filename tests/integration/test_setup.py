@@ -13,15 +13,15 @@ from app.core.config import DEFAULT_PAIRING_BACKEND_URL, settings
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, HTML_CONTENT_TYPE
 
 SETUP_TITLE = "RPi Camera — Setup"
-SETUP_COPY_TEXT = "Pair the camera. Open details only when needed."
+SETUP_COPY_TEXT = "Pair, refresh, or unpair from this page."
 PAIRING_URL_DEBUG_TEXT = "Pairing details"
 PAIRING_BACKEND_URL_TEXT = "URL"
 DEFAULT_BACKEND_PRESET_TEXT = "Default RELab backend"
 PAIRING_BACKEND_URL_VALUE = "https://api.cml-relab.org"
 REACHABLE_TEXT = "Reachable"
 NOT_REACHABLE_TEXT = "Not reachable"
-HOW_TO_CHANGE_TEXT = "Edit"
-CHANGE_IT_TEXT = "Edit"
+HOW_TO_CHANGE_TEXT = "Change"
+CHANGE_IT_TEXT = "Change"
 PAIRING_CODE = "ABC123"
 PAIRED_TEXT = "Paired"
 PAIRING_FAILED_TEXT = "Pairing failed"
@@ -30,13 +30,13 @@ THIS_IP_PLACEHOLDER = "&lt;this-ip&gt;"
 COPY_PAIRING_CODE_LABEL = "Copy pairing code"
 NEW_PAIRING_CODE_LABEL = "Generate a new pairing code"
 LATENCY_BOOST_TEXT = "Native RELab app latency boost"
-STANDALONE_CLIENTS_TEXT = "Standalone / non-ReLab clients"
-LOCAL_KEY_WARNING_TEXT = "The local key does not let you register this camera in the ReLab app."
-LOCAL_KEY_NOTE_TEXT = "Automatic direct mode only works in the native RELab app; browsers served over HTTPS cannot probe this Pi's HTTP API because of mixed-content blocking."
+STANDALONE_CLIENTS_TEXT = "Browser and script access"
+LOCAL_KEY_WARNING_TEXT = "Relay pairing still uses the 6-character code above."
+LOCAL_KEY_NOTE_TEXT = "The local API works in browsers on your LAN, in the native RELab app, and in custom scripts."
 PAIRING_EXPIRY_ATTR = "data-pairing-expiry"
 PAIRING_TTL_ATTR = 'data-ttl-ms="600000"'
 UNPAIR_FUNCTION_CALL = "unpair()"
-PAIRING_REFRESH_HINT_TEXT = "If pairing finishes in the app, refresh this page to show the updated status or a new code."
+PAIRING_REFRESH_HINT_TEXT = "Refresh after pairing or unpairing to see the latest state."
 
 
 class TestSetupPage:

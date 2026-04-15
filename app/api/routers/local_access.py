@@ -60,6 +60,12 @@ def _get_candidate_urls() -> list[str]:
                 continue
             prioritized_ips.append((_interface_priority(iface), addr.address))
 
+    # If there are any non-docker-ish interfaces, drop docker/tunnel addresses
+    # (they're useful in container-only runs but noisy when the host has real
+    # LAN IPs). This keeps the UI focused on the top host addresses.
+    if any(priority < 100 for priority, _ in prioritized_ips):
+        prioritized_ips = [(p, ip) for p, ip in prioritized_ips if p < 100]
+
     return [f"http://{ip}:{_API_PORT}" for _priority, ip in sorted(prioritized_ips)]
 
 

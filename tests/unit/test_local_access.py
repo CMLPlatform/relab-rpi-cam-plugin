@@ -25,8 +25,4 @@ class TestGetCandidateUrls:
 
         urls = _get_candidate_urls()
 
-        assert urls == [
-            "http://192.168.1.50:8018",
-            "http://172.17.0.1:8018",
-        ]
-
+        assert urls == ["http://192.168.1.50:8018"]
