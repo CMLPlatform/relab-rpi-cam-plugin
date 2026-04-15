@@ -40,66 +40,6 @@ RATE_LIMIT_METHOD = "POST"
 RATE_LIMIT_PATH = "/auth/login"
 
 
-def init_redis() -> object | None:
-    """Initialize the app's Redis client, if one is configured."""
-    return None
-
-
-async def close_redis(redis: object | None) -> None:
-    """Close the app's Redis client if it exposes a close method."""
-    if redis is None:
-        return
-
-    close = getattr(redis, "close", None)
-    if close is None:
-        return
-
-    result = close()
-    if asyncio.iscoroutine(result):
-        await result
-
-
-def init_email_checker() -> object | None:
-    """Initialize the email checker used by the app, if enabled."""
-    return None
-
-
-async def shutdown_email_checker(email_checker: object | None) -> None:
-    """Close the app's email checker, tolerating best-effort shutdown errors."""
-    if email_checker is None:
-        return
-
-    close = getattr(email_checker, "close", None)
-    if close is None:
-        return
-    try:
-        result = close()
-        if asyncio.iscoroutine(result):
-            await result
-    except RuntimeError as exc:
-        logger.warning("Error closing email checker: %s", exc)
-
-
-def init_fastapi_cache() -> None:
-    """Initialize the FastAPI cache backend."""
-
-
-def close_fastapi_cache() -> None:
-    """Close the FastAPI cache backend."""
-
-
-def init_telemetry() -> None:
-    """Initialize telemetry collection or export hooks."""
-
-
-def shutdown_telemetry() -> None:
-    """Shut down telemetry collection or export hooks."""
-
-
-def cleanup_logging() -> None:
-    """Finalize logging sinks on shutdown."""
-
-
 class RateLimiter:
     """Simple rate limiter for brute force protection on /auth/login.
 
@@ -183,11 +123,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Load relay credentials from pairing file (if present)
     apply_relay_credentials()
 
-    redis = init_redis()
-    email_checker = init_email_checker()
-    init_fastapi_cache()
-    init_telemetry()
-
     # Set up temporary directories
     await setup_directory(settings.image_path)
     logger.info("Temporary file directories set up")
@@ -269,12 +204,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Cleanup camera resources
     await camera_manager.cleanup(force=True)
     logger.info("Camera resources cleaned up")
-
-    close_fastapi_cache()
-    await shutdown_email_checker(email_checker)
-    await close_redis(redis)
-    shutdown_telemetry()
-    cleanup_logging()
 
 
 app = FastAPI(
