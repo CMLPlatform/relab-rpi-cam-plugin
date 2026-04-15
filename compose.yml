@@ -1,0 +1,123 @@
+# Docker Compose stack for the RPi camera plugin.
+#
+# Paired mode (default — captures push to the RElab backend):
+#   docker compose up -d
+#
+# Standalone mode (no RElab backend — captures land in a local RustFS bucket):
+#   Set APP_BUILD_TARGET=runtime-standalone and COMPOSE_PROFILES=standalone in
+#   .env, then ``docker compose up -d``. The standalone build target adds
+#   aioboto3; configure IMAGE_SINK=s3 and S3_* vars alongside it.
+#
+# With remote observability (Loki logs + optional Prometheus metrics):
+#   Add ``observability-ship`` to COMPOSE_PROFILES, e.g.
+#   ``COMPOSE_PROFILES=standalone,observability-ship``.
+
+services:
+  app:
+    image: relab-rpi-cam-plugin
+    build:
+      context: .
+      # Override to ``runtime-standalone`` in .env for standalone mode.
+      target: ${APP_BUILD_TARGET:-runtime}
+    restart: unless-stopped
+    ports:
+      - "8018:8018"
+    volumes:
+      - /run/udev:/run/udev:ro
+      - app_logs:/app/logs
+      - relay_credentials:/home/rpicam/.config/relab
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    group_add:
+      - video
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mediamtx:
+    # MediaMTX sidecar: the single media seam for the plugin.
+    #
+    #   - Ingest: RTSP on :8554 (lores cam-preview always, main cam-hires while
+    #     a YouTube stream is active).
+    #   - Browser/native preview: LL-HLS on :8888.
+    #   - Runtime control: HTTP API on localhost:9997. The plugin's
+    #     ``mediamtx_client`` patches the ``cam-hires`` path at runtime with a
+    #     ``runOnReady`` command that forks ffmpeg inside this container to
+    #     re-publish the stream to YouTube RTMPS.
+    #
+    # ``-ffmpeg`` variant is required because ``runOnReady`` shells out to
+    # ffmpeg and the default image doesn't ship it. Runs on the host network so
+    # all three listeners (8554/8888/9997) are reachable from the app container.
+    image: bluenviron/mediamtx:1.12.0-ffmpeg
+    restart: unless-stopped
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    network_mode: host
+
+  alloy:
+    image: grafana/alloy:v1.12.0
+    restart: unless-stopped
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+      - app_logs:/var/log/app:ro
+    environment:
+      LOKI_PUSH_URL: ${LOKI_PUSH_URL:-}
+      PROMETHEUS_REMOTE_WRITE_URL: ${PROMETHEUS_REMOTE_WRITE_URL:-}
+      OBSERVABILITY_INSTANCE: ${OBSERVABILITY_INSTANCE:-rpi-cam-plugin}
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    profiles:
+      - observability-ship
+
+  rustfs:
+    # S3-compatible object storage for standalone mode. When this sidecar is
+    # running the plugin's S3CompatibleSink writes captures directly into the
+    # bucket over the docker host network — no Relab backend needed.
+    # See the ``standalone`` section of ``.env.example`` for the required vars.
+    image: rustfs/rustfs:latest
+    restart: unless-stopped
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Web console
+    volumes:
+      - rustfs_data:/data
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      # RustFS refuses to start with an unset / short secret key, so the
+      # empty default here fails loudly only when the standalone profile is
+      # actually activated — paired-mode users don't need to set it.
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:9000/health || exit 1" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - standalone
+
+
+volumes:
+  app_logs:
+  relay_credentials:
+  alloy_data:
+  rustfs_data:

@@ -2,19 +2,113 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
+import time
+from collections import defaultdict
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from relab_rpi_cam_models.camera import CameraMode
+from starlette.responses import Response
 
-from app.api.dependencies.camera_management import camera_manager, camera_to_standby, check_stream_duration
+from app.__version__ import version
+from app.api.dependencies.camera_management import (
+    camera_manager,
+    check_stream_duration,
+    check_stream_health,
+)
+from app.api.exceptions import CameraInitializationError
 from app.api.routers.main import router as main_router
-from app.core.config import settings
+from app.api.routers.setup import router as setup_router
+from app.core.config import apply_relay_credentials, settings
 from app.utils.files import cleanup_images, setup_directory
+from app.utils.logging import configure_library_loggers, setup_logging
+from app.utils.pairing import log_pairing_mode_started, run_pairing
+from app.utils.preview_sleeper import get_preview_sleeper
+from app.utils.relay import run_relay
 from app.utils.tasks import repeat_task
+from app.utils.thermal_governor import get_thermal_governor
 
+setup_logging()
 logger = logging.getLogger(__name__)
+
+# Rate limit constants used by the rate limiter middleware
+RATE_LIMIT_METHOD = "POST"
+RATE_LIMIT_PATH = "/auth/login"
+
+
+class RateLimiter:
+    """Simple rate limiter for brute force protection on /auth/login.
+
+    Implemented as a plain helper class. The actual middleware is registered
+    with `@app.middleware("http")` below to avoid subclass signature/type
+    mismatch with Starlette's `BaseHTTPMiddleware.dispatch`.
+    """
+
+    # Max failed login attempts per IP before rate limiting
+    MAX_ATTEMPTS = 5
+    # Time window for tracking attempts (seconds)
+    WINDOW_SIZE = 300  # 5 minutes
+    # Block duration after exceeding limits (seconds)
+    BLOCK_DURATION = 300  # 5 minutes
+    # Maximum tracked IPs to prevent unbounded memory growth
+    MAX_TRACKED_IPS = 1000
+
+    def __init__(self) -> None:
+        # Track failed attempts: {ip: [(timestamp, is_failed), ...]}
+        self._attempts: dict[str, list[tuple[float, bool]]] = defaultdict(list)
+
+    def _sweep_stale_entries(self, now: float) -> None:
+        """Remove entries with no attempts within the time window."""
+        stale_ips = [
+            ip for ip, attempts in self._attempts.items() if all(now - ts >= self.WINDOW_SIZE for ts, _ in attempts)
+        ]
+        for ip in stale_ips:
+            del self._attempts[ip]
+
+    async def handle(self, request: Request, call_next: Callable) -> Response:
+        """Check rate limits before passing request to the app."""
+        # Only rate limit the configured method/path
+        if request.method != RATE_LIMIT_METHOD or request.url.path != RATE_LIMIT_PATH:
+            return await call_next(request)
+
+        client_ip = request.client.host if request.client else "unknown"
+
+        # Clean old attempts outside the window
+        now = time.time()
+        if client_ip in self._attempts:
+            self._attempts[client_ip] = [
+                (ts, failed) for ts, failed in self._attempts[client_ip] if now - ts < self.WINDOW_SIZE
+            ]
+
+        # Periodic sweep: evict stale IPs when the dict grows too large
+        if len(self._attempts) > self.MAX_TRACKED_IPS:
+            self._sweep_stale_entries(now)
+
+        # Check if client is currently blocked
+        attempts = self._attempts[client_ip]
+        if attempts:
+            failed_count = sum(1 for _, failed in attempts if failed)
+            if failed_count >= self.MAX_ATTEMPTS:
+                # Check if the most recent block is still active
+                last_failed_time = max(ts for ts, failed in attempts if failed)
+                if now - last_failed_time < self.BLOCK_DURATION:
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "Too many failed login attempts. Try again later."},
+                    )
+
+        # Call the endpoint
+        response = await call_next(request)
+
+        # Track the attempt result (check response status for failure)
+        is_failed = response.status_code >= 400
+        self._attempts[client_ip].append((now, is_failed))
+
+        return response
 
 
 @asynccontextmanager
@@ -23,27 +117,84 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
 
     Note that the camera is set up lazily to avoid unnecessary resource use.
     """
+    # Re-apply our logger normalization after Uvicorn/FastAPI have finished bootstrapping.
+    configure_library_loggers()
+
+    # Load relay credentials from pairing file (if present)
+    apply_relay_credentials()
+
     # Set up temporary directories
-    await setup_directory(settings.hls_path)
     await setup_directory(settings.image_path)
     logger.info("Temporary file directories set up")
 
-    # Start recurring cleanup tasks
-    tasks = [
-        asyncio.create_task(repeat_task(cleanup_images, settings.cleanup_interval_s, "cleanup_images")),
-        asyncio.create_task(repeat_task(camera_to_standby, settings.camera_standby_s, "camera_to_standby")),
-        asyncio.create_task(repeat_task(check_stream_duration, 60, "check_stream_duration")),
-    ]
-    logger.info("Recurring cleanup tasks started")
+    # Start WebSocket relay or pairing mode
+    background_tasks: set[asyncio.Task[None]] = set()
+
+    if settings.relay_enabled:
+        background_tasks.add(asyncio.create_task(run_relay(), name="ws_relay"))
+        logger.info("WebSocket relay started")
+    elif settings.pairing_backend_url:
+
+        async def _on_paired() -> None:
+            background_tasks.add(asyncio.create_task(run_relay(), name="ws_relay"))
+            logger.info("Pairing complete — WebSocket relay started")
+
+        background_tasks.add(asyncio.create_task(run_pairing(_on_paired), name="pairing"))
+        log_pairing_mode_started()
+
+    # Start recurring cleanup and health check tasks. The lores preview encoder
+    # runs for the lifetime of the app process, so there's no idle-state
+    # release to schedule here.
+    recurring_tasks = {
+        repeat_task(cleanup_images, settings.cleanup_interval_s, "cleanup_images"),
+        repeat_task(check_stream_duration, settings.check_stream_interval_s, "check_stream_duration"),
+        repeat_task(check_stream_health, settings.check_stream_health_interval_s, "check_stream_health"),
+    }
+    logger.info("Recurring cleanup and health check tasks started")
+
+    # Prime the persistent picamera2 pipeline. The lores preview encoder is
+    # managed by the PreviewSleeper below — it starts the encoder when the
+    # relay goes active and hibernates it after ``preview_hibernate_after_s``
+    # seconds of relay idleness. The sleeper also handles the "no camera
+    # attached" case by skipping ticks until one appears.
+    try:
+        await camera_manager.setup_camera(CameraMode.VIDEO)
+    except (CameraInitializationError, RuntimeError) as exc:
+        # Don't crash the app if there's no camera attached — the API still
+        # comes up for pairing, telemetry, etc. Image captures will fail with
+        # their own errors.
+        logger.warning("Camera not primed at startup: %s", exc)
+
+    # Start the thermal governor. It watches CPU temperature and dynamically
+    # drops the lores preview encoder bitrate when the SoC runs hot.
+    thermal_governor = get_thermal_governor()
+    thermal_governor.start(camera_getter=lambda: camera_manager.backend.camera)
+    logger.info("Thermal governor started")
+
+    # Start the preview sleeper. It polls every ~15s and decides whether the
+    # lores encoder should be running based on relay connectivity + activity.
+    preview_sleeper = get_preview_sleeper()
+    preview_sleeper.start(camera_getter=lambda: camera_manager.backend.camera)
+    logger.info(
+        "Preview sleeper started (hibernate_after=%ds)",
+        settings.preview_hibernate_after_s,
+    )
 
     yield
 
-    # Cancel all background tasks
-    for task in tasks:
-        task.cancel()
+    # Shutdown order: sleeper first (so it stops the encoder cleanly), then
+    # thermal governor (it also touches the encoder), then the rest.
+    await preview_sleeper.stop()
+    await thermal_governor.stop()
 
-    # Wait for tasks to finish cancellation
-    await asyncio.gather(*tasks, return_exceptions=True)
+    # Shutdown all background and recurring tasks
+    all_tasks = background_tasks | recurring_tasks
+    for task in all_tasks:
+        task.cancel()
+    await asyncio.gather(
+        *(task for task in all_tasks if isinstance(task, asyncio.Task)),
+        return_exceptions=True,
+    )
 
     # Cleanup camera resources
     await camera_manager.cleanup(force=True)
@@ -52,20 +203,54 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
 
 app = FastAPI(
     lifespan=lifespan,
-    version="0.1.0",
+    version=version,
     title="Raspberry Pi Camera API",
-    description="API for Raspberry Pi camera streaming and image capture",
+    description=(
+        "This API allows you to remotely capture images and stream video from a Raspberry Pi camera. "
+        "It is used as a plugin for the RELab platform."
+        '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank"> RELab GitHub</a>.'
+    ),
 )
+
+# Add rate limiting middleware first (outermost) for brute force protection
+# Use function-based middleware backed by a single `RateLimiter` instance to
+# avoid signature/type mismatches with BaseHTTPMiddleware.dispatch.
+_rate_limiter = RateLimiter()
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next: Callable) -> Response:
+    """Middleware to apply rate limiting on specific endpoints."""
+    return await _rate_limiter.handle(request, call_next)
+
 
 # Add CORS middleware to allow requests from the main API host
 app.add_middleware(
     CORSMiddleware,
-    # Note that CORS origins must not have trailing slashes
+    # CORS origins cannot have trailing slashes
     allow_origins=[str(origin).rstrip("/") for origin in settings.allowed_cors_origins],
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["*"],
+    # Only allow necessary headers for security
+    allow_headers=["Content-Type", "Authorization", "Accept", settings.auth_key_name],
 )
+
+
+# Exception handlers
+async def camera_initialization_exception_handler(
+    request: Request,  # noqa: ARG001 # Expected by FastAPI Exception Handler signature
+    exc: Exception,
+) -> JSONResponse:
+    """Handle camera initialization errors."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+    )
+
+
+app.add_exception_handler(CameraInitializationError, camera_initialization_exception_handler)
 
 # Include routers
 app.include_router(main_router)
+app.include_router(setup_router)  # No auth: setup page must be publicly accessible
+app.mount("/static", StaticFiles(directory=settings.static_path), name="static")

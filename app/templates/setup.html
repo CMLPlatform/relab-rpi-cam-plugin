@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}RPi Camera — Setup{% endblock %}
+
+{% block body_class %}setup-page{% endblock %}
+
+{% block head_extra %}
+  {% if pairing.status in ('waiting', 'registering') and pairing.code %}
+    <meta http-equiv="refresh" content="5">
+  {% elif pairing.status == status_paired %}
+    <meta http-equiv="refresh" content="3">
+  {% elif pairing.status == status_error %}
+    <meta http-equiv="refresh" content="5">
+  {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const countdown = document.querySelector("[data-pairing-countdown]");
+      const expiry = document.querySelector("[data-pairing-expiry]");
+      const progress = document.querySelector("[data-pairing-progress]");
+
+      if (!countdown || !expiry || !progress) {
+        return;
+      }
+
+      const expiresAt = new Date(expiry.dataset.expiresAt || "");
+      const ttlMs = Number(expiry.dataset.ttlMs || "0");
+
+      if (Number.isNaN(expiresAt.getTime())) {
+        return;
+      }
+
+      const formatRemaining = (ms) => {
+        if (ms <= 0) {
+          return "expired";
+        }
+        const totalSeconds = Math.ceil(ms / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        if (minutes > 0) {
+          return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+        }
+        return `${seconds}s`;
+      };
+
+      const tick = () => {
+        const remainingMs = expiresAt.getTime() - Date.now();
+        countdown.textContent = formatRemaining(remainingMs);
+
+        const ratio = ttlMs > 0 ? Math.max(0, Math.min(1, remainingMs / ttlMs)) : 0;
+        progress.style.width = `${ratio * 100}%`;
+        progress.classList.toggle("is-expired", remainingMs <= 0);
+      };
+
+      tick();
+      window.setInterval(tick, 1000);
+    });
+  </script>
+{% endblock %}
+
+{% block body %}
+<main class="setup-shell">
+  <section class="setup-hero">
+    <div class="setup-eyebrow">Raspberry Pi Camera</div>
+    <h1>Setup</h1>
+    <div style="margin-top: 12px;">
+      <a href="{{ url_for('homepage') }}" class="btn">Home</a>
+    </div>
+    <p>Pair this camera with the ReLab app without typing relay credentials by hand.</p>
+  </section>
+
+  {% if pairing.status in ('waiting', 'registering') and pairing.code %}
+    <section class="setup-panel">
+      <div class="setup-copy">
+        <div class="status-chip status-chip--live">Pairing ready</div>
+        <h2>Enter this code in ReLab</h2>
+        <p>
+          Go to <strong>Cameras &rarr; Add Camera</strong> in the ReLab app, then enter the code below.
+        </p>
+        <div class="pairing-code">{{ pairing.code }}</div>
+        <div class="pairing-meta">
+          <span
+            class="pairing-validity"
+            data-pairing-expiry
+            data-expires-at="{{ pairing_expires_at_iso }}"
+            data-ttl-ms="{{ pairing_code_ttl_seconds * 1000 }}"
+          >
+            Valid for <strong class="pairing-countdown" data-pairing-countdown>...</strong>.
+          </span>
+          <div class="pairing-progress" aria-hidden="true">
+            <span class="pairing-progress__fill" data-pairing-progress></span>
+          </div>
+          <span>Keep this page open until the app claims the code.</span>
+        </div>
+      </div>
+    </section>
+  {% elif pairing.status == status_paired %}
+    <section class="setup-status">
+      <div class="setup-status-grid">
+        <div class="status-chip status-chip--success">Paired</div>
+        <h2>Pairing complete</h2>
+        <p class="online">The camera is paired successfully and is connecting to the backend now.</p>
+      </div>
+    </section>
+  {% elif pairing.status == status_error %}
+    <section class="setup-status">
+      <div class="setup-status-grid">
+        <div class="status-chip status-chip--muted">Retrying</div>
+        <h2>Pairing issue</h2>
+        <p class="offline">{{ pairing.error or 'Pairing error — retrying…' }}</p>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="setup-status">
+    <div class="setup-status-grid">
+      <h2>Connection</h2>
+      {% if relay_enabled %}
+        <p>WebSocket relay: <span class="online">connected</span></p>
+        <table>
+          <tr><td>Backend URL</td><td><code>{{ relay_backend_url or 'not set' }}</code></td></tr>
+          <tr><td>Camera ID</td><td>{% if relay_camera_id %}<em>set</em>{% else %}<em>not set</em>{% endif %}</td></tr>
+        </table>
+      {% else %}
+        <p>WebSocket relay: <span class="offline">not configured</span></p>
+      {% endif %}
+    </div>
+  </section>
+</main>
+{% endblock %}

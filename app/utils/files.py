@@ -19,18 +19,19 @@ async def setup_directory(path: Path) -> Path:
 
 async def clear_directory(path: Path, *, time_to_live_s: int | None = None) -> None:
     """Clear expired files in directory."""
-    if not path.exists():
-        return
 
-    now = datetime.now(UTC).timestamp()
-    for file in path.glob("*"):
-        if not file.is_file():
-            continue
+    def _clear() -> None:
+        if not path.exists():
+            return
+        now = datetime.now(UTC).timestamp()
+        for file in path.glob("*"):
+            if not file.is_file():
+                continue
+            if time_to_live_s and (now - file.stat().st_mtime) < time_to_live_s:
+                continue
+            file.unlink()
 
-        if time_to_live_s and (now - file.stat().st_mtime) < time_to_live_s:
-            continue
-
-        await asyncio.to_thread(file.unlink)
+    await asyncio.to_thread(_clear)
 
 
 async def cleanup_images() -> None:

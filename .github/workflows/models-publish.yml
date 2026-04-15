@@ -1,0 +1,59 @@
+name: Publish relab-rpi-cam-models
+
+on:
+  push:
+    tags:
+      - "relab-rpi-cam-models-v*.*.*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-tag:
+    name: Validate package tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Verify tag matches package version
+        run: python scripts/validate_models_package_tag.py "${{ github.ref_name }}"
+
+  build:
+    needs: validate-tag
+    uses: ./.github/workflows/models-check-reusable.yml
+    with:
+      python_version: "3.13"
+      upload_artifact: true
+      artifact_name: relab-rpi-cam-models-dist
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/relab-rpi-cam-models
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: relab-rpi-cam-models-dist
+          path: dist/relab-rpi-cam-models
+
+      - name: Publish distribution
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/relab-rpi-cam-models

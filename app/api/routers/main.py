@@ -1,15 +1,18 @@
 """Main router for the Raspberry Pi camera API."""
 
-from fastapi import APIRouter, Security
+from fastapi import APIRouter, Depends
 
 from app.api.dependencies.auth import verify_request
-from app.api.routers.camera import router as camera_router
-from app.api.routers.images import router as images_router
-from app.api.routers.stream import router as stream_router
+from app.api.routers import auth, camera, hls, images, metrics, stream, telemetry
+from app.api.routers.frontend import landing, stream_viewer
 
-# Set up API key verification for the main router
-router = APIRouter(dependencies=[Security(verify_request)])
+router = APIRouter()
 
-router.include_router(camera_router)
-router.include_router(images_router)
-router.include_router(stream_router)
+for r in [auth.router, stream_viewer.router, landing.router]:
+    router.include_router(r, include_in_schema=False)
+
+# /metrics is intentionally unauthenticated — see app/api/routers/metrics.py.
+router.include_router(metrics.router)
+
+for r in [camera.router, hls.router, images.router, stream.router, telemetry.router]:
+    router.include_router(r, dependencies=[Depends(verify_request)])

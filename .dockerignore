@@ -1,0 +1,56 @@
+# Virtual environment (created locally by uv)
+.venv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Test code and coverage
+tests/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# Type stubs (dev only)
+typings/
+
+# Dev tooling
+.vscode/
+.ruff_cache/
+justfile
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Docker, CI, and git
+Dockerfile
+.dockerignore
+.git
+.gitignore
+.github/
+.pre-commit-config.yaml
+compose.yml
+docker/
+
+# Documentation (not needed in image)
+CHANGELOG.md
+CONTRIBUTING.md
+INSTALL.md
+LICENSE
+renovate.json
+
+# Runtime artifacts
+logs/
+
+# macOS
+.DS_Store
+
+# Linux system files
+**/.fuse_hidden*
+**/.directory
+**/.Trash-*
+**/.nfs*

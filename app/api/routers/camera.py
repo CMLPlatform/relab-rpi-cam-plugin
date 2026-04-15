@@ -1,44 +1,91 @@
-"""Router for camera management endpoints."""
+"""Router for camera status endpoints."""
 
-from typing import Annotated
-
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
+from relab_rpi_cam_models.camera import CameraStatusView
 
 from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.models.camera import CameraMode, CameraStatusView
-from app.api.services.camera_manager import ActiveStreamError
+from app.api.schemas.camera_controls import (
+    CameraControlsCapabilities,
+    CameraControlsPatch,
+    CameraControlsView,
+    FocusControlRequest,
+)
+from app.api.services.camera_manager import CameraControlsNotSupportedError
 
 router = APIRouter(prefix="/camera", tags=["camera"])
 
 
-@router.post("/open")
-async def open_camera(
-    camera_manager: CameraManagerDependency,
-    mode: Annotated[CameraMode, Query(description="Camera mode to open (photo or video)")] = CameraMode.PHOTO,
-) -> CameraStatusView:
-    """Manually open camera in photo or video mode."""
-    await camera_manager._setup_camera(mode)
-    return await camera_manager.get_status()
-
-
-@router.get("/status")
+@router.get("", summary="Get camera status")
 async def get_camera_status(
     camera_manager: CameraManagerDependency,
 ) -> CameraStatusView:
-    """Get camera status."""
+    """Return the current camera mode and any active stream details."""
     return await camera_manager.get_status()
 
 
-@router.post("/close")
-async def close_camera(
+@router.get(
+    "/controls",
+    summary="Get camera controls",
+    description=(
+        "Returns the backend-exposed camera controls along with any "
+        "latest observed values. Use this to discover what controls are "
+        "available on the current camera."
+    ),
+)
+async def get_camera_controls(
     camera_manager: CameraManagerDependency,
-) -> CameraStatusView:
-    """Manually disconnect from camera hardware and clean up camera resources."""
+) -> CameraControlsView:
+    """Return discoverable camera controls and latest observed values."""
     try:
-        await camera_manager.cleanup()
-        return await camera_manager.get_status()
-    except ActiveStreamError as e:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Cannot close camera while streaming in {e.mode} mode at {e.url}. Stop streaming first.",
-        ) from e
+        return await camera_manager.get_controls()
+    except CameraControlsNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+
+@router.get("/controls/capabilities", summary="Get camera control capabilities")
+async def get_camera_control_capabilities(
+    camera_manager: CameraManagerDependency,
+) -> CameraControlsCapabilities:
+    """Return a UI-friendly list of supported camera controls."""
+    try:
+        return await camera_manager.get_controls_capabilities()
+    except CameraControlsNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+
+@router.patch(
+    "/controls",
+    summary="Set camera controls",
+    description=(
+        "Apply backend-native camera controls. Control names are the exact strings reported by /camera/controls."
+    ),
+)
+async def set_camera_controls(
+    controls: CameraControlsPatch,
+    camera_manager: CameraManagerDependency,
+) -> CameraControlsView:
+    """Apply backend-native camera controls."""
+    try:
+        return await camera_manager.set_controls(controls)
+    except CameraControlsNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put(
+    "/focus",
+    summary="Set camera focus",
+    description="Apply friendly focus controls (continuous, auto, or manual).",
+)
+async def set_camera_focus(
+    focus: FocusControlRequest,
+    camera_manager: CameraManagerDependency,
+) -> CameraControlsView:
+    """Apply friendly focus controls."""
+    try:
+        return await camera_manager.set_focus(focus)
+    except CameraControlsNotSupportedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

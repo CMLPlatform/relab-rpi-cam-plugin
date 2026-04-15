@@ -1,179 +1,118 @@
 # RPI Camera Plugin
 
-Device-side software for automated image capture on Raspberry Pi, integrated with the Reverse Engineering Lab platform.
+[![CI](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/CMLPlatform/relab-rpi-cam-plugin/graph/badge.svg)](https://codecov.io/gh/CMLPlatform/relab-rpi-cam-plugin)
 
-## Overview
+Device-side software for automated image capture on Raspberry Pi, integrated with the [Reverse Engineering Lab platform](https://cml-relab.org).
 
-This guide covers **installing and configuring the plugin on Raspberry Pi devices**. For platform-side camera management, see the [Platform Documentation](https://docs.cml-relab.org/user-guides/rpi-cam/).
+## Quick Links
 
-## Hardware Requirements
+- **[Installation Guide](INSTALL.md)** — Hardware, setup, and configuration
+- **[Contributing](CONTRIBUTING.md)** — Development workflow and testing
+- **[Platform Docs](https://docs.cml-relab.org/user-guides/rpi-cam/)** — Camera management in RELab
 
-- Raspberry Pi 5 (recommended) or Pi 4
-- Raspberry Pi Camera Module 3 (recommended) or v2
-- MicroSD card (8GB or larger)
-- Power supply (wall adapter or power bank)
-- Network connection (Ethernet or WiFi)
-- Camera mount (tripod, clamp, or custom)
+## What It Does
 
-## Software Requirements
+The plugin runs a lightweight FastAPI server on your Raspberry Pi that:
 
-- Raspberry Pi OS (64-bit recommended)
-- Python 3.11+
-- Network connectivity to RELab platform
+- Captures images from the connected camera module
+- Exposes low-resolution snapshot previews for live viewfinder polling
+- Connects to the RELab platform via WebSocket relay
+- Exposes a REST API for manual testing and integration
 
-## Quick Setup
+Supports **Raspberry Pi 5/4** with **Camera Module 3/v2**, running on Raspberry Pi OS (64-bit) with Python 3.13+.
 
-### Step 1: Prepare Your Raspberry Pi
+## Connection
 
-1. **Install Raspberry Pi OS**: Follow the [official installation guide](https://www.raspberrypi.com/documentation/computers/getting-started.html#installing-the-operating-system)
+The plugin connects to the RELab backend via **WebSocket relay**. The Pi opens an outbound connection to the backend — no public IP address or port forwarding is required.
 
-1. **Enable camera interface**:
+Pairing is automatic: set `PAIRING_BACKEND_URL` in your `.env`, start the plugin, and enter the 6-character code in the RELab app. The Pi generates an asymmetric key pair locally, registers the public key with the backend, and keeps the private key on-device. No API key is ever copied manually.
 
-   ```bash
-   sudo raspi-config
-   # Navigate to: Interface Options → Camera → Enable
-   sudo reboot
-   ```
+## Getting Started
 
-1. **Test camera**:
+1. [Prepare your Pi and install the plugin](INSTALL.md)
+1. Set `PAIRING_BACKEND_URL` in your `.env` and start the plugin
+1. Enter the pairing code shown on `/setup` (or in logs) in the RELab app
+1. Visit `http://your-pi-ip:8018` to test
+   - `/setup` — Pairing and status
+   - `/hls/cam-preview/index.m3u8` — LL-HLS live preview (via the MediaMTX sidecar on :8888)
+   - `/stream/watch` — YouTube viewer UI for an active YouTube stream
+   - `/camera/controls` — Discover/set camera controls (autofocus, exposure, etc.)
+   - `/camera/focus` — Friendly focus controls (continuous/auto/manual)
+   - `/docs` — API reference
 
-   ```bash
-   libcamera-hello --preview
-   ```
+If you use Docker Compose on the Pi, generate `compose.override.yml` with `./scripts/generate_compose_override.py`. The override targets the existing `app` service from `compose.yml`, so the device mappings merge into the plugin container cleanly.
 
-### Step 2: Install Camera Software
+For headless setup, the active 6-character pairing code is also printed to stdout in a boxed `PAIRING READY` banner, so you can read it over SSH, `docker compose logs`, or `journalctl` without opening the browser UI.
 
-1. **Clone repository**:
+By default, Docker Compose runs only the camera plugin. Inspect logs with:
 
-   ```bash
-   git clone https://github.com/CMLPlatform/relab-rpi-cam-plugin.git
-   cd relab-rpi-cam-plugin
-   ```
+```sh
+docker compose logs -f app
+```
 
-1. **Run setup script**:
+Optional remote observability is available with the `observability-ship` profile. It runs Alloy on the Pi and ships the app's structured file logs to an external Loki-compatible endpoint. Add it to `COMPOSE_PROFILES` in your `.env`:
 
-   ```bash
-   ./setup.sh
-   ```
+```sh
+COMPOSE_PROFILES=observability-ship
+LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
+OBSERVABILITY_INSTANCE=pi-01
+```
 
-   This automatically:
+Without the profile, logs are still written to Docker logs and the 7-day rotating `app_logs` volume. Local Loki/Grafana is not bundled with this plugin; use your platform's central observability stack when you need fleet log browsing.
 
-   - Verifies environment configuration
-   - Sets up audio streaming capabilities
-   - Installs dependencies using `uv` (a [Python package manager](https://docs.astral.sh/uv/))
-   - Creates Python virtual environment
+For platform management and operation, see the [RELab camera guide](https://docs.cml-relab.org/user-guides/rpi-cam/).
 
-### Step 3: Get Platform Credentials
-<!-- TODO: Replace by description of UI flow on main platform once available -->
+## Standalone mode (no RELab backend)
 
-Before configuring your device, register it on the platform at the `plugins/rpi-cam/cameras` endpoint by providing:
+The plugin can also run fully standalone, writing captures straight to a local
+S3-compatible bucket (RustFS by default) instead of pushing them to the RELab
+backend. This is useful for hobbyist / bench / offline-first setups.
 
-- Name
-- Camera API URL (e.g., `http://your-pi-ip:8018`)
-- Description (optional)
-- Additional auth headers required to access the Camera API URL (optional)
+Everything lives in the same `compose.yml`. Standalone mode uses a separate
+build target that includes the S3 client (`aioboto3`); the default paired build
+does not. Set the following in `.env` and rebuild:
 
-💡 Save the returned API key - it will only be shown once.
+```sh
+# Select the standalone build target and start the RustFS sidecar
+APP_BUILD_TARGET=runtime-standalone
+COMPOSE_PROFILES=standalone
 
-### Step 4: Configure Your Camera
+# S3 sink and RustFS credentials — see .env.example for the full list
+IMAGE_SINK=s3
+S3_ENDPOINT_URL=http://host.docker.internal:9000
+S3_BUCKET=rpi-cam
+S3_ACCESS_KEY_ID=rustfsadmin
+S3_SECRET_ACCESS_KEY=change-me-to-a-strong-password
+RUSTFS_SECRET_KEY=change-me-to-a-strong-password
+```
 
-1. **Create configuration**:
+```sh
+docker compose build && docker compose up -d
+```
 
-   ```bash
-   cp .env.example .env
-   ```
+Once up:
 
-1. **Edit settings** in `.env`:
+- Camera API at `http://<pi-lan-ip>:8018` (same as paired mode)
+- Live LL-HLS preview at the same URL shape as paired mode (proxied through
+  the Pi's own `/hls` endpoint; no RELab backend needed)
+- RustFS console at `http://<pi-lan-ip>:9001` — log in with
+  `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY`
+- Captures browsable under `http://<pi-lan-ip>:9000/rpi-cam/`
 
-   ```bash
-   # Your Pi's network details
-   BASE_URL="http://your-pi-ip:8018"
+To point the plugin at an external S3-compatible service (Backblaze B2,
+Cloudflare R2, Wasabi, AWS S3, …), update `S3_ENDPOINT_URL`, credentials, and
+`S3_PUBLIC_URL_TEMPLATE` in `.env` and rebuild. No code changes required.
+Set `COMPOSE_PROFILES=` (empty) to skip the RustFS sidecar when using a managed
+bucket.
 
-   # Platform integration
-   ALLOWED_CORS_ORIGINS=["http://127.0.0.1:8000", "https://your-platform.com"]
-   AUTHORIZED_API_KEYS=["your-api-key-from-platform"]
-   ```
-
-**Security Note**: Keep API keys secure and never commit them to version control.
-
-### Step 5: Start Camera Service
-
-1. **Launch camera API**:
-
-   ```bash
-   uv run fastapi run app/main.py --port 8018
-   ```
-
-2. **Test installation**:
-
-   - API documentation: `http://your-pi-ip:8018/docs`
-   - Live stream: `http://your-pi-ip:8018/stream/watch`
-   - Capture test: Use `/capture` endpoint
-
-3. **Verify platform connection**:
-   <!-- TODO: Replace by description of UI flow on main platform once available -->
-
-   - Access camera from main platform at the `/plugins/rpi-cam/camera/{camera_id}` endpoint
-
-## Usage
-
-### Local Testing
-
-- **API documentation**: Full interactive API available at `/docs` endpoint
-- **Live preview**: Real-time camera feed at `/stream/watch`
-- **Manual capture**: Test image capture using `/capture` endpoint
-- **Health monitoring**: Check device status at `/status`
-
-### Production Operation
-
-Once configured, the camera can be operated from the main platform. See
-[Platform Documentation](https://docs.cml-relab.org/user-guides/rpi-cam/) for more details.
+Profiles combine freely: `COMPOSE_PROFILES=standalone,observability-ship`
+runs the RustFS sidecar *and* ships logs to your central Loki.
 
 ## Troubleshooting
 
-**Camera not detected**:
+**Camera not detected?** Run `rpicam-hello --list-cameras`
 
-```bash
-# Check camera connection
-vcgencmd get_camera
+**Won't connect?** See [INSTALL.md — Troubleshooting](INSTALL.md#troubleshooting) for connection-specific issues.
 
-# Test camera module
-libcamera-hello --list-cameras
-```
-
-**API won't start**:
-
-- Check that port 8018 is available: `sudo netstat -tlnp | grep :8018`
-- Verify all dependencies installed correctly
-- Review error logs for specific issues
-- Test with debug mode: `uv run python app/main.py --log-level debug`
-
-**Platform can't connect**:
-
-- Confirm API key matches platform registration
-- Check CORS origins include platform URL
-- Test network connectivity between Pi and platform
-- Verify firewall rules on both sides
-- Test API directly at `http://your-pi-ip:8018/docs`
-
-**Poor image quality**:
-
-- Clean camera lens carefully
-- Improve lighting conditions at capture location
-- Check camera module connection to Pi
-- Adjust camera settings through API parameters
-
-## Development
-
-### Development Environment
-
-```bash
-# Install with development dependencies
-uv sync
-
-# Install pre-commit hooks
-uv run pre-commit install
-
-# Start development server with hot reload
-uv run fastapi dev
-```
+**Want to contribute?** See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
