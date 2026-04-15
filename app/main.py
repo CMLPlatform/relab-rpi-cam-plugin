@@ -1,6 +1,7 @@
 """Main module for the Raspberry Pi camera streaming application."""
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections import defaultdict
@@ -38,6 +39,23 @@ logger = logging.getLogger(__name__)
 # Rate limit constants used by the rate limiter middleware
 RATE_LIMIT_METHOD = "POST"
 RATE_LIMIT_PATH = "/auth/login"
+
+
+async def close_redis() -> None:
+    """Best-effort Redis shutdown hook.
+
+    The current app does not keep a Redis client alive in-process, but tests
+    and future integrations can monkeypatch this hook to verify shutdown
+    ordering without importing extra modules at startup.
+    """
+
+
+async def close_email_checker() -> None:
+    """Best-effort email-checker shutdown hook.
+
+    Kept as a no-op by default so lifespan teardown can call it safely even
+    when the optional checker is not configured in this repo variant.
+    """
 
 
 class RateLimiter:
@@ -112,7 +130,7 @@ class RateLimiter:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app' is expected by function signature
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # 'app' is expected by function signature
     """Lifespan event handler for FastAPI application.
 
     Note that the camera is set up lazily to avoid unnecessary resource use.
@@ -204,6 +222,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001 # 'app
     # Cleanup camera resources
     await camera_manager.cleanup(force=True)
     logger.info("Camera resources cleaned up")
+
+    # Optional shutdown hooks for integrations that are stubbed in tests or
+    # only enabled in other deployments. Each hook is isolated so one failure
+    # does not prevent the others from running.
+    for close_hook in (close_redis, close_email_checker):
+        with contextlib.suppress(Exception):
+            await close_hook()
 
 
 app = FastAPI(
