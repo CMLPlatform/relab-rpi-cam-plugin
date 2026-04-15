@@ -1,6 +1,7 @@
 """Router for camera status endpoints."""
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from relab_rpi_cam_models.camera import CameraStatusView
 
 from app.api.dependencies.camera_management import CameraManagerDependency
@@ -21,6 +22,23 @@ async def get_camera_status(
 ) -> CameraStatusView:
     """Return the current camera mode and any active stream details."""
     return await camera_manager.get_status()
+
+
+@router.get(
+    "/snapshot",
+    summary="Get low-res JPEG snapshot for viewfinder preview",
+    description=(
+        "Fetch a single low-resolution preview frame from the camera without saving it. "
+        "Returns 409 while a YouTube stream is active."
+    ),
+)
+async def get_camera_snapshot(camera_manager: CameraManagerDependency) -> Response:
+    """Return a low-resolution JPEG snapshot from the camera."""
+    if camera_manager.stream.is_active:
+        raise HTTPException(status_code=409, detail="Preview unavailable while a stream is active.")
+
+    snapshot = await camera_manager.capture_snapshot_jpeg()
+    return Response(content=snapshot, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.get(
