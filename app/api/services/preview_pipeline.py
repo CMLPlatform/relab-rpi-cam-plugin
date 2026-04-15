@@ -43,10 +43,9 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# Default MediaMTX ingest target. Resolves through docker's host-gateway since
-# the app container is on the bridge network and MediaMTX runs on the host
-# network (see compose.yml).
-DEFAULT_MEDIAMTX_URL = "rtsp://host.docker.internal:8554/cam-preview"
+# Default MediaMTX ingest target. Both services run on the host network so this
+# is a plain loopback address (see compose.yml).
+DEFAULT_MEDIAMTX_URL = "rtsp://localhost:8554/cam-preview"
 _DEFAULT_LORES_BITRATE = 500_000
 
 

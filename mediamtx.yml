@@ -62,11 +62,10 @@ hlsAllowOrigin: '*'
 
 # Runtime control API — the plugin's ``mediamtx_client`` uses this to add/remove
 # the YouTube egress on the ``cam-hires`` path when the user starts/stops a
-# stream. Bound to all interfaces so the ``app`` container can reach it via
-# ``host.docker.internal`` (Docker bridge gateway → host). Access from outside
-# the Pi's local network is blocked at the router level.
+# stream. Localhost-only: the ``app`` container now runs on the host network so
+# it can reach this directly without bridging.
 api: yes
-apiAddress: :9997
+apiAddress: 127.0.0.1:9997
 
 pathDefaults:
   # Accept publish attempts from anywhere on the trusted host network.
