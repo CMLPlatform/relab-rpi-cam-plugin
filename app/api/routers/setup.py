@@ -7,7 +7,7 @@ import logging
 
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, Response
 
 from app.api.routers.local_access import _get_candidate_urls
 from app.core.config import DEFAULT_PAIRING_BACKEND_URL, clear_runtime_relay_credentials, settings
@@ -30,18 +30,6 @@ _PAIRING_BACKEND_REACHABILITY_TIMEOUT = httpx.Timeout(connect=1.5, read=1.5, wri
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["setup"])
-
-
-def _setup_state_payload() -> dict[str, object]:
-    """Return the small state bundle the setup page uses for live refreshes."""
-    pairing = get_pairing_state()
-    return {
-        "relay_enabled": settings.relay_enabled,
-        "pairing_status": pairing.status,
-        "pairing_code": pairing.code,
-        "pairing_error": pairing.error,
-        "pairing_expires_at_iso": pairing.expires_at.isoformat() if pairing.expires_at else "",
-    }
 
 
 async def _pairing_backend_reachable() -> bool:
@@ -92,15 +80,8 @@ async def setup_page(request: Request) -> HTMLResponse:
             "connection_host": connection_host,
             "lan_ips": lan_ips,
             "pairing_backend_reachable": pairing_backend_reachable,
-            "setup_state": _setup_state_payload(),
         },
     )
-
-
-@router.get("/setup/state")
-async def setup_state() -> JSONResponse:
-    """Return the current setup state for live page refreshes."""
-    return JSONResponse(_setup_state_payload())
 
 
 @router.delete("/pairing/credentials", status_code=204)
