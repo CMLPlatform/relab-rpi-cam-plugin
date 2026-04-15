@@ -1,61 +1,53 @@
-"""Process-local signals published by the relay client.
-
-The relay client (``app.utils.relay``) is an outbound WebSocket that either
-sits connected-but-idle for most of the day or handles bursts of commands
-when a user opens the mosaic / camera detail screen. Other services (the
-preview sleeper, telemetry, tests) want to know two cheap things about it:
-
-1. **Is the relay currently connected?** — used to gate work that doesn't
-   matter when nobody can reach us (e.g. the lores preview encoder).
-2. **When did we last see any activity on the relay?** — used to hibernate
-   the preview encoder after a configurable idle window.
-
-This module owns those two scalars behind module-level globals + thin
-accessors. No locks: the writes are single monotonic timestamps and single
-bools, and async single-threaded code doesn't need CAS semantics.
-"""
+"""Process-local relay activity state."""
 
 from __future__ import annotations
 
 import time
 
-_connected: bool = False
-_last_activity_monotonic: float | None = None
 
+class RelayRuntimeState:
+    """Own relay connectivity and activity timestamps for one app runtime."""
 
-def mark_relay_connected() -> None:
-    """Called by the relay client on a successful WebSocket handshake."""
-    global _connected, _last_activity_monotonic  # noqa: PLW0603
-    _connected = True
-    _last_activity_monotonic = time.monotonic()
+    def __init__(self) -> None:
+        self._connected = False
+        self._last_activity_monotonic: float | None = None
+        self._last_hls_activity_monotonic: float | None = None
 
+    def mark_connected(self) -> None:
+        """Record a successful WebSocket handshake."""
+        self._connected = True
+        self._last_activity_monotonic = time.monotonic()
 
-def mark_relay_disconnected() -> None:
-    """Called when the WebSocket closes or the loop exits."""
-    global _connected  # noqa: PLW0603
-    _connected = False
+    def mark_disconnected(self) -> None:
+        """Record that the relay is currently disconnected."""
+        self._connected = False
 
+    def mark_activity(self) -> None:
+        """Record inbound relay activity."""
+        self._last_activity_monotonic = time.monotonic()
 
-def mark_relay_activity() -> None:
-    """Called on every inbound command — resets the idle timer."""
-    global _last_activity_monotonic  # noqa: PLW0603
-    _last_activity_monotonic = time.monotonic()
+    def mark_hls_activity(self) -> None:
+        """Record local HLS activity."""
+        self._last_hls_activity_monotonic = time.monotonic()
 
+    def is_connected(self) -> bool:
+        """Whether the relay currently holds an open WebSocket."""
+        return self._connected
 
-def is_relay_connected() -> bool:
-    """Whether the relay currently holds an open WebSocket to the backend."""
-    return _connected
+    def seconds_since_last_activity(self) -> float | None:
+        """Monotonic seconds since the last inbound relay command."""
+        if self._last_activity_monotonic is None:
+            return None
+        return time.monotonic() - self._last_activity_monotonic
 
+    def seconds_since_last_hls_activity(self) -> float | None:
+        """Monotonic seconds since the last local HLS fetch."""
+        if self._last_hls_activity_monotonic is None:
+            return None
+        return time.monotonic() - self._last_hls_activity_monotonic
 
-def seconds_since_last_activity() -> float | None:
-    """Monotonic seconds since the last inbound command. ``None`` if never."""
-    if _last_activity_monotonic is None:
-        return None
-    return time.monotonic() - _last_activity_monotonic
-
-
-def reset_for_tests() -> None:
-    """Reset module globals (tests only)."""
-    global _connected, _last_activity_monotonic  # noqa: PLW0603
-    _connected = False
-    _last_activity_monotonic = None
+    def reset(self) -> None:
+        """Reset activity state. Useful in tests and on app restarts."""
+        self._connected = False
+        self._last_activity_monotonic = None
+        self._last_hls_activity_monotonic = None

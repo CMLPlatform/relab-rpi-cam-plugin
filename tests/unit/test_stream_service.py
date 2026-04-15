@@ -9,8 +9,7 @@ from relab_rpi_cam_models.stream import StreamMode
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services import stream as stream_service
 from app.api.services.mediamtx_client import HIRES_RTSP_URL
-
-EMBED_URL = "https://www.youtube.com/embed/broadcast-key"
+from tests.constants import YOUTUBE_EMBED_URL, YOUTUBE_WATCH_URL
 
 
 class TestStreamUrls:
@@ -22,11 +21,11 @@ class TestStreamUrls:
             stream_key=SecretStr("stream-key"),
             broadcast_key=SecretStr("broadcast-key"),
         )
-        assert stream_service.get_broadcast_url(config) == AnyUrl("https://youtube.com/watch?v=broadcast-key")
+        assert stream_service.get_broadcast_url(config) == AnyUrl(YOUTUBE_WATCH_URL)
 
     def test_embed_url(self) -> None:
         """A public watch URL converts into the matching embed URL."""
-        assert stream_service.get_youtube_embed_url(AnyUrl("https://youtube.com/watch?v=broadcast-key")) == EMBED_URL
+        assert stream_service.get_youtube_embed_url(AnyUrl(YOUTUBE_WATCH_URL)) == YOUTUBE_EMBED_URL
 
 
 class TestValidateYoutubeMode:

@@ -8,17 +8,22 @@ jti, and the ``kid`` header set to the camera's relay key id.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from app.core.config import settings
+from app.core.runtime import AppRuntime, set_active_runtime
 from app.utils.device_jwt import (
     DEVICE_ASSERTION_AUDIENCE,
     DEVICE_ASSERTION_TTL_SECONDS,
     build_device_assertion,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 _EXPECTED_ALG = "ES256"
 _KID_DEFAULT = "cam-key-42"
@@ -39,15 +44,24 @@ def _fresh_p256_pem() -> str:
 
 
 @pytest.fixture
-def _signing_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Install a valid signing key + identity on the settings singleton."""
-    pem = _fresh_p256_pem()
-    monkeypatch.setattr(settings, "relay_private_key_pem", pem)
-    monkeypatch.setattr(settings, "relay_key_id", _KID_DEFAULT)
-    monkeypatch.setattr(settings, "relay_camera_id", _CAMERA_ID_DEFAULT)
+def _signing_runtime() -> Iterator[None]:
+    """Install a valid signing key + identity on the active runtime."""
+    runtime = AppRuntime()
+    runtime.runtime_state.set_relay_credentials(
+        relay_backend_url="wss://backend.example/ws",
+        relay_camera_id=_CAMERA_ID_DEFAULT,
+        relay_auth_scheme="device_assertion",
+        relay_key_id=_KID_DEFAULT,
+        relay_private_key_pem=_fresh_p256_pem(),
+    )
+    set_active_runtime(runtime)
+    try:
+        yield
+    finally:
+        set_active_runtime(None)
 
 
-@pytest.mark.usefixtures("_signing_settings")
+@pytest.mark.usefixtures("_signing_runtime")
 class TestBuildDeviceAssertion:
     """Shape assertions for the minted JWT."""
 
@@ -82,7 +96,7 @@ class TestBuildDeviceAssertion:
 class TestBuildDeviceAssertionRoundTrip:
     """Round-trip: sign with a fresh private key, verify with its public counterpart."""
 
-    def test_token_is_verifiable_with_matching_public_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_token_is_verifiable_with_matching_public_key(self) -> None:
         """Round-trip: sign with the installed private key, verify with its public counterpart."""
         private_key = ec.generate_private_key(ec.SECP256R1())
         private_pem = private_key.private_bytes(
@@ -98,11 +112,20 @@ class TestBuildDeviceAssertionRoundTrip:
             )
             .decode()
         )
-        monkeypatch.setattr(settings, "relay_private_key_pem", private_pem)
-        monkeypatch.setattr(settings, "relay_key_id", "cam-key-round-trip")
-        monkeypatch.setattr(settings, "relay_camera_id", _CAMERA_ID_ROUND_TRIP)
+        runtime = AppRuntime()
+        runtime.runtime_state.set_relay_credentials(
+            relay_backend_url="wss://backend.example/ws",
+            relay_camera_id=_CAMERA_ID_ROUND_TRIP,
+            relay_auth_scheme="device_assertion",
+            relay_key_id="cam-key-round-trip",
+            relay_private_key_pem=private_pem,
+        )
+        set_active_runtime(runtime)
+        try:
+            token = build_device_assertion()
+        finally:
+            set_active_runtime(None)
 
-        token = build_device_assertion()
         decoded = jwt.decode(token, public_pem, algorithms=[_EXPECTED_ALG], audience=DEVICE_ASSERTION_AUDIENCE)
 
         assert decoded["iss"] == _ISS_ROUND_TRIP

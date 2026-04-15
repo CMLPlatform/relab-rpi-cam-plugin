@@ -19,7 +19,7 @@ This installs dependencies, configures your venv, and sets up pre-commit hooks.
 Start with hot reload:
 
 ```sh
-uv run fastapi dev app/main.py --port 8018
+just dev
 ```
 
 The API will be available at `http://localhost:8018/docs`.
@@ -28,9 +28,11 @@ The API will be available at `http://localhost:8018/docs`.
 
 ```
 app/
-  main.py              # FastAPI application entry point
-  api/routers/         # API endpoint definitions
-  utils/               # Utility modules (camera, files, relay, etc.)
+  main.py              # FastAPI app assembly and lifespan wiring
+  core/runtime.py      # Runtime-owned process services and task tracking
+  api/routers/         # HTTP translation layer
+  api/services/        # Application services and adapters
+  utils/               # Infra helpers (relay, pairing, logging, telemetry, etc.)
   static/              # CSS and frontend assets
   templates/           # HTML templates (setup page)
 relab_rpi_cam_models/
@@ -48,7 +50,16 @@ scripts/
 ### Run Tests
 
 ```sh
-uv run pytest tests/
+uv run pytest tests
+```
+
+Or via `just`:
+
+```sh
+just test
+just test-unit
+just test-integration
+just test-slowest
 ```
 
 ### Coverage
@@ -56,7 +67,7 @@ uv run pytest tests/
 Check test coverage:
 
 ```sh
-uv run pytest --cov=app tests/
+uv run pytest --cov=app tests
 ```
 
 The project aims for >80% coverage. CI will fail if coverage drops.
@@ -74,28 +85,58 @@ Hooks run before every commit. To manually check:
 pre-commit run --all-files
 ```
 
+Recommended local commands:
+
+```sh
+just lint
+just typecheck
+just test
+just test-slowest
+just check
+```
+
+### Test suite policy
+
+The suite is intentionally split into two main layers:
+
+- `tests/unit/`: pure function/service tests and small collaborators
+- `tests/integration/`: ASGI app, route, and lifespan behavior
+
+Custom pytest markers mirror that split:
+
+- `@pytest.mark.unit`
+- `@pytest.mark.integration`
+- `@pytest.mark.slow` for intentionally longer worker/lifecycle tests
+
+Prefer these patterns when adding tests:
+
+- use the shared runtime/app fixtures from `tests/conftest.py`
+- use typed helpers from `tests/support/` for recurring fakes
+- assert behavior and public contracts before asserting internal call choreography
+- patch private module internals only when there is no stable seam to target
+
+When cleaning up old tests:
+
+- delete tests whose only purpose was covering removed implementation details
+- keep or replace tests that still protect externally meaningful behavior
+- avoid snapshot-style broad response dumps when explicit assertions are clearer
+
 ## Common Tasks
 
 ### Add a New Endpoint
 
-1. Create a new route file in `app/api/routers/`
-
-1. Import and include it in `app/main.py`:
-
-   ```python
-   from app.api.routers import your_router
-   app.include_router(your_router.router)
-   ```
-
-1. Add tests in `tests/unit/`
+1. Add or extend a router in `app/api/routers/`
+1. Keep HTTP translation in the router and put orchestration in `app/api/services/`
+1. Wire dependencies through runtime-aware helpers rather than importing process globals
+1. Add unit or integration coverage in `tests/`
 
 ### Update Camera Logic
 
-- Camera backend interface: `app/api/services/camera_backend.py`
-- Camera manager orchestration: `app/api/services/camera_manager.py`
-- Runtime stream state: `app/api/services/stream_state.py`
-- Shared stream DTOs: `relab_rpi_cam_models/src/relab_rpi_cam_models/stream.py`
-- Tests: `tests/unit/test_*.py`
+- Camera backend contract: `app/api/services/camera_backend.py`
+- Camera orchestration: `app/api/services/camera_manager.py`
+- Runtime-owned service wiring: `app/core/runtime.py`
+- Shared DTOs: `relab_rpi_cam_models/src/relab_rpi_cam_models/`
+- Tests: `tests/unit/` and `tests/integration/`
 
 ### Update Models
 
@@ -106,7 +147,7 @@ Shared cross-repo contract DTOs live in the `relab_rpi_cam_models` package. Keep
 
 ## Before Submitting a PR
 
-1. **Run tests**: `uv run pytest tests/`
+1. **Run tests**: `uv run pytest tests`
 1. **Check coverage**: Aim for >80%
 1. **Run pre-commit**: `pre-commit run --all-files`
 1. **Update docs**: If adding features, update relevant docs
@@ -114,11 +155,42 @@ Shared cross-repo contract DTOs live in the `relab_rpi_cam_models` package. Keep
 
 ## Architecture Notes
 
+### Runtime shape
+
+The app owns its long-lived services through `app.core.runtime.AppRuntime`.
+That runtime tracks:
+
+- the shared camera manager
+- relay state and relay service
+- pairing state and pairing service
+- preview pipeline / sleeper
+- thermal governor
+- managed background tasks
+- recurring maintenance tasks
+- the optional observability handle
+
+New long-lived services should be attached there rather than added as new
+module-level singletons. When refactoring older code, prefer deleting hidden
+globals instead of adding new compatibility shims around them.
+
+Mutable runtime data follows the same rule:
+
+- `Settings`: env-backed, effectively static process config
+- `RuntimeState`: live mutable relay/local/auth state for the running process
+
+If a value changes while the app is running, it should usually live on the
+runtime side, not on `settings` and not in a module global.
+
+The same ownership rule applies to orchestration code:
+
+- `PairingService` is the only production pairing entrypoint
+- `RelayService` is the only production relay entrypoint
+
 ### Connection
 
-The plugin connects to the RELab backend via **WebSocket relay** (`app/utils/relay.py`). The Pi initiates an outbound WebSocket connection; the backend sends commands through this tunnel. No public IP or port forwarding is needed.
-
-See the relay credential format in [INSTALL.md](INSTALL.md#option-b-manual-websocket-setup).
+The plugin connects to the RELab backend via **WebSocket relay** (`app/utils/relay.py`).
+The Pi initiates an outbound WebSocket connection; the backend sends commands
+through this tunnel. No public IP or port forwarding is needed.
 
 ### Camera Capture
 
@@ -127,7 +199,9 @@ See the relay credential format in [INSTALL.md](INSTALL.md#option-b-manual-webso
 
 ### Streaming
 
-YouTube RTMP is the only supported streaming mode. The Pi sends HLS segments to YouTube's ingestion API via ffmpeg. Local HLS preview and MJPEG streaming have been removed (see ADR-001).
+YouTube RTMP is the only supported streaming mode. The Pi publishes into
+MediaMTX locally and MediaMTX handles the YouTube egress path. Local HLS
+preview and MJPEG streaming have been removed.
 
 ## Debugging
 
@@ -144,7 +218,7 @@ If you start the optional `observability-ship` profile, Alloy ships the app's st
 View direct server logs:
 
 ```sh
-uv run fastapi dev app/main.py
+just dev
 ```
 
 ### Interactive Testing
@@ -154,11 +228,17 @@ uv run fastapi dev app/main.py
 
 ### Environment Variables
 
-All configuration is in `.env`. Key debugging settings:
+Configuration precedence is:
+
+1. environment variables
+1. relay credentials file (`~/.config/relab/relay_credentials.json`) for generated/runtime secrets
+1. generated defaults on first boot where applicable
+
+Key debugging settings:
 
 - `DEBUG=true` — Enable debug logging
 - `CAMERA_DEVICE_NUM=0` — Switch camera device (if multi-camera setup)
-- `LOG_LEVEL=debug` — More verbose logs
+- `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT=...` — enable trace export
 
 ## Release Process
 

@@ -8,7 +8,9 @@ from httpx import AsyncClient
 from app.api.services.camera_manager import CameraControlsNotSupportedError, CameraManager
 
 CURRENT_MODE_KEY = "current_mode"
+LAST_IMAGE_URL_KEY = "last_image_url"
 STREAM_KEY = "stream"
+JPEG_MAGIC_PREFIX = b"\xff\xd8"
 
 
 class TestCameraStatus:
@@ -24,6 +26,7 @@ class TestCameraStatus:
         resp = await client.get("/camera")
         data = resp.json()
         assert CURRENT_MODE_KEY in data
+        assert LAST_IMAGE_URL_KEY in data
         assert STREAM_KEY in data
 
     async def test_status_idle_by_default(self, client: AsyncClient) -> None:
@@ -32,6 +35,14 @@ class TestCameraStatus:
         data = resp.json()
         assert data["current_mode"] is None
         assert data["stream"] is None
+        assert data["last_image_url"] is None
+
+    async def test_snapshot_returns_jpeg(self, client: AsyncClient) -> None:
+        """Test that the snapshot endpoint returns a JPEG preview frame."""
+        resp = await client.get("/camera/snapshot")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("image/jpeg")
+        assert resp.content[:2] == JPEG_MAGIC_PREFIX
 
 
 class TestCameraControls:

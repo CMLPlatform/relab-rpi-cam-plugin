@@ -11,6 +11,7 @@ from app.api.exceptions import ActiveStreamError
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 from app.api.services.camera_manager import CameraManager
 from app.api.services.stream_state import ActiveStreamState
+from tests.constants import YOUTUBE_WATCH_URL_PREFIX
 
 YOUTUBE_CONFIG_KEY = "youtube_config"
 VALID_BODY = {"stream_key": "secret-stream", "broadcast_key": "public-broadcast"}
@@ -127,7 +128,7 @@ class TestStreamStartErrorPaths:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``ActiveStreamError`` from the backend -> 409."""
-        active = ActiveStreamState(mode=StreamMode.YOUTUBE, url=AnyUrl("https://youtube.com/watch?v=abc"))
+        active = ActiveStreamState(mode=StreamMode.YOUTUBE, url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}abc"))
         monkeypatch.setattr(
             camera_manager,
             "start_streaming",

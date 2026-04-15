@@ -5,6 +5,7 @@ from httpx import AsyncClient
 
 from app.api.dependencies.auth import create_session, reload_authorized_hashes
 from app.core.config import settings
+from app.core.runtime import AppRuntime
 
 VALID_API_KEY = "valid-key"
 AUTH_COOKIE_NAME = "relab_session"
@@ -12,11 +13,10 @@ SECURE_ATTR = "Secure"
 
 
 @pytest.fixture(autouse=True)
-def _set_test_api_key() -> None:
+def _set_test_api_key(app_runtime: AppRuntime) -> None:
     """Ensure a known API key is available for auth tests."""
-    if VALID_API_KEY not in settings.authorized_api_keys:
-        settings.authorized_api_keys.append(VALID_API_KEY)
-        reload_authorized_hashes()
+    app_runtime.runtime_state.add_authorized_api_key(VALID_API_KEY)
+    reload_authorized_hashes(app_runtime.runtime_state)
 
 
 class TestAuthMiddleware:

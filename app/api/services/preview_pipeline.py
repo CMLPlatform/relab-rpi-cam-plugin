@@ -23,12 +23,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import functools
 import logging
 from typing import TYPE_CHECKING, Protocol, cast
 
 from app.api.services.hardware_protocols import Picamera2Like
 from app.api.services.hardware_stubs import FfmpegOutputStub, H264EncoderStub
+from app.utils.logging import build_log_extra
 
 if TYPE_CHECKING:
     from picamera2.encoders import H264Encoder
@@ -43,10 +43,9 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# Default MediaMTX ingest target. Resolves through docker's host-gateway since
-# the app container is on the bridge network and MediaMTX runs on the host
-# network (see compose.yml).
-DEFAULT_MEDIAMTX_URL = "rtsp://host.docker.internal:8554/cam-preview"
+# Default MediaMTX ingest target. Both services run on the host network so this
+# is a plain loopback address (see compose.yml).
+DEFAULT_MEDIAMTX_URL = "rtsp://localhost:8554/cam-preview"
 _DEFAULT_LORES_BITRATE = 500_000
 
 
@@ -109,12 +108,17 @@ class PreviewPipelineManager:
             self._bitrate = bitrate
             if self._encoder is None:
                 return
-            logger.info("Reconfiguring lores preview encoder to %d bps", bitrate)
+            logger.info("Reconfiguring lores preview encoder to %d bps", bitrate, extra=build_log_extra())
             await self._stop(camera)
             await self._start(camera)
 
     async def _start(self, camera: Picamera2Like) -> None:
-        logger.info("Starting lores preview pipeline → %s @ %d bps", self._target_url, self._bitrate)
+        logger.info(
+            "Starting lores preview pipeline → %s @ %d bps",
+            self._target_url,
+            self._bitrate,
+            extra=build_log_extra(),
+        )
         # The runtime H264Encoder sometimes accepts a bitrate kwarg, but the
         # bundled typing stubs don't expose that parameter. Create the encoder
         # without kwargs and set a runtime attribute for callers that expect it.
@@ -139,20 +143,9 @@ class PreviewPipelineManager:
         self._encoder = encoder
 
     async def _stop(self, camera: Picamera2Like) -> None:
-        logger.info("Stopping lores preview pipeline")
+        logger.info("Stopping lores preview pipeline", extra=build_log_extra())
         try:
             await asyncio.to_thread(camera.stop_encoder, self._encoder)
         except (OSError, RuntimeError) as exc:
-            logger.warning("Preview pipeline stop had a non-fatal error: %s", exc)
+            logger.warning("Preview pipeline stop had a non-fatal error: %s", exc, extra=build_log_extra())
         self._encoder = None
-
-
-@functools.lru_cache(maxsize=1)
-def get_preview_pipeline_manager() -> PreviewPipelineManager:
-    """Return the process-wide preview pipeline manager."""
-    return PreviewPipelineManager()
-
-
-def reset_preview_pipeline_manager() -> None:
-    """Reset the singleton (tests only)."""
-    get_preview_pipeline_manager.cache_clear()
