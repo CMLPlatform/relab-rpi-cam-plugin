@@ -214,14 +214,14 @@ html[data-theme="dark"] body.setup-page {
     --setup-muted: #bfd1e6;
     --setup-soft: rgba(191, 209, 230, 0.08);
     --setup-soft-strong: rgba(191, 209, 230, 0.12);
-    --setup-card-bg: rgba(18, 30, 48, 0.82);
-    --setup-card-bg-soft: rgba(14, 25, 41, 0.82);
-    --setup-card-bg-strong: rgba(20, 34, 54, 0.9);
-    --setup-code-bg: rgba(255, 255, 255, 0.08);
+    --setup-card-bg: rgba(10, 20, 34, 0.96);
+    --setup-card-bg-soft: rgba(12, 24, 40, 0.94);
+    --setup-card-bg-strong: rgba(15, 28, 48, 0.96);
+    --setup-code-bg: rgba(255, 255, 255, 0.06);
     --setup-chip-bg: rgba(191, 209, 230, 0.08);
-    --setup-success-bg: linear-gradient(135deg, rgba(8, 48, 37, 0.9), rgba(14, 25, 41, 0.9));
-    --setup-warning-bg: linear-gradient(135deg, rgba(74, 40, 10, 0.78), rgba(14, 25, 41, 0.9));
-    --setup-callout-bg: linear-gradient(180deg, rgba(74, 40, 10, 0.58), rgba(46, 28, 11, 0.56));
+    --setup-success-bg: rgba(8, 28, 24, 0.96);
+    --setup-warning-bg: rgba(43, 26, 6, 0.96);
+    --setup-callout-bg: rgba(42, 27, 8, 0.9);
     --setup-callout-text: #fde7c2;
     --setup-callout-pill-bg: rgba(255, 255, 255, 0.08);
     --setup-callout-pill-text: #ffe4b5;
@@ -262,7 +262,7 @@ html[data-theme="dark"] body.setup-page {
 }
 
 .site-header {
-    width: min(1120px, calc(100vw - 24px));
+    width: min(880px, calc(100vw - 24px));
     margin: 0 auto;
     padding: 18px 0 4px;
     display: flex;
@@ -786,6 +786,8 @@ body.setup-page a {
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .setup-debug__text {
@@ -816,6 +818,8 @@ body.setup-page a {
     flex-wrap: wrap;
     gap: 6px;
     align-items: baseline;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .pairing-countdown {
@@ -865,14 +869,15 @@ body.setup-page a {
 
 .setup-state-banner {
     width: 100%;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
     gap: 14px;
     padding: 14px 16px;
     border-radius: 18px;
     border: 1px solid rgba(148, 163, 184, 0.14);
     background: var(--setup-card-bg);
+    max-width: 100%;
 }
 
 .setup-state-banner--success {
@@ -893,10 +898,20 @@ body.setup-page a {
     display: grid;
     gap: 4px;
     min-width: 0;
+    max-width: 100%;
 }
 
 .setup-state-banner__copy p {
     margin: 0;
+}
+
+.setup-state-banner .online,
+.setup-state-banner .offline {
+    color: var(--setup-text);
+}
+
+.setup-state-banner .setup-debug__text {
+    color: var(--setup-muted);
 }
 
 .setup-actions {
@@ -918,6 +933,7 @@ body.setup-page a {
     background: var(--setup-card-bg-soft);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
     min-width: 0;
+    max-width: 100%;
 }
 
 .setup-status summary {
@@ -1027,10 +1043,11 @@ body.setup-page a {
 
 .setup-inline-metrics {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 10px;
     width: 100%;
     min-width: 0;
+    max-width: 100%;
 }
 
 .setup-inline-metrics--soft .setup-inline-metric {
@@ -1045,6 +1062,7 @@ body.setup-page a {
     border: 1px solid rgba(148, 163, 184, 0.12);
     border-radius: 16px;
     background: var(--setup-card-bg-soft);
+    max-width: 100%;
 }
 
 .setup-value-list {
@@ -1052,7 +1070,8 @@ body.setup-page a {
     gap: 10px;
     width: 100%;
     min-width: 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    max-width: 100%;
 }
 
 .setup-value-card--key {
@@ -1067,6 +1086,7 @@ body.setup-page a {
     border: 1px solid rgba(148, 163, 184, 0.12);
     border-radius: 16px;
     background: var(--setup-card-bg-strong);
+    max-width: 100%;
 }
 
 .setup-value-card__header {
@@ -1110,6 +1130,7 @@ body.setup-page a {
     border-radius: 18px;
     border: 1px solid rgba(148, 163, 184, 0.16);
     background: var(--setup-card-bg);
+    max-width: 100%;
 }
 
 .setup-status td {
@@ -1335,8 +1356,8 @@ body.setup-page a {
     }
 
     .setup-state-banner {
+        grid-template-columns: 1fr;
         align-items: flex-start;
-        flex-direction: column;
     }
 
     .setup-value-list {
