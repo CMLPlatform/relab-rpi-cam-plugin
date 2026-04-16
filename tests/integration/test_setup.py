@@ -32,7 +32,11 @@ NEW_PAIRING_CODE_LABEL = "Generate a new pairing code"
 LATENCY_BOOST_TEXT = "Native RELab app latency boost"
 STANDALONE_CLIENTS_TEXT = "Browser and script access"
 LOCAL_KEY_WARNING_TEXT = "Relay pairing still uses the 6-character code above."
-LOCAL_KEY_NOTE_TEXT = "The local API works in browsers on your LAN, in the native RELab app, and in custom scripts."
+LOCAL_KEY_NOTE_TEXT = "Direct LAN access for browser, app, and scripts."
+LOCAL_API_KEY_TEXT = "Local API key"
+HLS_PREVIEW_TEXT = "HLS preview"
+PREVIEW_HLS_URL = f"http://{THIS_IP_PLACEHOLDER}:8018/preview/hls/cam-preview/index.m3u8"
+API_TEXT = "API"
 PAIRING_EXPIRY_ATTR = "data-pairing-expiry"
 PAIRING_TTL_ATTR = 'data-ttl-ms="600000"'
 UNPAIR_FUNCTION_CALL = "unpair()"
@@ -49,8 +53,9 @@ HEADER_NOSNIFF = "nosniff"
 HEADER_NO_REFERRER = "no-referrer"
 SETUP_CSP_DEFAULT = "default-src 'self'"
 SETUP_CSP_INLINE = "'unsafe-inline'"
-THEME_SELECT_MARKER = "data-theme-select"
+THEME_TOGGLE_MARKER = "data-theme-toggle"
 LOGO_SRC = "/static/logo.png"
+THEME_AUTO_LABEL = "Theme: Auto"
 
 
 class TestSetupPage:
@@ -104,7 +109,8 @@ class TestSetupPage:
     async def test_setup_page_renders_shared_header_and_theme_control(self, unauthed_client: AsyncClient) -> None:
         """The setup page should expose the shared site header affordances."""
         resp = await unauthed_client.get("/setup")
-        assert THEME_SELECT_MARKER in resp.text
+        assert THEME_TOGGLE_MARKER in resp.text
+        assert THEME_AUTO_LABEL in resp.text
         assert LOGO_SRC in resp.text
 
     async def test_setup_page_shows_pairing_url_and_change_hints_when_backend_is_reachable(
@@ -207,6 +213,21 @@ class TestSetupPage:
         assert STANDALONE_CLIENTS_TEXT in resp.text
         assert LOCAL_KEY_WARNING_TEXT in resp.text
         assert LOCAL_KEY_NOTE_TEXT in resp.text
+
+    async def test_setup_page_renders_local_access_as_compact_value_cards(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """Local access values should render in dedicated cards without raw line-break layout."""
+        self._runtime.runtime_state.set_local_api_key("test-local-api-key")
+        resp = await unauthed_client.get("/setup")
+        assert resp.status_code == 200
+        assert LOCAL_API_KEY_TEXT in resp.text
+        assert HLS_PREVIEW_TEXT in resp.text
+        assert PREVIEW_HLS_URL in resp.text
+        assert API_TEXT in resp.text
+        assert 'class="setup-value-list"' in resp.text
+        assert 'class="setup-value-card__content setup-value-card__content--secret"' in resp.text
 
     async def test_setup_page_falls_back_to_this_ip_placeholder_when_no_mdns_name(
         self,

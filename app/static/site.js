@@ -1,6 +1,12 @@
 const THEME_STORAGE_KEY = "relab-theme";
 const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 const themeStorage = window["localStorage"];
+const THEME_SEQUENCE = ["auto", "light", "dark"];
+const THEME_LABELS = {
+  auto: "Auto",
+  light: "Light",
+  dark: "Dark",
+};
 
 function resolveTheme(themePreference) {
   if (themePreference === "dark" || themePreference === "light") {
@@ -15,39 +21,48 @@ function applyTheme(themePreference) {
   document.documentElement.dataset.theme = resolvedTheme;
 }
 
-function syncThemeSelect() {
-  const select = document.querySelector("[data-theme-select]");
-  if (!select) {
+function syncThemeToggle() {
+  const toggle = document.querySelector("[data-theme-toggle]");
+  const themePreference = document.documentElement.dataset.themePreference || "auto";
+
+  if (!toggle) {
     return;
   }
-  select.value = document.documentElement.dataset.themePreference || "auto";
+
+  const themeLabel = THEME_LABELS[themePreference] || THEME_LABELS.auto;
+  toggle.dataset.themeState = themePreference;
+  toggle.setAttribute("aria-label", `Theme: ${themeLabel}`);
+  toggle.setAttribute("title", `Theme: ${themeLabel}`);
 }
 
 function onSystemThemeChange() {
   const themePreference = themeStorage ? themeStorage.getItem(THEME_STORAGE_KEY) || "auto" : "auto";
   if (themePreference === "auto") {
     applyTheme(themePreference);
-    syncThemeSelect();
+    syncThemeToggle();
   }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const select = document.querySelector("[data-theme-select]");
+  const toggle = document.querySelector("[data-theme-toggle]");
   const themePreference = themeStorage ? themeStorage.getItem(THEME_STORAGE_KEY) || "auto" : "auto";
 
   applyTheme(themePreference);
-  syncThemeSelect();
+  syncThemeToggle();
 
-  if (!select) {
+  if (!toggle) {
     return;
   }
 
-  select.addEventListener("change", (event) => {
-    const nextTheme = event.target.value;
+  toggle.addEventListener("click", () => {
+    const currentTheme = document.documentElement.dataset.themePreference || "auto";
+    const currentIndex = THEME_SEQUENCE.indexOf(currentTheme);
+    const nextTheme = THEME_SEQUENCE[(currentIndex + 1) % THEME_SEQUENCE.length];
     if (themeStorage) {
       themeStorage.setItem(THEME_STORAGE_KEY, nextTheme);
     }
     applyTheme(nextTheme);
+    syncThemeToggle();
   });
 });
 

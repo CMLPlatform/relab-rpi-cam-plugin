@@ -52,6 +52,17 @@ _SETUP_CSP = (
     "base-uri 'self'; "
     "form-action 'self'"
 )
+_DOCS_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: https://fastapi.tiangolo.com; "
+    "font-src 'self' data: https://cdn.jsdelivr.net; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
 _DEFAULT_CSP = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 _HTTPS_SCHEME = "https"
 _HTTP_SCOPE_TYPE = "http"
@@ -303,6 +314,8 @@ def _content_security_policy_for_path(path: str) -> str:
     """Return the appropriate CSP for the requested route."""
     if path in {"/", "/setup"}:
         return _SETUP_CSP
+    if path.startswith("/docs"):
+        return _DOCS_CSP
     return _DEFAULT_CSP
 
 
