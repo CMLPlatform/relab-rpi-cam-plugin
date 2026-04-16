@@ -349,7 +349,7 @@ if settings.local_mode_enabled:
         allow_origins=["*"],
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
-        allow_headers=["Content-Type", "Authorization", "Accept", settings.auth_key_name],
+        allow_headers=["Content-Type", "Authorization", "Accept", "X-Request-ID", settings.auth_key_name],
     )
 else:
     _cors_origins = [str(origin).rstrip("/") for origin in settings.allowed_cors_origins]
@@ -359,7 +359,7 @@ else:
         allow_origins=_cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
-        allow_headers=["Content-Type", "Authorization", "Accept", settings.auth_key_name],
+        allow_headers=["Content-Type", "Authorization", "Accept", "X-Request-ID", settings.auth_key_name],
     )
 
 
