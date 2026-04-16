@@ -12,6 +12,7 @@ from pydantic import AnyUrl
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 from relab_rpi_cam_models.images import ImageCaptureResponse, ImageCaptureStatus
 
+from app.api.exceptions import ActiveStreamError
 from app.api.schemas.camera_controls import (
     CameraControlsPatch,
     CameraControlsView,

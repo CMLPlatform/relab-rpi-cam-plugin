@@ -10,6 +10,7 @@ from app.core.runtime import AppRuntime
 VALID_API_KEY = "valid-key"
 AUTH_COOKIE_NAME = "relab_session"
 SECURE_ATTR = "Secure"
+REQUEST_ID_HEADER = "x-request-id"
 
 
 @pytest.fixture(autouse=True)
@@ -123,4 +124,4 @@ class TestCorsConfig:
         assert resp.status_code == 200
         allow_headers = resp.headers["access-control-allow-headers"].lower()
         assert settings.auth_key_name.lower() in allow_headers
-        assert "x-request-id" in allow_headers
+        assert REQUEST_ID_HEADER in allow_headers

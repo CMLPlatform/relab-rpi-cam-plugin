@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi import Path as FastAPIPath
 from pydantic import AfterValidator
 
+from app.api.dependencies.camera_management import CameraManagerDependency
 from app.api.services.camera_manager import CameraManager
 from app.api.services.preview_pipeline import PreviewPipelineManager
 from app.core.runtime import get_request_runtime
