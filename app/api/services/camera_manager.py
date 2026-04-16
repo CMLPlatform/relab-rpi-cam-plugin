@@ -138,18 +138,24 @@ class CameraManager:
 
     @contextlib.asynccontextmanager
     async def _locked(self) -> AsyncIterator[None]:
-        """Acquire the camera lock with a timeout, yielding inside the critical section.
+        """Acquire the camera lock with a timeout, then yield inside the critical section.
 
         Callers should use ``async with self._locked():`` so exceptions, early returns,
         and cancellation all release the lock automatically.
         """
+        acquired = False
         try:
             async with asyncio.timeout(self.lock_timeout):
-                async with self.lock:
-                    yield
+                await self.lock.acquire()
+                acquired = True
         except TimeoutError as e:
             err_msg = f"Failed to acquire camera lock - timeout error: {e}"
             raise RuntimeError(err_msg) from e
+        try:
+            yield
+        finally:
+            if acquired:
+                self.lock.release()
 
     async def setup_camera(self, mode: CameraMode) -> None:
         """Prepare the configured backend for the requested camera mode."""

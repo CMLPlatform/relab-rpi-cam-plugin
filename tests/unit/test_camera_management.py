@@ -373,6 +373,80 @@ class TestCameraManagerCapture:
         status = await manager.get_status()
         assert str(status.last_image_url) == EXAMPLE_IMAGE_URL
 
+    async def test_capture_allows_active_youtube_stream(self, tmp_path: Path) -> None:
+        """Normal still capture should remain allowed while a YouTube stream is active."""
+        backend = FakeBackend()
+        image = Image.new("RGB", (64, 64), color="purple")
+        backend.capture_image.return_value = CaptureResult(
+            image=image,
+            camera_properties={"Model": "mock-camera"},
+            capture_metadata={"FrameDuration": 33_333},
+        )
+
+        class _StubSink:
+            put = AsyncMock(
+                return_value=StoredImage(
+                    image_id="b" * 32,
+                    image_url=AnyUrl(EXAMPLE_IMAGE_URL),
+                )
+            )
+
+        manager = CameraManager(
+            backend=cast("StreamingCameraBackend", backend),
+            sink=_StubSink(),
+        )
+        manager.stream.mode = StreamMode.YOUTUBE
+        manager.stream.url = AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}active-broadcast")
+        manager.stream.started_at = datetime.now(UTC)
+
+        original = settings.image_path
+        settings.image_path = tmp_path / "images"
+        settings.image_path.mkdir()
+
+        try:
+            response = await manager.capture_jpeg()
+        finally:
+            settings.image_path = original
+
+        assert response.status == ImageCaptureStatus.UPLOADED
+        backend.capture_image.assert_awaited_once()
+
+    async def test_capture_allows_video_mode_preview_state(self, tmp_path: Path) -> None:
+        """Still capture should keep working while the backend is already in video mode."""
+        backend = FakeBackend()
+        backend.current_mode = CameraMode.VIDEO
+        image = Image.new("RGB", (64, 64), color="orange")
+        backend.capture_image.return_value = CaptureResult(
+            image=image,
+            camera_properties={"Model": "mock-camera"},
+            capture_metadata={"FrameDuration": 33_333},
+        )
+
+        class _StubSink:
+            put = AsyncMock(
+                return_value=StoredImage(
+                    image_id="c" * 32,
+                    image_url=AnyUrl(EXAMPLE_IMAGE_URL),
+                )
+            )
+
+        manager = CameraManager(
+            backend=cast("StreamingCameraBackend", backend),
+            sink=_StubSink(),
+        )
+
+        original = settings.image_path
+        settings.image_path = tmp_path / "images"
+        settings.image_path.mkdir()
+
+        try:
+            response = await manager.capture_jpeg()
+        finally:
+            settings.image_path = original
+
+        assert response.status == ImageCaptureStatus.UPLOADED
+        backend.capture_image.assert_awaited_once()
+
     async def test_capture_jpeg_writes_atomically(self, tmp_path: Path) -> None:
         """capture_jpeg must not leave a partially-written JPEG if encoding fails.
 
@@ -432,6 +506,35 @@ class TestCameraManagerSnapshot:
 
         with pytest.raises(ActiveStreamError):
             await manager.capture_snapshot_jpeg()
+
+
+class TestCameraManagerLocking:
+    """Tests for camera-manager lock timeout behavior."""
+
+    async def test_locked_times_out_only_while_waiting_for_lock(self) -> None:
+        """The lock timeout should apply to acquisition, not the whole critical section."""
+        manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
+        await manager.lock.acquire()
+
+        try:
+            with pytest.raises(RuntimeError, match="Failed to acquire camera lock"):
+                async with manager._locked():
+                    pytest.fail("critical section should never run when acquisition times out")
+        finally:
+            manager.lock.release()
+
+    async def test_locked_does_not_time_out_after_lock_is_acquired(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Long work inside the lock should not be cancelled by the acquisition timeout."""
+        manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
+        monkeypatch.setattr(manager, "lock_timeout", 0.01)
+
+        async with manager._locked():
+            await asyncio.sleep(0.02)
+
+        assert manager.lock.locked() is False
 
 
 class TestCameraManagerStopStreaming:
