@@ -1,5 +1,6 @@
 """Tests for camera management dependencies and orchestration."""
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,6 +13,7 @@ from fastapi import FastAPI, Request
 from PIL import Image
 from pydantic import AnyUrl, SecretStr
 from relab_rpi_cam_models.camera import CameraMode
+from relab_rpi_cam_models.images import ImageCaptureStatus
 from relab_rpi_cam_models.stream import StreamMode
 
 from app.api.dependencies import camera_management as camera_deps
