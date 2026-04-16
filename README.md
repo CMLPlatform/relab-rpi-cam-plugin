@@ -85,10 +85,11 @@ The browser-based RELab frontend is different: if it is served over HTTPS, moder
 1. Enter the pairing code shown on `/setup` (or in logs) in the RELab app
 1. Visit `http://your-pi-ip:8018` to test
    - `/setup` — Pairing and status
-   - `/hls/cam-preview/index.m3u8` — LL-HLS live preview (via the MediaMTX sidecar on :8888)
-   - `/stream/watch` — YouTube viewer UI for an active YouTube stream
+   - `/preview/hls/cam-preview/index.m3u8` — LL-HLS live preview (via the MediaMTX sidecar on :8888)
+   - `/preview/snapshot` — Low-res JPEG preview frame
    - `/camera/controls` — Discover/set camera controls (autofocus, exposure, etc.)
    - `/camera/focus` — Friendly focus controls (continuous/auto/manual)
+   - `/captures` — Trigger a still capture that uploads to the backend
    - `/docs` — API reference
 
 If you use Docker Compose on the Pi, generate `compose.override.yml` with `./scripts/generate_compose_override.py`. The override targets the existing `app` service from `compose.yml`, so the device mappings merge into the plugin container cleanly.
@@ -243,7 +244,7 @@ After this, the Pi is resolvable as `<hostname>.local` on macOS and Windows 10+ 
 
 - **Any Ethernet port** — Works on all RPi models and any Linux SBC. Connect directly with a cable or through a USB-C to Ethernet adapter. Link-local addressing (169.254.x.x) is negotiated automatically if no DHCP is present.
 - **USB gadget mode (USB-C data)** — Only available on RPi Zero 2W and some RPi 4 revisions (not RPi 5). Requires `dtoverlay=dwc2` + `g_ether` module; Pi appears at `192.168.7.1` on the host.
-- **Hardware-agnostic contract** — Any camera device that implements `GET /camera`, `POST /images`, and `GET /hls/*` with `X-API-Key` authentication works with the RELab frontend's local connection mode.
+- **Hardware-agnostic contract** — Any camera device that implements `GET /camera`, `POST /captures`, and `GET /preview/hls/*` with `X-API-Key` authentication works with the RELab frontend's local connection mode.
 
 ### Security
 

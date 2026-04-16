@@ -9,7 +9,7 @@ from app.api.dependencies.camera_management import CameraManagerDependency
 from app.api.exceptions import ActiveStreamError
 from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
 
-router = APIRouter(prefix="/stream", tags=["stream"])
+router = APIRouter(prefix="/streams/youtube", tags=["streams"])
 
 
 @router.post(

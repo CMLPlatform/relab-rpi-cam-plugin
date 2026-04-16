@@ -15,7 +15,7 @@ from tests.constants import EXAMPLE_IMAGE_URL, HTML_CONTENT_TYPE, YOUTUBE_TEST_B
 
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
-HLS_ROUTE_PATH = "/hls/{hls_path:path}"
+HLS_ROUTE_PATH = "/preview/hls/{hls_path:path}"
 DEFAULT_CSP = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 FRAME_OPTIONS_DENY = "DENY"
 SETUP_CSP_INLINE = "'unsafe-inline'"
@@ -102,7 +102,7 @@ class TestHomepage:
         http_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
-            resp = await unauthed_client.get("/hls/cam-preview/index.m3u8")
+            resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
 
         assert resp.status_code == 200
         assert resp.text == HLS_PLAYLIST
@@ -127,6 +127,6 @@ class TestHomepage:
         http_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
-            resp = await unauthed_client.get("/hls/cam-preview/index.m3u8")
+            resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
 
         assert resp.headers["content-security-policy"] == DEFAULT_CSP

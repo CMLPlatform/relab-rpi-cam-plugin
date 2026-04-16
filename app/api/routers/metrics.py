@@ -1,6 +1,6 @@
 """Prometheus metrics exposition for optional Alloy/Prometheus scraping.
 
-Unlike the authenticated `/telemetry` JSON endpoint, `/metrics` is deliberately
+Unlike the authenticated `/system/telemetry` JSON endpoint, `/metrics` is deliberately
 unauthenticated: it's designed to be scraped by a colocated Alloy or Prometheus
 instance on a trusted network (the compose-internal docker network). The values
 it exposes are benign system stats (CPU%, memory%, disk%, SoC temperature,

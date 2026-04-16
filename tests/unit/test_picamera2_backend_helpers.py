@@ -409,7 +409,7 @@ class TestPicamera2BackendMethods:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The controls endpoints should build views, sort capabilities, and normalize controls."""
+        """The controls flow should build a discoverable view and normalize control writes."""
         backend = Picamera2Backend()
         camera = MagicMock()
         camera.camera_controls = {
@@ -421,11 +421,10 @@ class TestPicamera2BackendMethods:
         monkeypatch.setattr(backend_mod, "controls", None)
 
         controls_view = await backend.get_controls()
-        capabilities = await backend.get_controls_capabilities()
         await backend.set_controls({"AfMode": "continuous"})
 
         assert controls_view.supported is True
-        assert capabilities.controls[0].name == backend_mod._AF_MODE_CONTROL
+        assert backend_mod._AF_MODE_CONTROL in controls_view.controls
         camera.set_controls.assert_called_with({backend_mod._AF_MODE_CONTROL: 2})
 
     async def test_set_focus_manual_rejects_missing_lens_control(self) -> None:

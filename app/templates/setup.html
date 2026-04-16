@@ -124,7 +124,7 @@
     setPairingActionStatus("Generating new code…", "pending");
 
     try {
-      const resp = await fetch("/pairing/code/refresh", { method: "POST" });
+      const resp = await fetch("/pairing/code", { method: "POST" });
       if (!resp.ok) {
         if (button) {
           setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
@@ -185,7 +185,7 @@
     btn.disabled = true;
     btn.textContent = "Unpairing…";
     try {
-      const resp = await fetch("/pairing/credentials", { method: "DELETE" });
+      const resp = await fetch("/pairing", { method: "DELETE" });
       dialog.close();
       if (resp.ok) {
         setPairingActionStatus("Unpaired. Reloading page…", "success");
@@ -436,7 +436,7 @@
             <div class="setup-debug__row">
               <span class="setup-debug__label">HLS preview</span>
               <span class="setup-debug__text">
-                {% for ip in lan_ips %}<code>http://{{ ip }}:8018/hls/cam-preview/index.m3u8</code>{% if not loop.last
+                {% for ip in lan_ips %}<code>http://{{ ip }}:8018/preview/hls/cam-preview/index.m3u8</code>{% if not loop.last
                 %}<br>{% endif %}{% endfor %}
               </span>
             </div>

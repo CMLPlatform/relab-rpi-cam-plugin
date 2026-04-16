@@ -2,8 +2,8 @@
 
 The Pi no longer exposes captured bytes over HTTP. Captures are pushed directly
 from the Pi to the backend's upload endpoint (``backend_client.upload_image``),
-with a local queue fallback on push failure. The old ``GET /images/{id}``
-retrieval endpoint has been removed — bytes live in exactly one place.
+with a local queue fallback on push failure. The Pi exposes a command-style
+capture endpoint only; bytes live in exactly one place.
 """
 
 import logging
@@ -16,7 +16,7 @@ from app.api.dependencies.camera_management import CameraManagerDependency
 from app.api.exceptions import ActiveStreamError
 from app.utils.logging import build_log_extra
 
-router = APIRouter(prefix="/images", tags=["images"])
+router = APIRouter(prefix="/captures", tags=["captures"])
 logger = logging.getLogger(__name__)
 
 

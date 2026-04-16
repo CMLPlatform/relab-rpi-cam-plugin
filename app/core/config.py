@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     # Local (direct Ethernet / USB-C) mode
     # The plugin always auto-generates a persistent local_api_key on startup (saved to the
     # credentials JSON). The key is delivered to the frontend automatically via the relay's
-    # /local-access-info endpoint — no manual copying required.
+    # /system/local-access endpoint — no manual copying required.
     # Set LOCAL_MODE_ENABLED=false to disable local API access entirely (opt-out).
     local_mode_enabled: bool = True
     local_api_key: str = ""  # Bootstrap-only local API key seed; runtime-owned after startup
@@ -362,7 +362,7 @@ def apply_local_mode(runtime_state: RuntimeState, app_settings: Settings = setti
     """Load or generate the local API key on startup.
 
     Always runs regardless of ``local_mode_enabled`` so the key exists for
-    relay delivery via ``/local-access-info``. The key is only injected into
+    relay delivery via ``/system/local-access``. The key is only injected into
     ``authorized_api_keys`` when ``local_mode_enabled`` is True, so setting
     ``LOCAL_MODE_ENABLED=false`` disables direct-connection authentication
     while keeping the key available for the relay bootstrap endpoint.

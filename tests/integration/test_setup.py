@@ -221,7 +221,7 @@ class TestSetupPage:
 
 
 class TestUnpair:
-    """Tests for DELETE /pairing/credentials."""
+    """Tests for DELETE /pairing."""
 
     async def test_unpair_returns_204(self, unauthed_client: AsyncClient) -> None:
         """Endpoint returns 204 No Content immediately."""
@@ -230,7 +230,7 @@ class TestUnpair:
             patch("app.api.routers.setup.clear_runtime_relay_credentials"),
             patch("app.api.routers.setup.asyncio.sleep"),
         ):
-            resp = await unauthed_client.delete("/pairing/credentials")
+            resp = await unauthed_client.delete("/pairing")
         assert resp.status_code == 204
 
     async def test_unpair_deletes_credentials_and_clears_settings(
@@ -257,7 +257,7 @@ class TestUnpair:
                 return_value=runtime,
             ),
         ):
-            resp = await unauthed_client.delete("/pairing/credentials")
+            resp = await unauthed_client.delete("/pairing")
             await runtime.created_tasks[0]
 
         assert resp.status_code == 204
@@ -266,12 +266,12 @@ class TestUnpair:
 
 
 class TestPairingCodeRefresh:
-    """Tests for POST /pairing/code/refresh."""
+    """Tests for POST /pairing/code."""
 
     async def test_refresh_returns_204(self, unauthed_client: AsyncClient) -> None:
         """Endpoint returns 204 No Content immediately."""
         with patch("app.api.routers.setup.asyncio.sleep"):
-            resp = await unauthed_client.post("/pairing/code/refresh")
+            resp = await unauthed_client.post("/pairing/code")
         assert resp.status_code == 204
 
     async def test_refresh_restarts_pairing_without_deleting_credentials(
@@ -304,7 +304,7 @@ class TestPairingCodeRefresh:
                 return_value=runtime,
             ),
         ):
-            resp = await unauthed_client.post("/pairing/code/refresh")
+            resp = await unauthed_client.post("/pairing/code")
             await runtime.created_tasks[0]
 
         assert resp.status_code == 204

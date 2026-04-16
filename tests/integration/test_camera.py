@@ -39,7 +39,7 @@ class TestCameraStatus:
 
     async def test_snapshot_returns_jpeg(self, client: AsyncClient) -> None:
         """Test that the snapshot endpoint returns a JPEG preview frame."""
-        resp = await client.get("/camera/snapshot")
+        resp = await client.get("/preview/snapshot")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("image/jpeg")
         assert resp.content[:2] == JPEG_MAGIC_PREFIX
@@ -71,16 +71,6 @@ class TestCameraControls:
         assert resp.status_code == 200
         assert resp.json()["supported"] is True
 
-    async def test_controls_capabilities_returns_200(self, client: AsyncClient) -> None:
-        """Test that control capabilities are exposed for UI helpers."""
-        resp = await client.get("/camera/controls/capabilities")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["supported"] is True
-        assert len(data["controls"]) >= 1
-
-
 class TestCameraControlsNotSupported:
     """Controls endpoints should surface a 501 when the backend can't implement them."""
 
@@ -97,21 +87,6 @@ class TestCameraControlsNotSupported:
             AsyncMock(side_effect=CameraControlsNotSupportedError(camera_manager.backend)),
         )
         resp = await client.get("/camera/controls")
-        assert resp.status_code == 501
-
-    async def test_get_controls_capabilities_returns_501_when_backend_not_controllable(
-        self,
-        client: AsyncClient,
-        camera_manager: CameraManager,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """``GET /camera/controls/capabilities`` -> 501 when the backend cannot report them."""
-        monkeypatch.setattr(
-            camera_manager,
-            "get_controls_capabilities",
-            AsyncMock(side_effect=CameraControlsNotSupportedError(camera_manager.backend)),
-        )
-        resp = await client.get("/camera/controls/capabilities")
         assert resp.status_code == 501
 
     async def test_set_controls_returns_501_when_backend_not_controllable(

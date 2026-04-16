@@ -12,7 +12,6 @@ from relab_rpi_cam_models.camera import CameraMode
 
 from app.api.schemas.camera_controls import (
     CameraControlInfo,
-    CameraControlsCapabilities,
     CameraControlsView,
     FocusControlRequest,
     JsonValue,
@@ -99,14 +98,6 @@ class FakeBackend:
                 ),
             },
             values=self.capture_metadata,
-        )
-
-    async def get_controls_capabilities(self) -> CameraControlsCapabilities:
-        """Return mock control capabilities for UI helpers."""
-        view = await self.get_controls()
-        return CameraControlsCapabilities(
-            supported=True,
-            controls=list(view.controls.values()),
         )
 
     async def set_controls(self, controls: dict[str, JsonValue]) -> CameraControlsView:

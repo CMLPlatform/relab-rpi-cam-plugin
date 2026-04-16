@@ -83,7 +83,7 @@ async def setup_page(request: Request) -> HTMLResponse:
     )
 
 
-@router.delete("/pairing/credentials", status_code=204)
+@router.delete("/pairing", status_code=204)
 async def unpair(request: Request) -> Response:
     """Clear relay credentials and restart the pairing flow.
 
@@ -129,7 +129,7 @@ async def unpair(request: Request) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/pairing/code/refresh", status_code=204)
+@router.post("/pairing/code", status_code=204)
 async def refresh_pairing_code(request: Request) -> Response:
     """Rotate the active pairing code without deleting credentials.
 

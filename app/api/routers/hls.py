@@ -1,4 +1,4 @@
-"""LL-HLS proxy from the Pi API to the local MediaMTX sidecar.
+"""Preview routes for the Pi API and the local MediaMTX sidecar.
 
 MediaMTX serves the LL-HLS playlist + segments on ``:8888`` under
 ``/{path}/index.m3u8`` and friends. The Pi's FastAPI app doesn't listen on
@@ -7,7 +7,7 @@ relay WAN hop. Instead, the backend proxies segment fetches through the
 WebSocket relay, and the relay terminates on this router, which re-issues
 the HTTP GET against MediaMTX on the host network.
 
-Route shape: ``GET /hls/{hls_path:path}`` where ``hls_path`` is the full
+Route shape: ``GET /preview/hls/{hls_path:path}`` where ``hls_path`` is the full
 sub-path MediaMTX expects — e.g. ``cam-preview/index.m3u8`` or
 ``cam-preview/segment0.mp4``. The m3u8 playlist parser at the browser
 resolves segment references relative to the playlist URL, so every
@@ -30,6 +30,7 @@ from fastapi import Path as FastAPIPath
 from pydantic import AfterValidator
 
 from app.api.dependencies.camera_management import CameraManagerDependency
+from app.api.exceptions import ActiveStreamError
 from app.api.services.camera_manager import CameraManager
 from app.api.services.preview_pipeline import PreviewPipelineManager
 from app.core.runtime import get_request_runtime
@@ -39,7 +40,7 @@ from app.utils.relay_state import RelayRuntimeState
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/hls", tags=["hls"])
+router = APIRouter(prefix="/preview", tags=["preview"])
 
 
 def _no_traversal(v: str) -> str:
@@ -99,7 +100,21 @@ async def _wake_preview_encoder(
 
 
 @router.get(
-    "/{hls_path:path}",
+    "/snapshot",
+    summary="Get a low-res JPEG preview snapshot",
+    responses={200: {"description": "Single JPEG preview frame."}, 409: {"description": "Preview unavailable."}},
+)
+async def get_preview_snapshot(camera_manager: CameraManagerDependency) -> Response:
+    """Return one low-resolution preview frame without persisting it."""
+    try:
+        snapshot = await camera_manager.capture_snapshot_jpeg()
+    except ActiveStreamError as exc:
+        raise HTTPException(status_code=409, detail="Preview unavailable while a stream is active.") from exc
+    return Response(content=snapshot, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@router.get(
+    "/hls/{hls_path:path}",
     summary="Proxy an LL-HLS playlist or segment from MediaMTX",
     responses={
         200: {"description": "Playlist (``application/vnd.apple.mpegurl``) or segment (``video/mp4``)."},

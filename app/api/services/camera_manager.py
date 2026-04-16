@@ -15,7 +15,6 @@ from relab_rpi_cam_models.images import ImageCaptureResponse, ImageCaptureStatus
 
 from app.api.exceptions import ActiveStreamError
 from app.api.schemas.camera_controls import (
-    CameraControlsCapabilities,
     CameraControlsPatch,
     CameraControlsView,
     FocusControlRequest,
@@ -275,12 +274,6 @@ class CameraManager:
         backend = self._require_controllable_backend()
         async with self._locked():
             return await backend.get_controls()
-
-    async def get_controls_capabilities(self) -> CameraControlsCapabilities:
-        """Return UI-friendly control capabilities."""
-        backend = self._require_controllable_backend()
-        async with self._locked():
-            return await backend.get_controls_capabilities()
 
     async def set_controls(self, patch: CameraControlsPatch) -> CameraControlsView:
         """Apply backend-native controls through the active backend."""

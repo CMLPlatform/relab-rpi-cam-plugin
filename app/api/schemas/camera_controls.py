@@ -63,9 +63,3 @@ class FocusControlRequest(BaseModel):
         description="When mode=auto, run a one-shot autofocus cycle.",
     )
 
-
-class CameraControlsCapabilities(BaseModel):
-    """Compact controls response tailored for UI display."""
-
-    supported: bool
-    controls: list[CameraControlInfo] = Field(default_factory=list)

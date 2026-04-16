@@ -11,7 +11,6 @@ from relab_rpi_cam_models.camera import CameraMode
 from app.api.exceptions import CameraInitializationError
 from app.api.schemas.camera_controls import (
     CameraControlInfo,
-    CameraControlsCapabilities,
     CameraControlsView,
     FocusControlRequest,
     FocusMode,
@@ -229,16 +228,6 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
         await self.open(CameraMode.VIDEO)
         camera = self._require_camera()
         return await self._build_controls_view(camera)
-
-    async def get_controls_capabilities(self) -> CameraControlsCapabilities:
-        """Return a UI-friendly list of Picamera2 controls."""
-        await self.open(CameraMode.VIDEO)
-        camera = self._require_camera()
-        view = await self._build_controls_view(camera)
-        return CameraControlsCapabilities(
-            supported=True,
-            controls=sorted(view.controls.values(), key=lambda item: item.name.lower()),
-        )
 
     async def set_controls(self, controls: dict[str, JsonValue]) -> CameraControlsView:
         """Apply Picamera2 controls by backend-native control name."""

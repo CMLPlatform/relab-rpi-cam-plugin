@@ -20,7 +20,7 @@ from relab_rpi_cam_models import LocalAccessInfo
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["local-access"])
+router = APIRouter(prefix="/system", tags=["system"])
 
 _API_PORT = 8018
 _MEDIA_PORT = 8888
@@ -73,7 +73,7 @@ def _get_mdns_name() -> str | None:
         return None
 
 
-@router.get("/local-access-info", summary="Get local direct-connection info")
+@router.get("/local-access", summary="Get local direct-connection info")
 async def get_local_access_info(request: Request) -> LocalAccessInfo:
     """Return local API key and candidate IP URLs for direct (Ethernet/USB-C) access.
 

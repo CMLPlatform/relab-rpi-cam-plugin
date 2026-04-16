@@ -225,7 +225,11 @@ class TestHandleCommand:
         transport = httpx.MockTransport(_hls_handler)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
             ws = AsyncMock()
-            await _handle_command(ws, http, {"id": "msg-hls", "method": "GET", "path": "/hls/cam-preview/seg.mp4"})
+            await _handle_command(
+                ws,
+                http,
+                {"id": "msg-hls", "method": "GET", "path": "/preview/hls/cam-preview/seg.mp4"},
+            )
 
         header = json.loads(ws.send.call_args.args[0])
         assert header["has_binary"] is True
