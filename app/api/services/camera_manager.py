@@ -6,14 +6,12 @@ import asyncio
 import contextlib
 import logging
 import uuid
-from io import BytesIO
 from typing import TYPE_CHECKING
 
 from pydantic import AnyUrl
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 from relab_rpi_cam_models.images import ImageCaptureResponse, ImageCaptureStatus
 
-from app.api.exceptions import ActiveStreamError
 from app.api.schemas.camera_controls import (
     CameraControlsPatch,
     CameraControlsView,
@@ -235,33 +233,6 @@ class CameraManager:
             image_url=stored.image_url,
             expires_at=stored.expires_at,
         )
-
-    async def capture_snapshot_jpeg(self) -> bytes:
-        """Capture a low-resolution preview frame as JPEG bytes.
-
-        Prefer the lores stream when the hardware backend exposes it; fall back
-        to a normal still capture on backends that do not keep a persistent
-        preview buffer available in tests or on non-Picamera2 hardware.
-
-        The ``is_active`` stream check is performed inside the lock so it cannot
-        race a concurrent ``start_streaming``; the JPEG encode is also done inside
-        the lock so the frame cannot be invalidated mid-encode.
-        """
-        async with self._locked():
-            if self.stream.is_active:
-                raise ActiveStreamError(self.stream)
-
-            backend_camera = self.backend.camera
-            if backend_camera is not None:
-                await self.backend.open(CameraMode.VIDEO)
-                frame = await asyncio.to_thread(backend_camera.capture_image, "lores")
-            else:
-                result = await self.backend.capture_image()
-                frame = result.image
-
-            buffer = BytesIO()
-            await asyncio.to_thread(frame.save, buffer, format="JPEG", quality=82, optimize=True)
-            return buffer.getvalue()
 
     def _require_streaming_backend(self) -> StreamingCameraBackend:
         """Return the backend narrowed to StreamingCameraBackend, or raise."""

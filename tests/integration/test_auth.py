@@ -106,17 +106,17 @@ class TestCorsConfig:
         assert resp.status_code == 200
         assert settings.auth_key_name.lower() in resp.headers["access-control-allow-headers"].lower()
 
-    async def test_preflight_allows_request_id_for_local_snapshot_requests(
+    async def test_preflight_allows_request_id_for_local_capture_requests(
         self,
         unauthed_client: AsyncClient,
     ) -> None:
         """Direct-local browser requests should be allowed to send X-Request-ID."""
         origin = str(settings.allowed_cors_origins[0]).rstrip("/")
         resp = await unauthed_client.options(
-            "/preview/snapshot",
+            "/captures",
             headers={
                 "Origin": origin,
-                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": f"{settings.auth_key_name}, X-Request-ID",
             },
         )

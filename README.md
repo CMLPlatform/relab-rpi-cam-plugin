@@ -86,7 +86,6 @@ The browser-based RELab frontend is different: if it is served over HTTPS, moder
 1. Visit `http://your-pi-ip:8018` to test
    - `/setup` — Pairing and status
    - `/preview/hls/cam-preview/index.m3u8` — LL-HLS live preview (via the MediaMTX sidecar on :8888)
-   - `/preview/snapshot` — Low-res JPEG preview frame
    - `/camera/controls` — Discover/set camera controls (autofocus, exposure, etc.)
    - `/camera/focus` — Friendly focus controls (continuous/auto/manual)
    - `/captures` — Trigger a still capture that uploads to the backend

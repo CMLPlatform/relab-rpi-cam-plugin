@@ -29,8 +29,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi import Path as FastAPIPath
 from pydantic import AfterValidator
 
-from app.api.dependencies.camera_management import CameraManagerDependency
-from app.api.exceptions import ActiveStreamError
 from app.api.services.camera_manager import CameraManager
 from app.api.services.preview_pipeline import PreviewPipelineManager
 from app.core.runtime import get_request_runtime
@@ -97,20 +95,6 @@ async def _wake_preview_encoder(
         # Leave the response path to report MediaMTX's current state. The next
         # playlist poll will retry after the sleeper has seen the HLS activity.
         logger.warning("Failed to wake preview encoder for HLS request: %s", exc, extra=build_log_extra())
-
-
-@router.get(
-    "/snapshot",
-    summary="Get a low-res JPEG preview snapshot",
-    responses={200: {"description": "Single JPEG preview frame."}, 409: {"description": "Preview unavailable."}},
-)
-async def get_preview_snapshot(camera_manager: CameraManagerDependency) -> Response:
-    """Return one low-resolution preview frame without persisting it."""
-    try:
-        snapshot = await camera_manager.capture_snapshot_jpeg()
-    except ActiveStreamError as exc:
-        raise HTTPException(status_code=409, detail="Preview unavailable while a stream is active.") from exc
-    return Response(content=snapshot, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.get(

@@ -491,25 +491,6 @@ class TestCameraManagerCapture:
         assert leftover == [], f"atomic encode leaked files: {leftover}"
 
 
-class TestCameraManagerSnapshot:
-    """Tests for CameraManager.capture_snapshot_jpeg stream-state handling."""
-
-    async def test_snapshot_refuses_when_stream_active(self) -> None:
-        """The is_active check must run inside the camera lock.
-
-        Regression guard: previously the check lived in the router and ran pre-lock,
-        so a stream-start race could slip past it. Exposed here by pre-activating
-        the stream and asserting ``capture_snapshot_jpeg`` raises instead of capturing.
-        """
-        manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
-        manager.stream.mode = StreamMode.YOUTUBE
-        manager.stream.url = AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast")
-        manager.stream.started_at = datetime.now(UTC)
-
-        with pytest.raises(ActiveStreamError):
-            await manager.capture_snapshot_jpeg()
-
-
 class TestCameraManagerLocking:
     """Tests for camera-manager lock timeout behavior."""
 
