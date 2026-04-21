@@ -1352,7 +1352,7 @@ wheels = [
 
 [[package]]
 name = "relab-rpi-cam-models"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "relab_rpi_cam_models" }
 dependencies = [
     { name = "pydantic" },
@@ -1363,7 +1363,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.9" }]
 
 [[package]]
 name = "relab-rpi-cam-plugin"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
