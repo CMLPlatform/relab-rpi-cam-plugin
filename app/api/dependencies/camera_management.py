@@ -10,7 +10,7 @@ from fastapi import Depends, Request
 from app.api.services.camera_manager import CameraManager
 from app.core.config import settings
 from app.core.runtime import get_request_runtime
-from app.utils.logging import build_log_extra
+from app.observability.logging import build_log_extra
 
 logger = logging.getLogger(__name__)
 

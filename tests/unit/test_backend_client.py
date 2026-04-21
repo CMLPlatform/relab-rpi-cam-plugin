@@ -10,10 +10,10 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from app.api.services import backend_client as backend_client_mod
+from app.api.services.backend_client import BackendUploadError, upload_image
 from app.core.config import settings
 from app.core.runtime import AppRuntime, set_active_runtime
-from app.utils import backend_client as backend_client_mod
-from app.utils.backend_client import BackendUploadError, upload_image
 from tests.constants import BACKEND_IMAGE_URL, SAMPLE_SERVER_IMAGE_ID
 
 if TYPE_CHECKING:

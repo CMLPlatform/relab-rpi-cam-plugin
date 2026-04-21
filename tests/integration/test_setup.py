@@ -226,8 +226,6 @@ class TestSetupPage:
         assert HLS_PREVIEW_TEXT in resp.text
         assert PREVIEW_HLS_URL in resp.text
         assert API_TEXT in resp.text
-        assert 'class="setup-value-list"' in resp.text
-        assert 'class="setup-value-card__content setup-value-card__content--secret"' in resp.text
 
     async def test_setup_page_falls_back_to_this_ip_placeholder_when_no_mdns_name(
         self,

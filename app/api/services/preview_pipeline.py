@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from app.api.services.hardware_protocols import Picamera2Like
 from app.api.services.hardware_stubs import FfmpegOutputStub, H264EncoderStub
-from app.utils.logging import build_log_extra
+from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:
     from picamera2.encoders import H264Encoder

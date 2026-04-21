@@ -29,8 +29,8 @@ from relab_rpi_cam_models.telemetry import ThermalState
 
 from app.api.services.hardware_protocols import Picamera2Like
 from app.api.services.preview_pipeline import PreviewPipelineManager
-from app.utils.logging import build_log_extra
-from app.utils.telemetry import collect_telemetry
+from app.observability.logging import build_log_extra
+from app.observability.telemetry import collect_telemetry
 
 if TYPE_CHECKING:
     from collections.abc import Callable

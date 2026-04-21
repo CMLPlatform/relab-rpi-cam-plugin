@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from app.utils.logging import build_log_extra
+from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:
     from typing import Any

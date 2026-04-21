@@ -25,7 +25,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from app.api.services.image_sinks.base import ImageSink, ImageSinkError
-from app.utils.logging import build_log_extra
+from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

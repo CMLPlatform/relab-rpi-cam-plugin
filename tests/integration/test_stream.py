@@ -62,9 +62,9 @@ class TestStreamStart:
         """OpenAPI should include the YouTube request example."""
         resp = await client.get("/openapi.json")
         assert resp.status_code == 200
-        request_body = (
-            resp.json()["paths"]["/streams/youtube"]["post"]["requestBody"]["content"]["application/json"]["schema"]
-        )
+        request_body = resp.json()["paths"]["/streams/youtube"]["post"]["requestBody"]["content"]["application/json"][
+            "schema"
+        ]
         assert request_body["$ref"].endswith("YoutubeStreamConfig")
 
 

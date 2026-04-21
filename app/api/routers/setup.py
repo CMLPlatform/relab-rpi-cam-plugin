@@ -10,17 +10,17 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
 from app.api.routers.local_access import _get_candidate_urls
-from app.core.config import DEFAULT_PAIRING_BACKEND_URL, clear_runtime_relay_credentials, settings
-from app.core.runtime import get_request_runtime
-from app.core.templates_config import templates
-from app.utils.backend_client import notify_self_unpair
-from app.utils.logging import build_log_extra
-from app.utils.pairing import (
+from app.api.services.backend_client import notify_self_unpair
+from app.api.services.pairing import (
     PAIRING_CODE_TTL_SECONDS,
     STATUS_PAIRED,
     _normalize_pairing_backend_base_url,
     delete_relay_credentials,
 )
+from app.core.config import DEFAULT_PAIRING_BACKEND_URL, clear_runtime_relay_credentials, settings
+from app.core.runtime import get_request_runtime
+from app.core.templates_config import templates
+from app.observability.logging import build_log_extra
 
 _STATUS_ERROR = "error"
 _PAIRING_BACKEND_REACHABILITY_TIMEOUT = httpx.Timeout(connect=1.5, read=1.5, write=1.5, pool=1.5)

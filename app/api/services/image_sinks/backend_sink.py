@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.api.services.backend_client import BackendUploadError, upload_image
 from app.api.services.image_sinks.base import ImageSinkError, StoredImage
-from app.utils.backend_client import BackendUploadError, upload_image
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -14,14 +14,14 @@ if TYPE_CHECKING:
 class BackendPushSink:
     """``ImageSink`` backed by the existing Pi→backend HTTPS upload path.
 
-    This is a thin wrapper around :func:`app.utils.backend_client.upload_image`
+    This is a thin wrapper around :func:`app.api.services.backend_client.upload_image`
     that translates ``BackendUploadError`` into ``ImageSinkError`` so the
     common caller (``CameraManager.capture_jpeg``) can handle all sinks
     uniformly.
 
     Pairing + network failures are the normal ``ImageSinkError`` case —
     callers are expected to enqueue for retry rather than surface them to the
-    user. See :mod:`app.utils.upload_queue`.
+    user. See :mod:`app.api.services.upload_queue`.
     """
 
     async def put(

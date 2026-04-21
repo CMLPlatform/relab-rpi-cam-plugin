@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from app.api.routers import hls as hls_mod
 from app.api.routers.hls import _is_local_client, proxy_hls
-from app.utils.relay_state import RelayRuntimeState
+from app.api.services.relay_state import RelayRuntimeState
 from tests.constants import HLS_M3U8_CONTENT_TYPE, HLS_MP4_CONTENT_TYPE, HLS_PREVIEW_ENCODER_FRAGMENT
 
 if TYPE_CHECKING:

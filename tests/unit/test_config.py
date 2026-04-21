@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import HttpUrl
 
-import app.core.config as config_mod
+import app.core.bootstrap as config_mod
 from app.core.config import Settings
 from app.core.runtime_state import RuntimeState
 from tests.constants import (
@@ -221,7 +221,7 @@ class TestConfigBootstrapHelpers:
 
     def test_is_running_in_container_checks_dockerenv(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Container detection should be a thin /.dockerenv existence check."""
-        monkeypatch.setattr("app.core.config.Path.exists", lambda _self: True)
+        monkeypatch.setattr("app.core.bootstrap.Path.exists", lambda _self: True)
 
         assert config_mod._is_running_in_container() is True
 

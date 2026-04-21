@@ -18,11 +18,11 @@ import httpx
 import websockets
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
+from app.api.services.device_jwt import build_device_assertion
+from app.api.services.relay_state import RelayRuntimeState
 from app.core.config import Settings, settings
 from app.core.runtime_state import RuntimeState
-from app.utils.device_jwt import build_device_assertion
-from app.utils.logging import build_log_extra
-from app.utils.relay_state import RelayRuntimeState
+from app.observability.logging import build_log_extra
 from relab_rpi_cam_models import (
     SAFE_RELAY_TRACE_HEADERS,
     RelayCommandEnvelope,

@@ -494,9 +494,13 @@ class TestCameraManagerCapture:
 class TestCameraManagerLocking:
     """Tests for camera-manager lock timeout behavior."""
 
-    async def test_locked_times_out_only_while_waiting_for_lock(self) -> None:
+    async def test_locked_times_out_only_while_waiting_for_lock(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """The lock timeout should apply to acquisition, not the whole critical section."""
         manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
+        monkeypatch.setattr(manager, "lock_timeout", 0.01)
         await manager.lock.acquire()
 
         try:
@@ -608,6 +612,57 @@ class TestCameraManagerControls:
 
         assert result.supported is True
         backend.set_focus.assert_awaited_once_with(request)
+
+
+class TestPreviewThumbnailCapture:
+    """Tests for best-effort preview-thumbnail capture."""
+
+    async def test_returns_none_when_stream_is_active(self) -> None:
+        """Active streaming should skip preview-thumbnail capture entirely."""
+        backend = FakeBackend()
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
+        manager.stream.mode = StreamMode.YOUTUBE
+        manager.stream.url = AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}preview-active")
+        manager.stream.started_at = datetime.now(UTC)
+
+        result = await manager.capture_preview_thumbnail_jpeg()
+
+        assert result is None
+        backend.capture_image.assert_not_awaited()
+
+    async def test_returns_jpeg_bytes_from_backend_capture(self) -> None:
+        """When idle, the manager should derive a JPEG preview thumbnail from the backend image."""
+        backend = FakeBackend()
+        backend.capture_image = AsyncMock(
+            return_value=CaptureResult(
+                image=Image.new("RGB", (1280, 720), color="blue"),
+                camera_properties={"Model": MOCK_CAMERA},
+                capture_metadata={"FrameDuration": 33_333},
+            )
+        )
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
+
+        result = await manager.capture_preview_thumbnail_jpeg()
+
+        assert result is not None
+        assert result.startswith(b"\xff\xd8")
+        backend.capture_image.assert_awaited_once()
+
+    async def test_returns_none_when_camera_lock_is_busy(self) -> None:
+        """A busy camera lock should cause the best-effort thumbnail capture to skip cleanly."""
+        backend = FakeBackend()
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
+
+        await manager.lock.acquire()
+        try:
+            result = await manager.capture_preview_thumbnail_jpeg(lock_timeout_s=0.01)
+        finally:
+            manager.lock.release()
+
+        assert result is None
+        backend.capture_image.assert_not_awaited()
+
+
 class TestStreamService:
     """Tests for focused stream state orchestration."""
 

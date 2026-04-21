@@ -32,10 +32,10 @@ from pydantic import AfterValidator
 from app.api.dependencies.camera_management import CameraManagerDependency
 from app.api.services.camera_manager import CameraManager
 from app.api.services.preview_pipeline import PreviewPipelineManager
+from app.api.services.relay_state import RelayRuntimeState
 from app.core.runtime import get_request_runtime
-from app.utils.logging import build_log_extra
+from app.observability.logging import build_log_extra
 from app.utils.network import is_local_client
-from app.utils.relay_state import RelayRuntimeState
 
 logger = logging.getLogger(__name__)
 

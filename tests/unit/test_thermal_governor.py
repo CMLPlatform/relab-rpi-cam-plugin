@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from relab_rpi_cam_models.telemetry import TelemetrySnapshot, ThermalState
 
-from app.utils import thermal_governor as thermal_governor_mod
-from app.utils.thermal_governor import ThermalGovernor
+from app.workers import thermal_governor as thermal_governor_mod
+from app.workers.thermal_governor import ThermalGovernor
 
 
 def _snapshot(cpu_temp_c: float | None) -> TelemetrySnapshot:

@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import AnyUrl
 
+from app.api.services import upload_queue as upload_queue_mod
 from app.api.services.image_sinks.base import ImageSink, ImageSinkError, StoredImage
-from app.utils import upload_queue as upload_queue_mod
-from app.utils.upload_queue import UploadQueue, UploadQueueWorker
+from app.api.services.upload_queue import UploadQueue, UploadQueueWorker
 from tests.constants import EXAMPLE_IMAGE_URL
 
 BAD_IMAGE_ID = "bad"

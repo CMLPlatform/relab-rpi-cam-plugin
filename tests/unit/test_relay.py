@@ -11,9 +11,8 @@ from websockets.datastructures import Headers
 from websockets.exceptions import InvalidStatus
 from websockets.http11 import Response
 
-from app.core.runtime_state import RuntimeState
-from app.utils import relay as relay_mod
-from app.utils.relay import (
+from app.api.services import relay as relay_mod
+from app.api.services.relay import (
     RelayService,
     _extract_trace_headers,
     _format_relay_connection_error,
@@ -21,7 +20,8 @@ from app.utils.relay import (
     _receive_loop,
     _send_error,
 )
-from app.utils.relay_state import RelayRuntimeState
+from app.api.services.relay_state import RelayRuntimeState
+from app.core.runtime_state import RuntimeState
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
 RELAY_AUTH_SCHEME = "device_assertion"

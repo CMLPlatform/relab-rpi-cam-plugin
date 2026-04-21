@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import AnyUrl
 
+from app.api.services.backend_client import BackendUploadError, UploadedImageInfo
 from app.api.services.image_sinks import backend_sink as backend_sink_mod
 from app.api.services.image_sinks.backend_sink import BackendPushSink
 from app.api.services.image_sinks.base import ImageSinkError, StoredImage
-from app.utils.backend_client import BackendUploadError, UploadedImageInfo
 from tests.constants import (
     BACKEND_IMAGE_URL,
     BACKEND_PUSH_FILENAME,

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 from fastapi import FastAPI
 
-from app.utils import observability as observability_mod
+from app.observability import tracing as observability_mod
 
 if TYPE_CHECKING:
     import pytest

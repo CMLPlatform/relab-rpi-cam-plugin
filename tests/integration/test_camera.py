@@ -36,6 +36,7 @@ class TestCameraStatus:
         assert data["stream"] is None
         assert data["last_image_url"] is None
 
+
 class TestCameraControls:
     """Tests for camera controls endpoints."""
 
@@ -61,6 +62,7 @@ class TestCameraControls:
 
         assert resp.status_code == 200
         assert resp.json()["supported"] is True
+
 
 class TestCameraControlsNotSupported:
     """Controls endpoints should surface a 501 when the backend can't implement them."""

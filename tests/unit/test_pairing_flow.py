@@ -12,9 +12,9 @@ import httpx
 import pytest
 
 from app.api.dependencies.auth import reload_authorized_hashes
+from app.api.services import pairing as pairing_mod
 from app.core.config import settings
 from app.core.runtime import AppRuntime, set_active_runtime
-from app.utils import pairing as pairing_mod
 from tests.constants import (
     EXAMPLE_BACKEND_URL,
     EXAMPLE_RELAY_BACKEND_URL,

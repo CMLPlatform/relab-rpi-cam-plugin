@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.api.services.preview_pipeline import PreviewPipelineManager
-from app.utils.preview_sleeper import PreviewSleeper
-from app.utils.relay_state import RelayRuntimeState
+from app.api.services.relay_state import RelayRuntimeState
+from app.workers.preview_sleeper import PreviewSleeper
 
 
 @pytest.fixture

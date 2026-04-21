@@ -15,12 +15,12 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from app.core.runtime import AppRuntime, set_active_runtime
-from app.utils.device_jwt import (
+from app.api.services.device_jwt import (
     DEVICE_ASSERTION_AUDIENCE,
     DEVICE_ASSERTION_TTL_SECONDS,
     build_device_assertion,
 )
+from app.core.runtime import AppRuntime, set_active_runtime
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

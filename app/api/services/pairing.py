@@ -30,9 +30,9 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 import app.core.config as core_config
+from app.api.services.pairing_client import PairingClient
 from app.core.runtime_context import get_active_runtime
-from app.utils.logging import build_log_extra
-from app.utils.pairing_client import PairingClient
+from app.observability.logging import build_log_extra
 from relab_rpi_cam_models import PairingClaimedBootstrap, PairingStatus, RelayAuthScheme
 
 if TYPE_CHECKING:

@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.api.services import pairing as pairing_mod
+from app.api.services.pairing import PAIRING_CODE_TTL_SECONDS, PairingState, _generate_code_and_fingerprint
 from app.core.config import settings
-from app.utils import pairing as pairing_mod
 from app.utils.files import cleanup_images, clear_directory, setup_directory
-from app.utils.pairing import PAIRING_CODE_TTL_SECONDS, PairingState, _generate_code_and_fingerprint
 
 
 def _list_dir(path: Path) -> list[Path]:

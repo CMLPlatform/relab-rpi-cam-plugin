@@ -32,9 +32,9 @@ import logging
 from typing import TYPE_CHECKING
 
 from app.api.services.preview_pipeline import PreviewPipelineManager
+from app.api.services.relay_state import RelayRuntimeState
 from app.core.config import settings
-from app.utils.logging import build_log_extra
-from app.utils.relay_state import RelayRuntimeState
+from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:
     from collections.abc import Callable

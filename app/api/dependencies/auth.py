@@ -13,13 +13,6 @@ from app.core.config import settings
 from app.core.runtime import get_active_runtime, get_request_runtime
 from app.core.runtime_state import RuntimeState
 
-# TODO: Improve API key handling
-#  - Add API key management endpoints in the Raspberry Pi API and the main API
-#  - Add API key expiration and automated rotation
-#  - Add automated key syncing between main API and Raspberry Pi
-#  - Consider just using Oauth2 with JWT tokens
-
-
 SESSION_TTL_HOURS = 12
 
 api_key_header = APIKeyHeader(name=settings.auth_key_name, auto_error=False, description="API Key for API access.")

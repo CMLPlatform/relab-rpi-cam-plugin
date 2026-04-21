@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.config import Settings, _add_authorized_api_key, apply_relay_credentials
+from app.core.bootstrap import _add_authorized_api_key, apply_relay_credentials
+from app.core.config import Settings
 from app.core.runtime_state import RuntimeState
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL
 
@@ -62,7 +63,7 @@ class TestApplyRelayCredentials:
         }
         runtime_state = RuntimeState()
 
-        with patch("app.core.config.load_relay_credentials", return_value=creds):
+        with patch("app.core.bootstrap.load_relay_credentials", return_value=creds):
             apply_relay_credentials(runtime_state)
 
         assert runtime_state.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL
@@ -77,7 +78,7 @@ class TestApplyRelayCredentials:
         """Should do nothing if the credentials file doesn't exist."""
         runtime_state = RuntimeState()
         with (
-            patch("app.core.config.load_relay_credentials", return_value={}),
+            patch("app.core.bootstrap.load_relay_credentials", return_value={}),
             patch("app.api.dependencies.auth.reload_authorized_hashes"),
         ):
             apply_relay_credentials(runtime_state)
@@ -100,7 +101,7 @@ class TestApplyRelayCredentials:
             "relay_private_key_pem": RELAY_PRIVATE_KEY_PEM,
         }
 
-        with patch("app.core.config.load_relay_credentials", return_value=creds):
+        with patch("app.core.bootstrap.load_relay_credentials", return_value=creds):
             apply_relay_credentials(runtime_state)
 
         assert runtime_state.relay_backend_url == ENV_RELAY_BACKEND_URL

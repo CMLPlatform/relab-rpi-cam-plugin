@@ -7,9 +7,9 @@ import logging
 
 from fastapi import Request, Response
 
-import app.main as main_mod
+import app.middleware as middleware_mod
 from app.core.runtime import AppRuntime, set_active_runtime
-from app.utils import logging as logging_mod
+from app.observability import logging as logging_mod
 
 LOG_MESSAGE = "hello world"
 REQUEST_ID = "req-123"
@@ -88,7 +88,7 @@ class TestRequestContextMiddleware:
             seen["request_id"] = logging_mod.get_request_id()
             return Response("ok")
 
-        response = await main_mod.request_context_middleware(_request_with_headers(), _call_next)
+        response = await middleware_mod.request_context_middleware(_request_with_headers(), _call_next)
 
         assert seen["request_id"] is not None
         assert response.headers["X-Request-ID"] == seen["request_id"]
@@ -102,7 +102,7 @@ class TestRequestContextMiddleware:
             seen["request_id"] = logging_mod.get_request_id()
             return Response("ok")
 
-        response = await main_mod.request_context_middleware(
+        response = await middleware_mod.request_context_middleware(
             _request_with_headers(headers=[(b"x-request-id", CLIENT_REQUEST_ID.encode())]),
             _call_next,
         )

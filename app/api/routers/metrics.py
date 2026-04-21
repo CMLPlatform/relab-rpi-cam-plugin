@@ -11,7 +11,7 @@ from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
 from relab_rpi_cam_models.telemetry import TelemetrySnapshot, ThermalState
 
-from app.utils.telemetry import collect_telemetry
+from app.observability.telemetry import collect_telemetry
 
 router = APIRouter(tags=["metrics"])
 

@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from relab_rpi_cam_models.telemetry import TelemetrySnapshot
 
-from app.utils.telemetry import collect_telemetry
+from app.observability.telemetry import collect_telemetry
 
 router = APIRouter(prefix="/system", tags=["system"])
 

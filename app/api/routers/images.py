@@ -14,7 +14,7 @@ from relab_rpi_cam_models.images import ImageCaptureResponse
 
 from app.api.dependencies.camera_management import CameraManagerDependency
 from app.api.exceptions import ActiveStreamError
-from app.utils.logging import build_log_extra
+from app.observability.logging import build_log_extra
 
 router = APIRouter(prefix="/captures", tags=["captures"])
 logger = logging.getLogger(__name__)

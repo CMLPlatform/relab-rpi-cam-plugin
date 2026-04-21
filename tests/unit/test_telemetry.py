@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 from relab_rpi_cam_models.telemetry import ThermalState
 
-from app.utils import telemetry as telemetry_mod
+from app.observability import telemetry as telemetry_mod
 
 
 class TestClassifyThermal:

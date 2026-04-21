@@ -32,7 +32,7 @@ from app.api.services.stream import (
     validate_youtube_mode,
 )
 from app.core.config import settings
-from app.utils.logging import build_log_extra
+from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:
     # libcamera's `controls` module isn't available to the typechecker

@@ -62,4 +62,3 @@ class FocusControlRequest(BaseModel):
         default=False,
         description="When mode=auto, run a one-shot autofocus cycle.",
     )
-
