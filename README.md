@@ -151,8 +151,4 @@ The local API key is the only authentication gate on the direct interface; physi
 
 ## Troubleshooting
 
-**Camera not detected?** Run `rpicam-hello --list-cameras`
-
-**Won't connect?** See [INSTALL.md — Troubleshooting](INSTALL.md#troubleshooting) for connection-specific issues.
-
-**Want to contribute?** See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
+See [INSTALL.md — Troubleshooting](INSTALL.md#troubleshooting). For development setup, see [CONTRIBUTING.md](CONTRIBUTING.md).

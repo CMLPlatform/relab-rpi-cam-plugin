@@ -171,11 +171,7 @@ For headless operators, you can also read the pairing code from logs:
 - Systemd/journald: `journalctl -u relab-rpi-cam -f`
 - Direct shell run: read the boxed `PAIRING READY` banner in the terminal output
 
-## Operating Modes
-
-See [README — Supported Modes](README.md#supported-modes) for the mode matrix.
-
-Observability is intentionally split:
+## Observability
 
 - structured JSON logs always exist
 - OTLP tracing is opt-in via `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT`
