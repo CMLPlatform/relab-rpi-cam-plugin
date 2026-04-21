@@ -14,8 +14,8 @@
   maintainers = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
   name = "relab-rpi-cam-models"
   readme = "README.md"
-  requires-python = ">=3.13" 
-  version = "0.3.0" # NOTE: Published independently via the models tag workflow
+  requires-python = ">=3.13"
+  version = "0.3.1" # NOTE: Published independently via the models tag workflow
 
   dependencies = ["pydantic>=2.9"]
 
