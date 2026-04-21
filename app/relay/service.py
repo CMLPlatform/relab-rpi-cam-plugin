@@ -18,8 +18,8 @@ import httpx
 import websockets
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
-from app.core.config import Settings, settings
 from app.core.runtime_state import RuntimeState
+from app.core.settings import Settings, settings
 from app.device_jwt import build_device_assertion
 from app.observability.logging import build_log_extra
 from app.relay.state import RelayRuntimeState
@@ -56,11 +56,6 @@ class _AsyncWebSocket(Protocol):
 
 logger = logging.getLogger(__name__)
 
-# Reconnection delay bounds (seconds)
-_RECONNECT_MIN = 2.0
-_RECONNECT_MAX = 60.0
-_MAX_CONCURRENT_COMMANDS = 8
-
 _WEBSOCKET_CONNECTION_ERRORS: tuple[type[Exception], ...] = (ConnectionClosed, InvalidStatus, OSError)
 
 _RELAY_CONNECTION_ERRORS: tuple[type[Exception], ...] = (RuntimeError, *_WEBSOCKET_CONNECTION_ERRORS)
@@ -86,14 +81,14 @@ class RelayService:
             logger.info("WebSocket relay not configured; relay will not start.")
             return
 
-        delay = _RECONNECT_MIN
+        delay = self._settings.relay_reconnect_min_s
         url = self.build_url()
 
         while True:
             try:
                 logger.info("Connecting to ReLab backend relay at %s", url, extra=build_log_extra())
                 async with _websocket_connect(url) as ws:
-                    delay = _RECONNECT_MIN
+                    delay = self._settings.relay_reconnect_min_s
                     self._state.mark_connected()
                     logger.info("Relay connected. Waiting for commands.", extra=build_log_extra())
                     await _receive_loop(
@@ -119,7 +114,7 @@ class RelayService:
                 self._state.mark_disconnected()
 
             await asyncio.sleep(delay)
-            delay = min(delay * 2, _RECONNECT_MAX)
+            delay = min(delay * 2, self._settings.relay_reconnect_max_s)
 
     def is_configured(self) -> bool:
         """Whether relay credentials are present."""
@@ -185,7 +180,7 @@ async def _receive_loop(
         {app_settings.auth_key_name: runtime_state.local_relay_api_key} if runtime_state.local_relay_api_key else {}
     )
     pending_tasks: set[asyncio.Task[None]] = set()
-    command_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_COMMANDS)
+    command_semaphore = asyncio.Semaphore(app_settings.relay_max_concurrent_commands)
 
     def _on_task_done(task: asyncio.Task[None]) -> None:
         """Callback when a command task completes."""

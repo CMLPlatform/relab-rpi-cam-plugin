@@ -10,8 +10,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
 from app.backend.client import notify_self_unpair
-from app.core.config import DEFAULT_PAIRING_BACKEND_URL, clear_runtime_relay_credentials, settings
+from app.core.bootstrap import clear_runtime_relay_credentials
 from app.core.runtime import get_request_runtime
+from app.core.settings import DEFAULT_PAIRING_BACKEND_URL, settings
 from app.core.templates_config import templates
 from app.observability.logging import build_log_extra
 from app.pairing.routers.local_access import _get_candidate_urls

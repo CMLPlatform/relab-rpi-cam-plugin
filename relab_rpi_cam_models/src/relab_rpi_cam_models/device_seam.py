@@ -101,6 +101,7 @@ class PairingClaimedRecord(PairingClaimedBootstrap):
     """Redis-stored pairing record after the backend claims the code."""
 
     status: Literal[PairingStatus.PAIRED] = PairingStatus.PAIRED
+    rpi_fingerprint: str = Field(min_length=8, max_length=64)
 
 
 class LocalAccessInfo(BaseModel):

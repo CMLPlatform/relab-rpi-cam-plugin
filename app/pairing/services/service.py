@@ -29,8 +29,8 @@ import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-import app.core.config as core_config
 from app.core.runtime_context import get_active_runtime
+from app.core.settings import settings as app_settings
 from app.observability.logging import build_log_extra
 from app.pairing.services.client import PairingClient
 from relab_rpi_cam_models import PairingClaimedBootstrap, PairingStatus, RelayAuthScheme
@@ -103,21 +103,27 @@ class PairingService:
         logger.info(
             "PAIRING MODE | state=awaiting_claim setup=%s pairing_backend=%s",
             _pairing_setup_location(),
-            core_config.settings.pairing_backend_url.rstrip("/"),
+            app_settings.pairing_backend_url.rstrip("/"),
             extra=build_log_extra(),
         )
 
     async def run_forever(self, on_paired: Callable[[], Coroutine[Any, Any, None]]) -> None:
         """Run the pairing flow until credentials are obtained or a fatal error occurs."""
-        base = _normalize_pairing_backend_base_url(core_config.settings.pairing_backend_url.rstrip("/"))
+        base = _normalize_pairing_backend_base_url(app_settings.pairing_backend_url.rstrip("/"))
         if not base:
             return
 
-        async with httpx.AsyncClient(timeout=10) as client:
+        # Register uses a short timeout (fails fast on bad backend).
+        # Poll tolerates a longer read budget since the backend is waiting for
+        # the human to enter the code.
+        retry_delay = 10.0
+        max_retry_delay = 120.0
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)) as client:
             while True:
                 try:
                     await self._pairing_cycle(client, base, on_paired)
                 except PairingCodeExpiredError:
+                    retry_delay = 10.0
                     continue
                 except PairingBackendNotFoundError:
                     logger.exception("Pairing backend missing pairing API | stopping pairing")
@@ -129,20 +135,23 @@ class PairingService:
                     return
                 except httpx.HTTPStatusError as exc:
                     _log_pairing_http_status_error(exc)
-                    logger.exception("Pairing cycle failed | retry_in_s=10")
+                    logger.exception("Pairing cycle failed | retry_in_s=%.0f", retry_delay)
                     _clear_transient_pairing_state(self.state, status="error", error="Pairing failed — retrying…")
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, max_retry_delay)
                 except httpx.ConnectError as exc:
                     _log_pairing_connect_error(exc, base)
-                    logger.exception("Pairing cycle failed | retry_in_s=10")
+                    logger.exception("Pairing cycle failed | retry_in_s=%.0f", retry_delay)
                     _clear_transient_pairing_state(
                         self.state, status="error", error="Pairing backend unreachable — retrying…"
                     )
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, max_retry_delay)
                 except Exception:
-                    logger.exception("Pairing cycle failed | retry_in_s=10")
+                    logger.exception("Pairing cycle failed | retry_in_s=%.0f", retry_delay)
                     _clear_transient_pairing_state(self.state, status="error", error="Pairing failed — retrying…")
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, max_retry_delay)
                 else:
                     return
 
@@ -208,7 +217,7 @@ def _set_pairing_code_state(state: PairingState, code: str, fingerprint: str) ->
 
 def _pairing_setup_location() -> str:
     """Return the best operator-facing setup location for pairing."""
-    base_url = str(core_config.settings.base_url).rstrip("/")
+    base_url = str(app_settings.base_url).rstrip("/")
     if base_url:
         parsed = urlparse(base_url)
         if parsed.hostname not in _LOOPBACK_HOSTS:
@@ -265,7 +274,7 @@ def _format_pairing_ready_message(code: str) -> str:
         f"  PAIRING READY\n"
         f"  PAIRING CODE: {_sanitize_log_value(code)}\n"
         f"  Setup    : {_pairing_setup_location()}\n"
-        f"  Backend  : {core_config.settings.pairing_backend_url.rstrip('/')}\n"
+        f"  Backend  : {app_settings.pairing_backend_url.rstrip('/')}\n"
         f"  Claim in : RELab app > Cameras > Add Camera\n"
         f"{sep}"
     )
@@ -361,7 +370,7 @@ async def _register_pairing_code_with_client(
                 key_id=registration.key_id,
             )
         except httpx.TimeoutException:
-            retry_delay_s = core_config.settings.pairing_register_timeout_retry_s
+            retry_delay_s = app_settings.pairing_register_timeout_retry_s
             _log_pairing_timeout("REGISTER", registration.code, retry_delay_s)
             await asyncio.sleep(retry_delay_s)
             continue
@@ -388,7 +397,7 @@ async def _poll_pairing_status(
     fingerprint: str,
 ) -> PairingClaimedBootstrap:
     while True:
-        poll_interval_s = core_config.settings.pairing_poll_interval_s
+        poll_interval_s = app_settings.pairing_poll_interval_s
         await asyncio.sleep(poll_interval_s)
         try:
             resp = await client.poll(code=code, fingerprint=fingerprint)
@@ -441,7 +450,11 @@ async def _complete_pairing_state(
         key_id=key_id,
         private_key_pem=private_key_pem,
     )
-    core_config.set_runtime_relay_credentials(
+    # Local import: bootstrap imports _CREDENTIALS_FILE from this module, so a
+    # top-level import would create a circular dependency at startup.
+    from app.core.bootstrap import set_runtime_relay_credentials  # noqa: PLC0415
+
+    set_runtime_relay_credentials(
         get_active_runtime().runtime_state,
         relay_backend_url=relay_backend_url,
         relay_camera_id=camera_id,
