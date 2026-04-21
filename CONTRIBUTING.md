@@ -199,61 +199,19 @@ contract baseline.
 
 ## Architecture Notes
 
-### Runtime shape
+**Runtime container** (`app/core/runtime.py::AppRuntime`) owns all long-lived services: camera manager, relay service + state, pairing service + state, preview pipeline + sleeper + thumbnail worker, thermal governor, upload queue worker, observability handle, and managed background tasks. Attach new long-lived services here instead of adding module-level singletons.
 
-The app owns its long-lived services through `app.core.runtime.AppRuntime`.
-That runtime tracks:
+**Config vs runtime state.** `Settings` (env-backed, static) holds operator config; `RuntimeState` holds live mutable relay/local-auth/derived-auth state. If a value changes while the app is running, it lives on the runtime side.
 
-- the shared camera manager
-- relay state and relay service
-- pairing state and pairing service
-- preview pipeline / sleeper
-- thermal governor
-- managed background tasks
-- recurring maintenance tasks
-- the optional observability handle
+**Orchestration entrypoints.** `PairingService` and `RelayService` are the only production entrypoints for pairing and relay flows.
 
-New long-lived services should be attached there rather than added as new
-module-level singletons. When refactoring older code, prefer deleting hidden
-globals instead of adding new compatibility shims around them.
+**Contracts.** Backend OpenAPI is the public frontend contract. `relab_rpi_cam_models` is the private backend↔plugin device seam — frontend code never imports from it, and new cross-repo payloads go into the shared package first.
 
-Mutable runtime data follows the same rule:
+**Connection.** The plugin opens an outbound WebSocket relay ([app/relay/service.py](app/relay/service.py)) to the backend. No public IP or port forwarding.
 
-- `Settings`: env-backed, effectively static process config
-- `RuntimeState`: live mutable relay/local/auth state for the running process
+**Camera capture.** Real hardware: `libcamera` via `picamera2`. Tests: synthetic image generation.
 
-If a value changes while the app is running, it should usually live on the
-runtime side, not on `settings` and not in a module global.
-
-The same ownership rule applies to orchestration code:
-
-- `PairingService` is the only production pairing entrypoint
-- `RelayService` is the only production relay entrypoint
-
-Contract ownership follows the same boundary:
-
-- backend OpenAPI is the only frontend/public contract
-- `relab_rpi_cam_models` is the private backend<->plugin device seam
-- frontend code should not import private seam DTOs directly
-- new cross-repo device payloads go into the shared models package first,
-  rather than being duplicated into backend/plugin by hand
-
-### Connection
-
-The plugin connects to the RELab backend via **WebSocket relay** (`app/relay/service.py`).
-The Pi initiates an outbound WebSocket connection; the backend sends commands
-through this tunnel. No public IP or port forwarding is needed.
-
-### Camera Capture
-
-- Real camera: Uses `libcamera` via `picamera2`
-- Mock mode (testing): Uses synthetic image generation
-
-### Streaming
-
-YouTube RTMP is the only supported streaming mode. The Pi publishes into
-MediaMTX locally and MediaMTX handles the YouTube egress path. Local HLS
-preview and MJPEG streaming have been removed.
+**Streaming.** YouTube RTMP only. The Pi publishes into MediaMTX locally; MediaMTX handles the egress to YouTube.
 
 ## Debugging
 

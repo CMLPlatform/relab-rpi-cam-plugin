@@ -44,28 +44,11 @@ Complete setup instructions for the RPI Camera Plugin.
 
 The plugin connects to the RELab backend via **WebSocket relay**. The Pi initiates an outbound connection — no public IP or port forwarding is needed.
 
-Configuration precedence during startup is:
+Configuration precedence at startup:
 
-1. explicit environment variables from `.env`
-1. runtime credentials persisted in `~/.config/relab/relay_credentials.json`
-1. generated defaults for local-only secrets like `local_api_key`
-
-This means operator-provided env vars win, persisted relay/local credentials
-fill gaps, and first-boot generation happens only when neither exists.
-
-At runtime, the app keeps pairing state, relay state, and other long-lived
-service state in the process runtime container rather than in module-level
-singletons. The persisted credentials file remains the source of truth across
-restarts; the runtime state is only for the live process.
-
-In practical terms:
-
-- `Settings` covers env-backed/static config
-- `RuntimeState` covers live mutable relay, local-auth, and derived auth state
-- `PairingService` / `RelayService` own the live orchestration for those flows
-
-This keeps operator configuration separate from state that changes during
-pairing, unpairing, and local-mode bootstrap.
+1. environment variables from `.env`
+1. credentials persisted at `~/.config/relab/relay_credentials.json`
+1. generated defaults for local-only secrets (e.g. `local_api_key`)
 
 ### Option A: Automatic Pairing (recommended)
 
@@ -229,21 +212,7 @@ Verify camera is properly connected to the CSI port.
 
 - If the plugin runs in Docker, `http://localhost:8011` points at the plugin container itself, not your host machine. Use `http://host.docker.internal:8011`, your host's LAN IP, or the real HTTPS API URL instead.
 
-- If `PAIRING_BACKEND_URL=https://api-test.cml-relab.org` returns `403` during `/plugins/rpi-cam/pairing/register` or `/plugins/rpi-cam/ws/connect`, the request is likely being blocked by Cloudflare before it reaches FastAPI. Add a WAF/challenge bypass rule for both `api-test.cml-relab.org` and `api.cml-relab.org` covering the machine-facing RPi camera paths:
-
-  ```text
-  (
-    http.host in {"api-test.cml-relab.org" "api.cml-relab.org"}
-    and starts_with(http.request.uri.path, "/plugins/rpi-cam/pairing/")
-  )
-  or
-  (
-    http.host in {"api-test.cml-relab.org" "api.cml-relab.org"}
-    and http.request.uri.path eq "/plugins/rpi-cam/ws/connect"
-  )
-  ```
-
-  Set the action to skip or bypass the Cloudflare security feature issuing the challenge. In April 2026, `api-test.cml-relab.org` returned `cf-mitigated: challenge` on both the pairing register path and the WebSocket relay path.
+- **403 on pairing or WebSocket connect?** If the backend sits behind Cloudflare, the machine-facing paths may be challenged. Add a WAF bypass rule for `/plugins/rpi-cam/pairing/*` and `/plugins/rpi-cam/ws/connect` on the relevant hosts.
 
 - Remove `~/.config/relab/relay_credentials.json` if it exists (pairing is skipped when credentials present)
 
