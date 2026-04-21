@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import uuid
+from io import BytesIO
 from typing import TYPE_CHECKING
 
 from pydantic import AnyUrl
@@ -25,10 +26,10 @@ from app.api.services.contract_adapters import build_image_metadata, image_metad
 from app.api.services.image_sinks import ImageSink, ImageSinkError, get_image_sink
 from app.api.services.stream_service import StreamService
 from app.api.services.stream_state import ActiveStreamState
+from app.api.services.upload_queue import UploadQueue
 from app.core.config import settings
+from app.observability.logging import build_log_extra
 from app.utils.files import clear_directory
-from app.utils.logging import build_log_extra
-from app.utils.upload_queue import UploadQueue
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping
@@ -80,6 +81,15 @@ def _encode_jpeg_atomic(
         _unlink_quiet(tmp_path)
         raise
     return image_bytes
+
+
+def _encode_preview_jpeg(image: PilImage) -> bytes:
+    """Encode a smaller JPEG suitable for cached preview thumbnails."""
+    frame = image.copy()
+    frame.thumbnail((640, 400))
+    buffer = BytesIO()
+    frame.save(buffer, format="JPEG", quality=72, optimize=True)
+    return buffer.getvalue()
 
 
 class CameraManager:
@@ -136,7 +146,7 @@ class CameraManager:
         return self.stream.is_active
 
     @contextlib.asynccontextmanager
-    async def _locked(self) -> AsyncIterator[None]:
+    async def _locked(self, timeout_s: float | None = None) -> AsyncIterator[None]:
         """Acquire the camera lock with a timeout, then yield inside the critical section.
 
         Callers should use ``async with self._locked():`` so exceptions, early returns,
@@ -144,7 +154,7 @@ class CameraManager:
         """
         acquired = False
         try:
-            async with asyncio.timeout(self.lock_timeout):
+            async with asyncio.timeout(self.lock_timeout if timeout_s is None else timeout_s):
                 await self.lock.acquire()
                 acquired = True
         except TimeoutError as e:
@@ -234,6 +244,30 @@ class CameraManager:
             image_url=stored.image_url,
             expires_at=stored.expires_at,
         )
+
+    async def capture_preview_thumbnail_jpeg(self, *, lock_timeout_s: float = 0.25) -> bytes | None:
+        """Capture a best-effort cached preview thumbnail without using still-capture flow.
+
+        Returns ``None`` when the camera is busy, actively streaming, or otherwise
+        unavailable for a cheap lores grab. This is intended for background cache
+        maintenance only, never for request/response paths.
+        """
+        try:
+            async with self._locked(timeout_s=lock_timeout_s):
+                if self.stream.is_active:
+                    return None
+
+                backend_camera = self.backend.camera
+                if backend_camera is not None:
+                    await self.backend.open(CameraMode.VIDEO)
+                    frame = await asyncio.to_thread(backend_camera.capture_image, "lores")
+                else:
+                    result = await self.backend.capture_image()
+                    frame = result.image
+                return await asyncio.to_thread(_encode_preview_jpeg, frame)
+        except RuntimeError:
+            logger.debug("Preview thumbnail refresh skipped because the camera lock was busy")
+            return None
 
     def _require_streaming_backend(self) -> StreamingCameraBackend:
         """Return the backend narrowed to StreamingCameraBackend, or raise."""

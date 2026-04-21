@@ -19,12 +19,13 @@ from app.api.schemas.camera_controls import (
 from app.api.schemas.streaming import YoutubeStreamConfig
 from app.api.services.camera_backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.api.services.camera_manager import CameraManager
+from app.api.services.pairing import PairingService, PairingState
+from app.api.services.relay import RelayService
+from app.api.services.upload_queue import UploadQueueWorker
 from app.core.runtime import AppRuntime
-from app.utils.pairing import PairingService, PairingState
-from app.utils.preview_sleeper import PreviewSleeper
-from app.utils.relay import RelayService
-from app.utils.thermal_governor import ThermalGovernor
-from app.utils.upload_queue import UploadQueueWorker
+from app.workers.preview_sleeper import PreviewSleeper
+from app.workers.preview_thumbnail import PreviewThumbnailWorker
+from app.workers.thermal_governor import ThermalGovernor
 from tests.constants import YOUTUBE_TEST_BROADCAST_URL
 
 if TYPE_CHECKING:
@@ -236,6 +237,18 @@ class FakeThermalGovernor(ThermalGovernor):
 
     async def run_forever(self) -> None:
         """Record governor loop startup and then idle until cancelled."""
+        self.run_calls += 1
+        await cast("asyncio.Future[None]", asyncio.Future())
+
+
+class FakePreviewThumbnailWorker(PreviewThumbnailWorker):
+    """Preview-thumbnail worker double that records runtime-managed lifecycle."""
+
+    def __init__(self) -> None:
+        self.run_calls = 0
+
+    async def run_forever(self) -> None:
+        """Record worker startup and then idle until cancelled."""
         self.run_calls += 1
         await cast("asyncio.Future[None]", asyncio.Future())
 

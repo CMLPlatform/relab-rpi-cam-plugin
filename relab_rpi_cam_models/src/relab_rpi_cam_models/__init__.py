@@ -4,6 +4,7 @@ from .camera import CameraMode, CameraStatusView
 from .device_seam import (
     SAFE_RELAY_TRACE_HEADERS,
     DeviceImageUploadAck,
+    DevicePreviewThumbnailAck,
     DevicePublicKeyJWK,
     LocalAccessInfo,
     PairingClaimedBootstrap,
@@ -38,6 +39,7 @@ __all__ = [
     "CameraStatusView",
     "CaptureMetadata",
     "DeviceImageUploadAck",
+    "DevicePreviewThumbnailAck",
     "DevicePublicKeyJWK",
     "ImageCaptureResponse",
     "ImageCaptureStatus",

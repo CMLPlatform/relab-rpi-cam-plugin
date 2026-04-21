@@ -118,6 +118,12 @@ class DeviceImageUploadAck(BaseModel):
     image_url: str = Field(description="Backend-hosted URL for the stored image")
 
 
+class DevicePreviewThumbnailAck(BaseModel):
+    """Backend -> Pi acknowledgement of a cached preview-thumbnail upload."""
+
+    preview_thumbnail_url: str = Field(description="Backend-hosted URL for the cached preview thumbnail")
+
+
 class RelayMessageType(StrEnum):
     """Message types used by the HTTP-over-WebSocket relay."""
 

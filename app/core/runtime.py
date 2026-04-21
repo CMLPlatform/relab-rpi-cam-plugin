@@ -10,17 +10,18 @@ from typing import TYPE_CHECKING
 
 from app.api.services.camera_manager import CameraManager
 from app.api.services.hardware_protocols import Picamera2Like
+from app.api.services.pairing import PairingService
 from app.api.services.preview_pipeline import PreviewPipelineManager
+from app.api.services.relay import RelayService
+from app.api.services.relay_state import RelayRuntimeState
+from app.api.services.upload_queue import UploadQueueWorker
 from app.core.config import settings
 from app.core.runtime_context import get_active_runtime, set_active_runtime
 from app.core.runtime_state import RuntimeState
-from app.utils.observability import ObservabilityHandle
-from app.utils.pairing import PairingService
-from app.utils.preview_sleeper import PreviewSleeper
-from app.utils.relay import RelayService
-from app.utils.relay_state import RelayRuntimeState
-from app.utils.thermal_governor import ThermalGovernor
-from app.utils.upload_queue import UploadQueueWorker
+from app.observability.tracing import ObservabilityHandle
+from app.workers.preview_sleeper import PreviewSleeper
+from app.workers.preview_thumbnail import PreviewThumbnailWorker
+from app.workers.thermal_governor import ThermalGovernor
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Coroutine
@@ -49,6 +50,7 @@ class AppRuntime:
     pairing_service: PairingService = field(default_factory=PairingService)
     relay_service: RelayService = field(init=False)
     preview_sleeper: PreviewSleeper = field(init=False)
+    preview_thumbnail_worker: PreviewThumbnailWorker = field(init=False)
     thermal_governor: ThermalGovernor = field(init=False)
     upload_queue_worker: UploadQueueWorker | None = None
     background_tasks: set[asyncio.Task[None]] = field(default_factory=set)
@@ -60,6 +62,11 @@ class AppRuntime:
         self.relay_service = RelayService(state=self.relay_state, runtime_state=self.runtime_state)
         self.preview_sleeper = PreviewSleeper(
             pipeline=self.preview_pipeline,
+            relay_state=self.relay_state,
+            relay_enabled_getter=lambda: self.runtime_state.relay_enabled,
+        )
+        self.preview_thumbnail_worker = PreviewThumbnailWorker(
+            camera_manager=self.camera_manager,
             relay_state=self.relay_state,
             relay_enabled_getter=lambda: self.runtime_state.relay_enabled,
         )
@@ -133,9 +140,7 @@ class AppRuntime:
     async def wait_for_tasks(self, names: set[str] | None = None) -> None:
         """Wait for tracked tasks, optionally filtered by task name."""
         pending = tuple(
-            task
-            for task in self.background_tasks | self.recurring_tasks
-            if names is None or task.get_name() in names
+            task for task in self.background_tasks | self.recurring_tasks if names is None or task.get_name() in names
         )
         if not pending:
             return
@@ -160,6 +165,10 @@ class AppRuntime:
         self.thermal_governor.configure(camera_getter=self.camera_getter)
         return self.create_task(self.thermal_governor.run_forever(), name="thermal_governor")
 
+    def start_preview_thumbnail_worker(self) -> asyncio.Task[None]:
+        """Start or replace the cached preview-thumbnail worker under runtime ownership."""
+        return self.create_task(self.preview_thumbnail_worker.run_forever(), name="preview_thumbnail_worker")
+
     def start_upload_queue_worker(self) -> asyncio.Task[None]:
         """Start or replace the upload queue worker under runtime ownership."""
         if self.upload_queue_worker is None:
@@ -168,7 +177,14 @@ class AppRuntime:
 
     async def stop_runtime_workers(self) -> None:
         """Stop runtime-owned long-lived worker loops in dependency order."""
-        await self.stop_tasks({"preview_sleeper", "thermal_governor", "upload_queue_worker"})
+        await self.stop_tasks(
+            {
+                "preview_sleeper",
+                "preview_thumbnail_worker",
+                "thermal_governor",
+                "upload_queue_worker",
+            }
+        )
 
     def camera_getter(self) -> Picamera2Like | None:
         """Return the live backend camera object for background services."""
