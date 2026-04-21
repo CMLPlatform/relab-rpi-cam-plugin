@@ -7,6 +7,7 @@
 {% block site_header_nav %}
   <nav class="site-header__nav" aria-label="Primary">
     <a href="{{ url_for('homepage') }}" class="btn btn--ghost">Home</a>
+    <a href="{{ url_for('swagger_ui_html') }}" class="btn btn--ghost">API Docs</a>
   </nav>
 {% endblock %}
 
@@ -124,7 +125,7 @@
     setPairingActionStatus("Generating new code…", "pending");
 
     try {
-      const resp = await fetch("/pairing/code/refresh", { method: "POST" });
+      const resp = await fetch("/pairing/code", { method: "POST" });
       if (!resp.ok) {
         if (button) {
           setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
@@ -185,7 +186,7 @@
     btn.disabled = true;
     btn.textContent = "Unpairing…";
     try {
-      const resp = await fetch("/pairing/credentials", { method: "DELETE" });
+      const resp = await fetch("/pairing", { method: "DELETE" });
       dialog.close();
       if (resp.ok) {
         setPairingActionStatus("Unpaired. Reloading page…", "success");
@@ -270,22 +271,31 @@
       <h2>Connection status</h2>
 
       {% if relay_enabled %}
-      <p class="online">Paired and online.</p>
-      <div>
-        <button class="btn btn--danger" onclick="unpair()">Unpair</button>
+      <div class="setup-state-banner setup-state-banner--success">
+        <div class="setup-state-banner__copy">
+          <p class="online">Paired and online.</p>
+          <span class="setup-debug__text">Relay is connected and the camera is ready for remote access.</span>
+        </div>
+        <div class="setup-actions">
+          <button class="btn btn--danger" onclick="unpair()">Unpair</button>
+        </div>
       </div>
-      <table style="margin-top:8px">
-        <tr>
-          <td>Relay backend</td>
-          <td><code>{{ relay_backend_url or 'not set' }}</code></td>
-        </tr>
-        <tr>
-          <td>Camera ID</td>
-          <td>{% if relay_camera_id %}<code>{{ relay_camera_id }}</code>{% else %}<em>not set</em>{% endif %}</td>
-        </tr>
-      </table>
+      <div class="setup-inline-metrics">
+        <div class="setup-inline-metric">
+          <span class="setup-debug__label">Relay backend</span>
+          <code>{{ relay_backend_url or 'not set' }}</code>
+        </div>
+        <div class="setup-inline-metric">
+          <span class="setup-debug__label">Camera ID</span>
+          {% if relay_camera_id %}<code>{{ relay_camera_id }}</code>{% else %}<em>not set</em>{% endif %}
+        </div>
+      </div>
       {% elif pairing.status == status_paired %}
-      <p class="online">Paired. Connecting now.</p>
+      <div class="setup-state-banner setup-state-banner--success">
+        <div class="setup-state-banner__copy">
+          <p class="online">Paired. Connecting now.</p>
+        </div>
+      </div>
       {% elif pairing.status in ('waiting', 'registering') and pairing.code %}
       <div class="pairing-code-panel">
         <div class="pairing-code-panel__header">
@@ -329,9 +339,17 @@
         <span class="setup-debug__hint">Refresh after pairing or unpairing to see the latest state.</span>
       </div>
       {% elif pairing.status == status_error %}
-      <p class="offline">{{ pairing.error or 'Pairing error. Retrying.' }}</p>
+      <div class="setup-state-banner setup-state-banner--warning">
+        <div class="setup-state-banner__copy">
+          <p class="offline">{{ pairing.error or 'Pairing error. Retrying.' }}</p>
+        </div>
+      </div>
       {% else %}
-      <p class="offline">No relay yet. Pairing keeps retrying.</p>
+      <div class="setup-state-banner setup-state-banner--muted">
+        <div class="setup-state-banner__copy">
+          <p class="offline">No relay yet. Pairing keeps retrying.</p>
+        </div>
+      </div>
       {% endif %}
 
       <details class="setup-debug">
@@ -390,62 +408,72 @@
     <div class="setup-status-grid">
       <details class="setup-advanced">
         <summary>
-          <span>
-            {% if local_mode_enabled and local_api_key %}
-            <span class="status-chip status-chip--live">Local access</span>
-            {% elif local_mode_enabled %}
-            <span class="status-chip status-chip--muted">Local access</span>
-            {% else %}
-            <span class="status-chip status-chip--muted">Local access disabled</span>
-            {% endif %}
-          </span>
+          <div class="setup-advanced__summary-main">
+            <span>
+              {% if local_mode_enabled and local_api_key %}
+              <span class="status-chip status-chip--live">Local access</span>
+              {% elif local_mode_enabled %}
+              <span class="status-chip status-chip--muted">Local access</span>
+              {% else %}
+              <span class="status-chip status-chip--muted">Local access disabled</span>
+              {% endif %}
+            </span>
+            <span class="setup-advanced__summary-copy">Direct LAN access for browser, app, and scripts.</span>
+          </div>
           <span class="setup-advanced__summary">
             {% if local_mode_enabled %}
-            browser + scripts
+            Available
             {% else %}
-            unavailable
+            Unavailable
             {% endif %}
           </span>
         </summary>
 
         <div class="setup-advanced__body">
-          <p>
-            The local API works in browsers on your LAN, in the native RELab app, and in custom scripts.
-          </p>
-          <ul class="setup-advanced__list">
-            <li><strong>Native RELab app latency boost</strong> - once relay-paired, the app receives this key
-              automatically and switches to direct access when an Ethernet cable is connected.</li>
-            <li><strong>Browser and script access</strong> - use the same key in a browser on the local network or send
-              it directly with <code>X-API-Key</code> from custom tools.</li>
-          </ul>
-          <div class="setup-advanced__callout">
-            Relay pairing still uses the 6-character code above.
+          <div class="setup-advanced__topline">
+            <p class="setup-advanced__lede">Use the local API on your LAN for faster direct access.</p>
+            <div class="setup-advanced__callout">
+              Relay pairing still uses the 6-character code above.
+            </div>
+          </div>
+          <div class="setup-inline-metrics setup-inline-metrics--soft">
+            <div class="setup-inline-metric">
+              <span class="setup-debug__label">Native RELab app latency boost</span>
+              <span class="setup-debug__text">Switches to local access automatically after relay pairing when Ethernet is available.</span>
+            </div>
+            <div class="setup-inline-metric">
+              <span class="setup-debug__label">Browser and script access</span>
+              <span class="setup-debug__text">Use the same key in your browser or send it with <code>X-API-Key</code>.</span>
+            </div>
           </div>
           {% if local_api_key %}
-          <div class="setup-advanced__grid">
-            <div class="setup-debug__row">
-              <span class="setup-debug__label">Local API key</span>
-              <div class="setup-debug__value">
-                <code id="local-api-key">{{ local_api_key }}</code>
+          <div class="setup-value-list">
+            <div class="setup-value-card setup-value-card--key">
+              <div class="setup-value-card__header">
+                <span class="setup-debug__label">Local API key</span>
                 <button class="btn setup-copy-btn" type="button"
                   onclick="copyText(document.getElementById('local-api-key').textContent, this)">
                   Copy
                 </button>
               </div>
+              <code id="local-api-key" class="setup-value-card__content setup-value-card__content--secret">{{ local_api_key }}</code>
             </div>
             <div class="setup-debug__row">
               <span class="setup-debug__label">HLS preview</span>
               <span class="setup-debug__text">
-                {% for ip in lan_ips %}<code>http://{{ ip }}:8018/hls/cam-preview/index.m3u8</code>{% if not loop.last
+                {% for ip in lan_ips %}<code>http://{{ ip }}:8018/preview/hls/cam-preview/index.m3u8</code>{% if not loop.last
                 %}<br>{% endif %}{% endfor %}
               </span>
             </div>
-            <div class="setup-debug__row">
-              <span class="setup-debug__label">API</span>
-              <span class="setup-debug__text">
-                {% for ip in lan_ips %}<code>http://{{ ip }}:8018</code>{% if not loop.last %}<br>{% endif %}{% endfor
-                %}
-              </span>
+            <div class="setup-value-card">
+              <div class="setup-value-card__header">
+                <span class="setup-debug__label">API</span>
+              </div>
+              <div class="setup-value-stack">
+                {% for ip in lan_ips %}
+                <code class="setup-value-card__content">http://{{ ip }}:8018</code>
+                {% endfor %}
+              </div>
             </div>
           </div>
           <p class="setup-advanced__footnote">

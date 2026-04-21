@@ -33,6 +33,9 @@ services:
       - .env
     group_add:
       - video
+    depends_on:
+      mediamtx:
+        condition: service_healthy
     logging:
       driver: local
       options:
@@ -57,6 +60,14 @@ services:
     restart: unless-stopped
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+    # Hit the control API on localhost:9997 — the image ships busybox wget
+    # (no ``--spider``, hence ``-O /dev/null``). Cheap, no auth, no side effects.
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q -O /dev/null http://localhost:9997/v3/config/global/get || exit 1" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     logging:
       driver: local
       options:

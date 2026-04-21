@@ -3,8 +3,8 @@
 import pytest
 from httpx import AsyncClient
 
-from app.api.routers import local_key as local_key_router
 from app.core.runtime import AppRuntime
+from app.pairing.routers import local_key as local_key_router
 
 LOCAL_KEY_PATH = "/local-key"
 TEST_LOCAL_KEY = "test-local-api-key"

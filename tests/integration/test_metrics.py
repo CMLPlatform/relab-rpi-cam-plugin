@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from httpx import AsyncClient
 
-from app.utils import telemetry as telemetry_mod
+from app.observability import telemetry as telemetry_mod
 from tests.constants import (
     MET_CPU,
     MET_CPU_18_5,

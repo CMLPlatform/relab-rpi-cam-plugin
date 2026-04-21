@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
@@ -9,25 +10,25 @@ from PIL import Image
 from pydantic import AnyUrl
 from relab_rpi_cam_models.camera import CameraMode
 
-from app.api.schemas.camera_controls import (
+from app.camera.schemas import (
     CameraControlInfo,
-    CameraControlsCapabilities,
     CameraControlsView,
     FocusControlRequest,
     JsonValue,
+    YoutubeStreamConfig,
 )
-from app.api.schemas.streaming import YoutubeStreamConfig
-from app.api.services.camera_backend import CaptureResult, StreamingCameraBackend, StreamStartResult
-from app.api.services.camera_manager import CameraManager
+from app.camera.services.backend import CaptureResult, StreamingCameraBackend, StreamStartResult
+from app.camera.services.manager import CameraManager
 from app.core.runtime import AppRuntime
-from app.utils.pairing import PairingService, PairingState
-from app.utils.preview_sleeper import PreviewSleeper
-from app.utils.relay import RelayService
-from app.utils.thermal_governor import ThermalGovernor
+from app.pairing.services.service import PairingService, PairingState
+from app.relay.service import RelayService
+from app.upload.queue import UploadQueueWorker
+from app.workers.preview_sleeper import PreviewSleeper
+from app.workers.preview_thumbnail import PreviewThumbnailWorker
+from app.workers.thermal_governor import ThermalGovernor
 from tests.constants import YOUTUBE_TEST_BROADCAST_URL
 
 if TYPE_CHECKING:
-    import asyncio
     from collections.abc import Awaitable, Callable, Coroutine
 
     from relab_rpi_cam_models.stream import StreamMode
@@ -98,14 +99,6 @@ class FakeBackend:
                 ),
             },
             values=self.capture_metadata,
-        )
-
-    async def get_controls_capabilities(self) -> CameraControlsCapabilities:
-        """Return mock control capabilities for UI helpers."""
-        view = await self.get_controls()
-        return CameraControlsCapabilities(
-            supported=True,
-            controls=list(view.controls.values()),
         )
 
     async def set_controls(self, controls: dict[str, JsonValue]) -> CameraControlsView:
@@ -179,18 +172,15 @@ class FakePairingService(PairingService):
 
 
 class StubCameraManager(CameraManager):
-    """Camera manager stub with explicit call recording for lifespan tests."""
+    """Camera manager stub for lifespan tests; records cleanup force flags."""
 
     def __init__(self) -> None:
         super().__init__(backend=cast("StreamingCameraBackend", FakeBackend()))
-        self.setup_camera_calls: list[CameraMode] = []
         self.cleanup_calls: list[bool] = []
-        self.get_stream_info_calls = 0
-        self.stop_streaming_calls = 0
 
     async def setup_camera(self, mode: CameraMode) -> None:
-        """Record setup requests without touching hardware."""
-        self.setup_camera_calls.append(mode)
+        """No-op setup; avoids touching hardware during lifespan tests."""
+        del mode
 
     async def cleanup(self, *, force: bool = False) -> None:
         """Record cleanup requests without touching hardware."""
@@ -198,11 +188,10 @@ class StubCameraManager(CameraManager):
 
     async def get_stream_info(self) -> None:
         """Return no active stream metadata in lifespan-oriented tests."""
-        self.get_stream_info_calls += 1
+        return
 
     async def stop_streaming(self) -> None:
-        """Record stop-stream requests without touching hardware."""
-        self.stop_streaming_calls += 1
+        """Clear stream mode without touching hardware."""
         self.stream.mode = None
 
 
@@ -215,17 +204,18 @@ class FakePreviewSleeper(PreviewSleeper):
             relay_state=runtime.relay_state,
             relay_enabled_getter=lambda: runtime.runtime_state.relay_enabled,
         )
-        self.start_calls = 0
-        self.stop_calls = 0
+        self.configure_calls = 0
+        self.run_calls = 0
 
-    def start(self, camera_getter: Callable[[], object | None]) -> None:
-        """Record sleeper startup without spawning background work."""
+    def configure(self, *, camera_getter: Callable[[], object | None]) -> None:
+        """Record sleeper configuration without spawning background work."""
         del camera_getter
-        self.start_calls += 1
+        self.configure_calls += 1
 
-    async def stop(self) -> None:
-        """Record sleeper shutdown without touching the pipeline."""
-        self.stop_calls += 1
+    async def run_forever(self) -> None:
+        """Record sleeper loop startup and then idle until cancelled."""
+        self.run_calls += 1
+        await cast("asyncio.Future[None]", asyncio.Future())
 
 
 class FakeThermalGovernor(ThermalGovernor):
@@ -233,17 +223,42 @@ class FakeThermalGovernor(ThermalGovernor):
 
     def __init__(self, runtime: AppRuntime) -> None:
         super().__init__(runtime.preview_pipeline)
-        self.start_calls = 0
-        self.stop_calls = 0
+        self.configure_calls = 0
+        self.run_calls = 0
 
-    def start(self, camera_getter: Callable[[], object | None]) -> None:
-        """Record governor startup without spawning background work."""
+    def configure(self, *, camera_getter: Callable[[], object | None]) -> None:
+        """Record governor configuration without spawning background work."""
         del camera_getter
-        self.start_calls += 1
+        self.configure_calls += 1
 
-    async def stop(self) -> None:
-        """Record governor shutdown without touching the pipeline."""
-        self.stop_calls += 1
+    async def run_forever(self) -> None:
+        """Record governor loop startup and then idle until cancelled."""
+        self.run_calls += 1
+        await cast("asyncio.Future[None]", asyncio.Future())
+
+
+class FakePreviewThumbnailWorker(PreviewThumbnailWorker):
+    """Preview-thumbnail worker double that records runtime-managed lifecycle."""
+
+    def __init__(self) -> None:
+        self.run_calls = 0
+
+    async def run_forever(self) -> None:
+        """Record worker startup and then idle until cancelled."""
+        self.run_calls += 1
+        await cast("asyncio.Future[None]", asyncio.Future())
+
+
+class FakeUploadQueueWorker(UploadQueueWorker):
+    """Upload queue worker double that records runtime-managed lifecycle."""
+
+    def __init__(self) -> None:
+        self.run_calls = 0
+
+    async def run_forever(self) -> None:
+        """Record worker startup and then idle until cancelled."""
+        self.run_calls += 1
+        await cast("asyncio.Future[None]", asyncio.Future())
 
 
 class SpyRuntime(AppRuntime):

@@ -9,9 +9,9 @@ import pytest
 from httpx import AsyncClient
 from pydantic import AnyUrl
 
-from app.api.services.camera_manager import CameraManager
-from app.api.services.image_sinks.base import ImageSinkError, StoredImage
-from app.core.config import settings
+from app.camera.services.manager import CameraManager
+from app.core.settings import settings
+from app.image_sinks.base import ImageSinkError, StoredImage
 from tests.constants import (
     QUEUED_STATUS,
     SAMPLE_IMAGE_ID,
@@ -62,7 +62,7 @@ def stub_failing_sink(camera_manager: CameraManager) -> _StubSink:
 
 
 class TestCaptureEndpoint:
-    """Tests for POST /images — synchronous sink put + queue fallback."""
+    """Tests for POST /captures — synchronous sink put + queue fallback."""
 
     async def test_capture_pushes_and_returns_uploaded_status(
         self,
@@ -75,7 +75,7 @@ class TestCaptureEndpoint:
         settings.image_path = tmp_path
 
         try:
-            resp = await client.post("/images", json={"product_id": 1})
+            resp = await client.post("/captures", json={"product_id": 1})
             assert resp.status_code == 201
             data = resp.json()
             assert data[CAPTURED_STATUS_KEY] == UPLOADED_STATUS
@@ -97,7 +97,7 @@ class TestCaptureEndpoint:
         settings.image_path = tmp_path
 
         try:
-            resp = await client.post("/images", json=None)
+            resp = await client.post("/captures", json=None)
             assert resp.status_code == 201
 
             remaining = await asyncio.to_thread(lambda: list(tmp_path.glob("*.jpg")))
@@ -116,7 +116,7 @@ class TestCaptureEndpoint:
         settings.image_path = tmp_path
 
         try:
-            resp = await client.post("/images", json={"product_id": 7})
+            resp = await client.post("/captures", json={"product_id": 7})
             assert resp.status_code == 201
             data = resp.json()
             assert data[CAPTURED_STATUS_KEY] == QUEUED_STATUS
@@ -144,7 +144,7 @@ class TestCaptureEndpoint:
 
         try:
             resp = await client.post(
-                "/images",
+                "/captures",
                 json={"product_id": 99, "description": "rear view"},
             )
             assert resp.status_code == 201
@@ -163,5 +163,5 @@ class TestCaptureEndpoint:
     ) -> None:
         """RuntimeError during capture should surface as 500."""
         monkeypatch.setattr(camera_manager, "capture_jpeg", AsyncMock(side_effect=RuntimeError("boom")))
-        resp = await client.post("/images")
+        resp = await client.post("/captures")
         assert resp.status_code == 500

@@ -34,12 +34,12 @@
     "psutil>=5.9",
     "pydantic-settings>=2.8.0",
     "pyjwt[crypto]>=2.12.1",
-    "relab-rpi-cam-models>=0.2.0",                    # NOTE: Keep this aligned with the published contract package
+    "relab-rpi-cam-models>=0.3.1",                    # NOTE: Keep this aligned with the published contract package
     "websockets>=14.0",
   ]
 
-  requires-python = ">=3.13" # Python 3.13+ available in Debian Trixie for picamera2
-  version         = "0.2.0"  # NOTE: Versioning is handled by commitizen
+  requires-python = ">=3.13,<3.14" # Python 3.13 is needed in Debian Trixie for picamera2
+  version         = "0.3.0"        # NOTE: Versioning is handled by commitizen
 
   [project.urls]
     Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"

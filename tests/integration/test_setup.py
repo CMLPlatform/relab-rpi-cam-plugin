@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
-from app.api.routers import setup as setup_router
-from app.core.config import DEFAULT_PAIRING_BACKEND_URL, settings
 from app.core.runtime import AppRuntime
+from app.core.settings import DEFAULT_PAIRING_BACKEND_URL, settings
+from app.pairing.routers import setup as setup_router
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, HTML_CONTENT_TYPE
 from tests.support.fakes import FakePairingService, FakeRelayService, SpyRuntime
 
@@ -32,7 +32,11 @@ NEW_PAIRING_CODE_LABEL = "Generate a new pairing code"
 LATENCY_BOOST_TEXT = "Native RELab app latency boost"
 STANDALONE_CLIENTS_TEXT = "Browser and script access"
 LOCAL_KEY_WARNING_TEXT = "Relay pairing still uses the 6-character code above."
-LOCAL_KEY_NOTE_TEXT = "The local API works in browsers on your LAN, in the native RELab app, and in custom scripts."
+LOCAL_KEY_NOTE_TEXT = "Direct LAN access for browser, app, and scripts."
+LOCAL_API_KEY_TEXT = "Local API key"
+HLS_PREVIEW_TEXT = "HLS preview"
+PREVIEW_HLS_URL = f"http://{THIS_IP_PLACEHOLDER}:8018/preview/hls/cam-preview/index.m3u8"
+API_TEXT = "API"
 PAIRING_EXPIRY_ATTR = "data-pairing-expiry"
 PAIRING_TTL_ATTR = 'data-ttl-ms="600000"'
 UNPAIR_FUNCTION_CALL = "unpair()"
@@ -49,8 +53,9 @@ HEADER_NOSNIFF = "nosniff"
 HEADER_NO_REFERRER = "no-referrer"
 SETUP_CSP_DEFAULT = "default-src 'self'"
 SETUP_CSP_INLINE = "'unsafe-inline'"
-THEME_SELECT_MARKER = "data-theme-select"
+THEME_TOGGLE_MARKER = "data-theme-toggle"
 LOGO_SRC = "/static/logo.png"
+THEME_AUTO_LABEL = "Theme: Auto"
 
 
 class TestSetupPage:
@@ -104,7 +109,8 @@ class TestSetupPage:
     async def test_setup_page_renders_shared_header_and_theme_control(self, unauthed_client: AsyncClient) -> None:
         """The setup page should expose the shared site header affordances."""
         resp = await unauthed_client.get("/setup")
-        assert THEME_SELECT_MARKER in resp.text
+        assert THEME_TOGGLE_MARKER in resp.text
+        assert THEME_AUTO_LABEL in resp.text
         assert LOGO_SRC in resp.text
 
     async def test_setup_page_shows_pairing_url_and_change_hints_when_backend_is_reachable(
@@ -208,6 +214,19 @@ class TestSetupPage:
         assert LOCAL_KEY_WARNING_TEXT in resp.text
         assert LOCAL_KEY_NOTE_TEXT in resp.text
 
+    async def test_setup_page_renders_local_access_as_compact_value_cards(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """Local access values should render in dedicated cards without raw line-break layout."""
+        self._runtime.runtime_state.set_local_api_key("test-local-api-key")
+        resp = await unauthed_client.get("/setup")
+        assert resp.status_code == 200
+        assert LOCAL_API_KEY_TEXT in resp.text
+        assert HLS_PREVIEW_TEXT in resp.text
+        assert PREVIEW_HLS_URL in resp.text
+        assert API_TEXT in resp.text
+
     async def test_setup_page_falls_back_to_this_ip_placeholder_when_no_mdns_name(
         self,
         unauthed_client: AsyncClient,
@@ -221,16 +240,16 @@ class TestSetupPage:
 
 
 class TestUnpair:
-    """Tests for DELETE /pairing/credentials."""
+    """Tests for DELETE /pairing."""
 
     async def test_unpair_returns_204(self, unauthed_client: AsyncClient) -> None:
         """Endpoint returns 204 No Content immediately."""
         with (
-            patch("app.api.routers.setup.delete_relay_credentials"),
-            patch("app.api.routers.setup.clear_runtime_relay_credentials"),
-            patch("app.api.routers.setup.asyncio.sleep"),
+            patch("app.pairing.routers.setup.delete_relay_credentials"),
+            patch("app.pairing.routers.setup.clear_runtime_relay_credentials"),
+            patch("app.pairing.routers.setup.asyncio.sleep"),
         ):
-            resp = await unauthed_client.delete("/pairing/credentials")
+            resp = await unauthed_client.delete("/pairing")
         assert resp.status_code == 204
 
     async def test_unpair_deletes_credentials_and_clears_settings(
@@ -246,18 +265,18 @@ class TestUnpair:
         runtime.pairing_service = pairing_service
 
         with (
-            patch("app.api.routers.setup.delete_relay_credentials", side_effect=lambda: deleted.append(True)),
+            patch("app.pairing.routers.setup.delete_relay_credentials", side_effect=lambda: deleted.append(True)),
             patch(
-                "app.api.routers.setup.clear_runtime_relay_credentials",
+                "app.pairing.routers.setup.clear_runtime_relay_credentials",
                 side_effect=lambda _runtime_state: cleared.append(True),
             ),
-            patch("app.api.routers.setup.asyncio.sleep"),  # skip the 0.1s delay
+            patch("app.pairing.routers.setup.asyncio.sleep"),  # skip the 0.1s delay
             patch(
-                "app.api.routers.setup.get_request_runtime",
+                "app.pairing.routers.setup.get_request_runtime",
                 return_value=runtime,
             ),
         ):
-            resp = await unauthed_client.delete("/pairing/credentials")
+            resp = await unauthed_client.delete("/pairing")
             await runtime.created_tasks[0]
 
         assert resp.status_code == 204
@@ -266,12 +285,12 @@ class TestUnpair:
 
 
 class TestPairingCodeRefresh:
-    """Tests for POST /pairing/code/refresh."""
+    """Tests for POST /pairing/code."""
 
     async def test_refresh_returns_204(self, unauthed_client: AsyncClient) -> None:
         """Endpoint returns 204 No Content immediately."""
-        with patch("app.api.routers.setup.asyncio.sleep"):
-            resp = await unauthed_client.post("/pairing/code/refresh")
+        with patch("app.pairing.routers.setup.asyncio.sleep"):
+            resp = await unauthed_client.post("/pairing/code")
         assert resp.status_code == 204
 
     async def test_refresh_restarts_pairing_without_deleting_credentials(
@@ -298,13 +317,13 @@ class TestPairingCodeRefresh:
         runtime.pairing_service = pairing_service
 
         with (
-            patch("app.api.routers.setup.asyncio.sleep"),
+            patch("app.pairing.routers.setup.asyncio.sleep"),
             patch(
-                "app.api.routers.setup.get_request_runtime",
+                "app.pairing.routers.setup.get_request_runtime",
                 return_value=runtime,
             ),
         ):
-            resp = await unauthed_client.post("/pairing/code/refresh")
+            resp = await unauthed_client.post("/pairing/code")
             await runtime.created_tasks[0]
 
         assert resp.status_code == 204

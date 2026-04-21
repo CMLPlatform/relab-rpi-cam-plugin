@@ -3,7 +3,7 @@
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 
-from app.core.config import settings
+from app.core.settings import settings
 
 
 # Create a single shared Jinja2Templates instance with caching enabled.

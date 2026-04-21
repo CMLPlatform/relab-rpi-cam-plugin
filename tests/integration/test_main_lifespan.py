@@ -8,16 +8,19 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import FastAPI
 
+import app.core.lifespan as lifespan_mod
 import app.main as main_mod
-import app.utils.pairing as pairing_mod
-from app.core.config import settings
+import app.pairing.services.service as pairing_mod
 from app.core.runtime import AppRuntime
+from app.core.settings import settings
 from tests.constants import EXAMPLE_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL
 from tests.support.fakes import (
     FakePairingService,
     FakePreviewSleeper,
+    FakePreviewThumbnailWorker,
     FakeRelayService,
     FakeThermalGovernor,
+    FakeUploadQueueWorker,
     StubCameraManager,
 )
 
@@ -34,16 +37,18 @@ def runtime(monkeypatch: pytest.MonkeyPatch) -> AppRuntime:
     class LoggingPairingService(FakePairingService):
         def log_mode_started(self) -> None:
             super().log_mode_started()
-            logging.getLogger("app.utils.pairing").info(PAIRING_MODE_LOG)
+            logging.getLogger("app.pairing.services.service").info(PAIRING_MODE_LOG)
 
     runtime = AppRuntime()
     runtime.camera_manager = StubCameraManager()
     runtime.preview_sleeper = FakePreviewSleeper(runtime)
+    runtime.preview_thumbnail_worker = FakePreviewThumbnailWorker()
     runtime.thermal_governor = FakeThermalGovernor(runtime)
+    runtime.upload_queue_worker = FakeUploadQueueWorker()
     runtime.relay_service = FakeRelayService(runtime)
     runtime.pairing_service = LoggingPairingService()
     runtime.observability_handle = None
-    monkeypatch.setattr(main_mod, "ensure_app_runtime", lambda _app: runtime)
+    monkeypatch.setattr(lifespan_mod, "ensure_app_runtime", lambda _app: runtime)
     return runtime
 
 
@@ -70,8 +75,8 @@ class TestLifespan:
         monkeypatch.setattr(settings, "relay_private_key_pem", "")
         monkeypatch.setattr(settings, "pairing_backend_url", "")
         monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
-        monkeypatch.setattr(main_mod, "bootstrap_runtime_state", lambda _runtime_state: None)
-        monkeypatch.setattr(main_mod, "setup_directory", AsyncMock())
+        monkeypatch.setattr(lifespan_mod, "bootstrap_runtime_state", lambda _runtime_state: None)
+        monkeypatch.setattr(lifespan_mod, "setup_directory", AsyncMock())
 
         with caplog.at_level(logging.INFO):
             await _run_lifespan_once(app)
@@ -100,14 +105,14 @@ class TestLifespan:
             relay_key_id="key-1",
             relay_private_key_pem="private-key",
         )
-        monkeypatch.setattr(main_mod, "bootstrap_runtime_state", lambda _runtime_state: None)
+        monkeypatch.setattr(lifespan_mod, "bootstrap_runtime_state", lambda _runtime_state: None)
         setup_calls: list[object] = []
 
         async def _setup_directory(path: object) -> object:
             setup_calls.append(path)
             return path
 
-        monkeypatch.setattr(main_mod, "setup_directory", _setup_directory)
+        monkeypatch.setattr(lifespan_mod, "setup_directory", _setup_directory)
 
         await _run_lifespan_once(app)
 
@@ -115,6 +120,12 @@ class TestLifespan:
         assert {task.get_name() for task in runtime.background_tasks | runtime.recurring_tasks} == set()
         camera_manager = cast("StubCameraManager", runtime.camera_manager)
         assert camera_manager.cleanup_calls == [True]
+        assert cast("FakeThermalGovernor", runtime.thermal_governor).configure_calls == 1
+        assert cast("FakeThermalGovernor", runtime.thermal_governor).run_calls == 1
+        assert cast("FakePreviewSleeper", runtime.preview_sleeper).configure_calls == 1
+        assert cast("FakePreviewSleeper", runtime.preview_sleeper).run_calls == 1
+        assert cast("FakePreviewThumbnailWorker", runtime.preview_thumbnail_worker).run_calls == 1
+        assert cast("FakeUploadQueueWorker", runtime.upload_queue_worker).run_calls == 1
 
     async def test_pairing_mode_starts_relay_after_pairing(
         self,
@@ -131,8 +142,8 @@ class TestLifespan:
         monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
         monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
         monkeypatch.setattr(pairing_mod, "_lan_setup_url", lambda _port: None)
-        monkeypatch.setattr(main_mod, "bootstrap_runtime_state", lambda _runtime_state: None)
-        monkeypatch.setattr(main_mod, "setup_directory", AsyncMock())
+        monkeypatch.setattr(lifespan_mod, "bootstrap_runtime_state", lambda _runtime_state: None)
+        monkeypatch.setattr(lifespan_mod, "setup_directory", AsyncMock())
 
         with caplog.at_level(logging.INFO):
             await _run_lifespan_once(app)

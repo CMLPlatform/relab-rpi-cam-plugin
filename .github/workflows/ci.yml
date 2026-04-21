@@ -3,8 +3,19 @@ name: CI
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'CHANGELOG.md'
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'CHANGELOG.md'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,6 +25,25 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      models: ${{ steps.filter.outputs.models }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            models:
+              - 'relab_rpi_cam_models/**'
+              - 'tests/unit/test_contract_package.py'
+              - '.github/workflows/models-check-reusable.yml'
+              - 'pyproject.toml'
+              - 'uv.lock'
+
   lint:
     name: Lint
     runs-on: ubuntu-24.04
@@ -57,6 +87,7 @@ jobs:
 
   audit:
     name: Dependency Audit
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -69,6 +100,8 @@ jobs:
 
   models-check:
     name: Models Check
+    needs: changes
+    if: needs.changes.outputs.models == 'true'
     uses: ./.github/workflows/models-check-reusable.yml
     with:
       python_version: "3.13"

@@ -43,14 +43,28 @@
       </a>
       <div class="site-header__controls">
         {% block site_header_nav %}{% endblock %}
-        <label class="theme-control" for="theme-select">
-          <span class="theme-control__label">Theme</span>
-          <select id="theme-select" class="theme-control__select" data-theme-select>
-            <option value="auto">Auto</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </label>
+        <button
+          type="button"
+          class="theme-toggle"
+          data-theme-toggle
+          data-theme-state="auto"
+          aria-label="Theme: Auto"
+          title="Theme: Auto"
+        >
+          <span class="theme-toggle__icon" aria-hidden="true">
+            <svg class="theme-toggle__glyph theme-toggle__glyph--auto" viewBox="0 0 24 24" focusable="false">
+              <rect x="4.5" y="5.25" width="15" height="10.5" rx="2.25" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
+              <path d="M9 19.25h6M12 15.75v3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+            </svg>
+            <svg class="theme-toggle__glyph theme-toggle__glyph--light" viewBox="0 0 24 24" focusable="false">
+              <circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+              <path d="M12 1.75v2.5M12 19.75v2.5M22.25 12h-2.5M4.25 12h-2.5M19.25 4.75l-1.77 1.77M6.52 17.48l-1.77 1.77M19.25 19.25l-1.77-1.77M6.52 6.52 4.75 4.75" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+            </svg>
+            <svg class="theme-toggle__glyph theme-toggle__glyph--dark" viewBox="0 0 24 24" focusable="false">
+              <path d="M14.8 3.2a8.65 8.65 0 1 0 6 14.76A9.4 9.4 0 0 1 14.8 3.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+            </svg>
+          </span>
+        </button>
       </div>
     </header>
     {% block body %}{% endblock %}

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from httpx import AsyncClient
 
-from app.utils import telemetry as telemetry_mod
+from app.observability import telemetry as telemetry_mod
 from tests.constants import (
     TELEMETRY_CPU_PERCENT,
     TELEMETRY_CPU_TEMP,
@@ -35,11 +35,11 @@ def _mock_psutil(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestTelemetryRoute:
-    """Tests for GET /telemetry."""
+    """Tests for GET /system/telemetry."""
 
     async def test_returns_200_and_schema(self, client: AsyncClient) -> None:
         """The endpoint must return a well-formed TelemetrySnapshot payload."""
-        resp = await client.get("/telemetry")
+        resp = await client.get("/system/telemetry")
         assert resp.status_code == 200
 
         data = resp.json()
@@ -55,5 +55,5 @@ class TestTelemetryRoute:
 
     async def test_requires_auth(self, unauthed_client: AsyncClient) -> None:
         """Telemetry must sit behind the standard verify_request dependency."""
-        resp = await unauthed_client.get("/telemetry")
+        resp = await unauthed_client.get("/system/telemetry")
         assert resp.status_code in {401, 403}
