@@ -7,22 +7,28 @@ from httpx import AsyncClient
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
-from app.api.dependencies.auth import verify_request
-from app.api.routers import hls as hls_mod
-from app.api.services.camera_manager import CameraManager
+from app.auth.dependencies import verify_request
+from app.camera.routers import hls as hls_mod
+from app.camera.services.manager import CameraManager
 from app.main import app
 from tests.constants import EXAMPLE_IMAGE_URL, HTML_CONTENT_TYPE, YOUTUBE_TEST_BROADCAST_URL
 
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
-HLS_ROUTE_PATH = "/hls/{hls_path:path}"
+HLS_ROUTE_PATH = "/preview/hls/{hls_path:path}"
 DEFAULT_CSP = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 FRAME_OPTIONS_DENY = "DENY"
 SETUP_CSP_INLINE = "'unsafe-inline'"
 SETUP_CSP_CDN = "https://cdn.jsdelivr.net"
-THEME_SELECT_MARKER = "data-theme-select"
+DOCS_FAVICON_HOST = "https://fastapi.tiangolo.com"
+THEME_TOGGLE_MARKER = "data-theme-toggle"
 LOGO_SRC = "/static/logo.png"
 SITE_JS_SRC = "/static/site.js"
+SETUP_LINK_TEXT = ">Setup</a>"
+API_DOCS_LINK_TEXT = ">API Docs</a>"
+HOMEPAGE_SECONDARY_COPY = "Start a live local preview when you want to check framing or focus."
+OPEN_FULL_IMAGE_TEXT = "Open full image"
+THEME_AUTO_LABEL = "Theme: Auto"
 
 
 class TestHomepage:
@@ -45,9 +51,18 @@ class TestHomepage:
         """The landing page should expose the shared brand header and theme chooser."""
         resp = await unauthed_client.get("/")
         assert resp.status_code == 200
-        assert THEME_SELECT_MARKER in resp.text
+        assert THEME_TOGGLE_MARKER in resp.text
+        assert THEME_AUTO_LABEL in resp.text
         assert LOGO_SRC in resp.text
         assert SITE_JS_SRC in resp.text
+
+    async def test_homepage_keeps_primary_actions_in_header_only(self, unauthed_client: AsyncClient) -> None:
+        """The homepage should avoid duplicating setup and docs navigation in the hero."""
+        resp = await unauthed_client.get("/")
+        assert resp.status_code == 200
+        assert resp.text.count(SETUP_LINK_TEXT) == 1
+        assert resp.text.count(API_DOCS_LINK_TEXT) == 1
+        assert HOMEPAGE_SECONDARY_COPY in resp.text
 
     async def test_favicon_returns_ico(self, unauthed_client: AsyncClient) -> None:
         """Test that the favicon route returns an ICO file."""
@@ -88,6 +103,7 @@ class TestHomepage:
 
         assert resp.status_code == 200
         assert EXAMPLE_IMAGE_URL in resp.text
+        assert OPEN_FULL_IMAGE_TEXT in resp.text
 
     async def test_hls_preview_proxy_is_available_without_auth(self, unauthed_client: AsyncClient) -> None:
         """Local preview HLS stays usable before pairing/login."""
@@ -102,7 +118,7 @@ class TestHomepage:
         http_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
-            resp = await unauthed_client.get("/hls/cam-preview/index.m3u8")
+            resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
 
         assert resp.status_code == 200
         assert resp.text == HLS_PLAYLIST
@@ -127,6 +143,14 @@ class TestHomepage:
         http_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
-            resp = await unauthed_client.get("/hls/cam-preview/index.m3u8")
+            resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
 
         assert resp.headers["content-security-policy"] == DEFAULT_CSP
+
+    async def test_docs_route_allows_swagger_assets_in_csp(self, unauthed_client: AsyncClient) -> None:
+        """Swagger docs should receive a CSP that permits the bundled FastAPI assets."""
+        resp = await unauthed_client.get("/docs")
+        assert resp.status_code == 200
+        assert SETUP_CSP_CDN in resp.headers["content-security-policy"]
+        assert DOCS_FAVICON_HOST in resp.headers["content-security-policy"]
+        assert SETUP_CSP_INLINE in resp.headers["content-security-policy"]

@@ -13,6 +13,10 @@ plugin changes and contract changes can be developed together without a manual
 publish step. Outside this repository, install it from PyPI (or your internal
 package index) like any normal Python package.
 
+The published package version is the contract baseline for downstream repos.
+The workspace link in this repo is intentionally just a local development
+override, not a second source of truth.
+
 ## Usage
 
 Install from PyPI (or your internal index):
@@ -60,6 +64,12 @@ This package does not own:
 - plugin runtime wiring such as `AppRuntime`, `RuntimeState`, `PairingService`, or `RelayService`
 
 Treat anything outside the documented DTOs as private and subject to change.
+
+In practical terms:
+
+- backend OpenAPI remains the public/frontend contract
+- `relab_rpi_cam_models` owns only the private backend\<->plugin device seam
+- frontend code should consume backend-generated types, not these private DTOs
 
 ## License
 

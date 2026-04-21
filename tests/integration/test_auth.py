@@ -3,13 +3,14 @@
 import pytest
 from httpx import AsyncClient
 
-from app.api.dependencies.auth import create_session, reload_authorized_hashes
-from app.core.config import settings
+from app.auth.dependencies import create_session, reload_authorized_hashes
 from app.core.runtime import AppRuntime
+from app.core.settings import settings
 
 VALID_API_KEY = "valid-key"
 AUTH_COOKIE_NAME = "relab_session"
 SECURE_ATTR = "Secure"
+REQUEST_ID_HEADER = "x-request-id"
 
 
 @pytest.fixture(autouse=True)
@@ -105,3 +106,22 @@ class TestCorsConfig:
         )
         assert resp.status_code == 200
         assert settings.auth_key_name.lower() in resp.headers["access-control-allow-headers"].lower()
+
+    async def test_preflight_allows_request_id_for_local_capture_requests(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """Direct-local browser requests should be allowed to send X-Request-ID."""
+        origin = str(settings.allowed_cors_origins[0]).rstrip("/")
+        resp = await unauthed_client.options(
+            "/captures",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": f"{settings.auth_key_name}, X-Request-ID",
+            },
+        )
+        assert resp.status_code == 200
+        allow_headers = resp.headers["access-control-allow-headers"].lower()
+        assert settings.auth_key_name.lower() in allow_headers
+        assert REQUEST_ID_HEADER in allow_headers

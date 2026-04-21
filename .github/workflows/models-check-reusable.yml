@@ -41,16 +41,29 @@ jobs:
         run: uv sync --locked --all-groups
 
       - name: Ruff check
-        run: uv run ruff check --no-fix relab_rpi_cam_models/src/relab_rpi_cam_models tests/unit/test_contract_package.py
+        run: uv run ruff check --no-fix relab_rpi_cam_models/src/relab_rpi_cam_models tests/unit/core/test_contract_package.py
 
       - name: Ruff format check
-        run: uv run ruff format --check relab_rpi_cam_models/src/relab_rpi_cam_models tests/unit/test_contract_package.py
+        run: uv run ruff format --check relab_rpi_cam_models/src/relab_rpi_cam_models tests/unit/core/test_contract_package.py
 
       - name: Run contract package tests
-        run: uv run pytest tests/unit/test_contract_package.py -q
+        run: uv run pytest tests/unit/core/test_contract_package.py -q
 
       - name: Build package
         run: uv build --package relab-rpi-cam-models --out-dir dist/relab-rpi-cam-models --clear
+
+      - name: Smoke test built wheel in an isolated env
+        run: |
+          set -euo pipefail
+          uv run \
+            --isolated \
+            --no-project \
+            --with dist/relab-rpi-cam-models/*.whl \
+            python - <<'PY'
+          from relab_rpi_cam_models import PairingPollResponse, PairingStatus
+
+          assert PairingPollResponse.waiting().status is PairingStatus.WAITING
+          PY
 
       - name: Upload package artifacts
         if: inputs.upload_artifact

@@ -101,6 +101,7 @@ class PairingClaimedRecord(PairingClaimedBootstrap):
     """Redis-stored pairing record after the backend claims the code."""
 
     status: Literal[PairingStatus.PAIRED] = PairingStatus.PAIRED
+    rpi_fingerprint: str = Field(min_length=8, max_length=64)
 
 
 class LocalAccessInfo(BaseModel):
@@ -116,6 +117,12 @@ class DeviceImageUploadAck(BaseModel):
 
     image_id: str = Field(description="Stored image ID in hex32 (UUID without dashes)")
     image_url: str = Field(description="Backend-hosted URL for the stored image")
+
+
+class DevicePreviewThumbnailAck(BaseModel):
+    """Backend -> Pi acknowledgement of a cached preview-thumbnail upload."""
+
+    preview_thumbnail_url: str = Field(description="Backend-hosted URL for the cached preview thumbnail")
 
 
 class RelayMessageType(StrEnum):

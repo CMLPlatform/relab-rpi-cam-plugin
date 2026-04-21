@@ -24,82 +24,44 @@ Supports **Raspberry Pi 5/4** with **Camera Module 3/v2**, running on Raspberry 
 
 ## Architecture
 
-The plugin is organized around a small runtime container that owns the long-lived
-process services for the app:
+The app uses a **feature-first** layout. Each HTTP feature (`camera/`, `pairing/`, `auth/`, `system/`, `frontend/`) owns its router, schemas, dependencies, and services in one folder. Infra packages (`backend/`, `relay/`, `media/`, `upload/`, `image_sinks/`) live as peers at `app/` root. A small `AppRuntime` in `app/core/` owns the long-lived process services (camera manager, relay, pairing, preview pipeline, workers).
 
-- **FastAPI control plane**: HTTP routes, setup UI, auth, and local-access helpers
-- **Camera service**: capture, stream, focus/controls, upload fallback queue
-- **Preview/media path**: Picamera2 lores encoder -> MediaMTX -> LL-HLS proxy
-- **Relay/pairing path**: runtime-owned pairing state/service, outbound WebSocket relay service, local-access bootstrap
-- **Background services**: upload queue drain, preview sleeper, thermal governor, stream health checks
+Config precedence: env-backed `Settings` → persisted credentials file (`~/.config/relab/relay_credentials.json`) → generated first-boot defaults. The device contract lives in the separately published `relab_rpi_cam_models` package.
 
-Request flow is: router -> application service -> backend/adapter. Runtime-owned
-background services use the same camera manager and preview pipeline instances as
-the HTTP paths, so lifecycle and cleanup stay centralized in the app lifespan.
-Relay activity and pairing state are also runtime-owned now, so preview wake/
-hibernate logic and setup-page state do not depend on module-level globals.
-`PairingService` and `RelayService` are the only production orchestration
-entrypoints for those flows.
-
-Static configuration still comes from `app.core.config.Settings`, but live
-mutable process state now lives in `app.core.runtime_state.RuntimeState`
-through `AppRuntime`. Relay credentials, local API keys, and derived auth
-snapshots are runtime-owned, then rehydrated from the persisted credentials
-file on the next boot.
-
-The seam is split intentionally now:
-
-- **Public contract**: the RELab backend owns the app-facing API and OpenAPI
-- **Private device contract**: shared `relab_rpi_cam_models` DTOs cover
-  pairing, relay envelopes, local-access bootstrap, and Pi-initiated upload acks
-
-Bootstrap precedence is explicit:
-
-1. env-backed `Settings`
-1. persisted credentials file
-1. generated first-boot defaults for local-only secrets
+See [CONTRIBUTING.md](CONTRIBUTING.md) for a deeper tour.
 
 ## Supported Modes
 
-- **Paired relay mode**: outbound WebSocket relay to the RELab backend
-- **Local direct mode**: Ethernet/LAN access with `X-API-Key` auth
-- **Backend upload mode**: captures pushed back to the RELab backend
-- **S3 upload mode**: captures written to a configured S3-compatible bucket
-
-## Connection
-
-The plugin connects to the RELab backend via **WebSocket relay**. The Pi opens an outbound connection to the backend — no public IP address or port forwarding is required.
-
-Pairing is automatic in the native RELab app: set `PAIRING_BACKEND_URL` in your `.env`, start the plugin, and enter the 6-character code in the RELab app. The Pi generates an asymmetric key pair locally, registers the public key with the backend, and keeps the private key on-device. No API key is ever copied manually.
-
-The browser-based RELab frontend is different: if it is served over HTTPS, modern browsers block `fetch()` calls to the Pi's plain HTTP API as mixed content. That means the web frontend cannot auto-probe or switch a camera into direct mode; this direct-connection path is for the native app or for manual clients that call the Pi directly.
+| Mode               | What it does                                          |
+| ------------------ | ----------------------------------------------------- |
+| **Paired relay**   | Outbound WebSocket relay to the RELab backend         |
+| **Local direct**   | Ethernet/LAN access with `X-API-Key` auth             |
+| **Backend upload** | Captures pushed back to the RELab backend             |
+| **S3 upload**      | Captures written to a configured S3-compatible bucket |
 
 ## Getting Started
 
-1. [Prepare your Pi and install the plugin](INSTALL.md)
-1. Set `PAIRING_BACKEND_URL` in your `.env` and start the plugin
-1. Enter the pairing code shown on `/setup` (or in logs) in the RELab app
-1. Visit `http://your-pi-ip:8018` to test
-   - `/setup` — Pairing and status
-   - `/hls/cam-preview/index.m3u8` — LL-HLS live preview (via the MediaMTX sidecar on :8888)
-   - `/stream/watch` — YouTube viewer UI for an active YouTube stream
-   - `/camera/controls` — Discover/set camera controls (autofocus, exposure, etc.)
-   - `/camera/focus` — Friendly focus controls (continuous/auto/manual)
-   - `/docs` — API reference
+1. [Install the plugin](INSTALL.md) on your Pi.
+1. Set `PAIRING_BACKEND_URL` in `.env` and start the plugin (`docker compose up -d` or `just dev`).
+1. Enter the 6-character pairing code (shown on `/setup` or in the `PAIRING READY` log banner) in the RELab app.
+1. Visit `http://your-pi-ip:8018` to check:
+   - `/setup` — pairing and status
+   - `/docs` — API reference (Swagger UI)
+   - `/preview/hls/cam-preview/index.m3u8` — LL-HLS live preview (MediaMTX sidecar on `:8888`)
+   - `/camera/controls` — discover/set autofocus, exposure, etc.
+   - `/captures` — trigger a still capture
 
-If you use Docker Compose on the Pi, generate `compose.override.yml` with `./scripts/generate_compose_override.py`. The override targets the existing `app` service from `compose.yml`, so the device mappings merge into the plugin container cleanly.
+Need a fresh code? Click **Generate a new pairing code** on `/setup`. It rotates the code without unpairing the camera.
 
-For headless setup, the active 6-character pairing code is also printed to stdout in a boxed `PAIRING READY` banner, so you can read it over SSH, `docker compose logs`, or `journalctl` without opening the browser UI.
+Docker device mappings: generate `compose.override.yml` with `./scripts/generate_compose_override.py`.
 
-If you need a fresh code during setup, open `/setup` and click the `Generate a new pairing code` button beside the current code. That rotates the code without unpairing the camera.
+### Browser vs native RELab app
 
-By default, Docker Compose runs only the camera plugin. Inspect logs with:
+The native RELab app drives pairing end-to-end. In the HTTPS-served web frontend, browsers block plain-HTTP calls to the Pi as mixed content, so direct-mode auto-probing doesn't apply — use the native app or call the Pi manually.
 
-```sh
-docker compose logs -f app
-```
+### Observability (optional)
 
-Optional remote observability is available with the `observability-ship` profile. It runs Alloy on the Pi and ships the app's structured file logs to an external Loki-compatible endpoint. Add it to `COMPOSE_PROFILES` in your `.env`:
+Ship structured logs to an external Loki-compatible collector via the `observability-ship` Compose profile:
 
 ```sh
 COMPOSE_PROFILES=observability-ship
@@ -107,14 +69,9 @@ LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
 OBSERVABILITY_INSTANCE=pi-01
 ```
 
-Without the profile, logs are still written to Docker logs and the 7-day rotating `app_logs` volume. Local Loki/Grafana is not bundled with this plugin; use your platform's central observability stack when you need fleet log browsing.
+Tracing is opt-in via `OTEL_ENABLED=true` + `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither Loki/Grafana nor an OTLP collector is bundled — point at your central stack.
 
-Tracing is opt-in. When `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT`
-are set, the plugin instruments FastAPI and httpx and propagates request/relay
-trace context across the backend -> plugin boundary. This repo does not bundle
-or configure a full OTLP pipeline; that remains an environment concern.
-
-For platform management and operation, see the [RELab camera guide](https://docs.cml-relab.org/user-guides/rpi-cam/).
+For platform-side operation, see the [RELab camera guide](https://docs.cml-relab.org/user-guides/rpi-cam/).
 
 ## Standalone mode (no RELab backend)
 
@@ -164,91 +121,34 @@ runs the RustFS sidecar *and* ships logs to your central Loki.
 
 ## Local (direct) connection mode
 
-The local API key serves **two independent use-cases**:
+Local mode is **enabled by default**. On first boot the plugin generates a local API key and persists it. Two use-cases:
 
-| Use-case                        | Requires relay pairing? | What it does                                                                                                                                                                                                                                                              |
-| ------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **RELab app latency boost**     | Yes                     | After relay pairing, the app fetches the key automatically through the relay and switches to Ethernet-direct when the Pi is on the same LAN — preview latency drops from ~2 s to ~0.4 s. No manual setup. Works in both the native app and modern browsers (Chrome/Edge). |
-| **Standalone / custom clients** | No                      | Call the camera API directly with `X-API-Key: <key>` — no relay needed. Useful for scripts, custom dashboards, or standalone mode (see below).                                                                                                                            |
+- **RELab app latency boost** (after pairing) — the app fetches the key through the relay and switches to Ethernet-direct on the same LAN, dropping preview latency from ~2 s to ~0.4 s. No user action.
+- **Standalone / custom clients** (no pairing needed) — call the API directly with `X-API-Key: <key>`.
 
-> **The local key does not replace relay pairing.** To register a camera in the RELab app you still need to complete the relay pairing flow (6-character code). The local key is for latency improvement once already paired, or for non-RELab access.
+> The local key is a latency optimization for paired cameras and an auth gate for custom clients. It does **not** replace relay pairing for registering a camera in the RELab app.
 
-### Setup — zero configuration required
+Disable with `LOCAL_MODE_ENABLED=false`.
 
-Local mode is **enabled by default**. No `.env` changes are needed.
+### Retrieving the local key
 
-On first startup the plugin auto-generates a local API key and persists it to the credentials file. When the RELab app opens the camera detail screen and the camera is online, it automatically retrieves the key and candidate IP addresses through the relay and probes your local network. If the Pi is reachable via Ethernet, the app switches to direct mode silently — preview latency drops to ~0.4–0.8 s without any user action.
-
-This works in both the native app (iOS/Android) and modern Chromium-based browsers. The Pi sends `Access-Control-Allow-Private-Network: true` on all responses so Chrome's Private Network Access policy is satisfied as enforcement ramps up.
-
-To disable local mode entirely (opt-out):
-
-```sh
-LOCAL_MODE_ENABLED=false
-```
-
-### Headless / SSH access
-
-On startup the plugin logs a banner showing the current mode and how to retrieve the local API key:
-
-```text
-══════════════════════════════════════════════════════
-  ReLab RPi Camera  v1.x
-  Setup    : http://my-pi.local:8018/setup
-  Mode     : PAIRED      camera_id=…
-  Local key: run:  just show-key
-══════════════════════════════════════════════════════
-```
-
-To print the key from an SSH session:
+On startup the plugin logs a banner showing the current mode + how to fetch the key. From an SSH session:
 
 ```sh
 just show-key
-# or without just, if the app is already running:
+# or directly from the credentials file:
 python3 -c "import json,pathlib; print(json.loads((pathlib.Path.home()/'.config/relab/relay_credentials.json').read_text()).get('local_api_key',''))"
 ```
 
-### Zero-config discovery with Avahi (mDNS, optional)
+### Discovery and hardware
 
-The RELab app discovers the Pi's IP addresses automatically via the relay. Avahi is not required, but it lets you access `/setup` and the API by hostname instead of IP on the local link:
+- **mDNS (optional)**: install `avahi-daemon` and advertise `_relab-rpi-cam._tcp` on port 8018 to reach the Pi at `<hostname>.local`. See [INSTALL.md](INSTALL.md) for the service-file snippet.
+- **Ethernet**: any port works on any RPi model; link-local (`169.254.x.x`) is negotiated automatically if no DHCP.
+- **USB gadget mode** (USB-C data): only on RPi Zero 2W and some RPi 4 revisions — not RPi 5.
+- **Contract**: any device implementing `GET /camera`, `POST /captures`, and `GET /preview/hls/*` with `X-API-Key` auth works with the RELab frontend's local mode.
 
-```sh
-sudo apt install avahi-daemon avahi-utils
-```
-
-Create a service advertisement file:
-
-```xml
-<!-- /etc/avahi/services/relab-rpi-cam.service -->
-<service-group>
-  <name>relab-rpi-cam-%h</name>
-  <service>
-    <type>_relab-rpi-cam._tcp</type>
-    <port>8018</port>
-  </service>
-</service-group>
-```
-
-```sh
-sudo systemctl enable avahi-daemon && sudo systemctl restart avahi-daemon
-```
-
-After this, the Pi is resolvable as `<hostname>.local` on macOS and Windows 10+ without any DNS configuration.
-
-### Hardware notes
-
-- **Any Ethernet port** — Works on all RPi models and any Linux SBC. Connect directly with a cable or through a USB-C to Ethernet adapter. Link-local addressing (169.254.x.x) is negotiated automatically if no DHCP is present.
-- **USB gadget mode (USB-C data)** — Only available on RPi Zero 2W and some RPi 4 revisions (not RPi 5). Requires `dtoverlay=dwc2` + `g_ether` module; Pi appears at `192.168.7.1` on the host.
-- **Hardware-agnostic contract** — Any camera device that implements `GET /camera`, `POST /images`, and `GET /hls/*` with `X-API-Key` authentication works with the RELab frontend's local connection mode.
-
-### Security
-
-The local API key is the only authentication gate on the direct interface. Physical access to the cable is the primary trust boundary — appropriate for lab use. The key is distinct from relay credentials; disable local auth with `LOCAL_MODE_ENABLED=false` if needed.
+The local API key is the only authentication gate on the direct interface; physical access to the cable is the trust boundary.
 
 ## Troubleshooting
 
-**Camera not detected?** Run `rpicam-hello --list-cameras`
-
-**Won't connect?** See [INSTALL.md — Troubleshooting](INSTALL.md#troubleshooting) for connection-specific issues.
-
-**Want to contribute?** See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
+See [INSTALL.md — Troubleshooting](INSTALL.md#troubleshooting). For development setup, see [CONTRIBUTING.md](CONTRIBUTING.md).

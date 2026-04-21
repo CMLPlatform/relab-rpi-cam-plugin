@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.core.config import Settings
+    from app.core.settings import Settings
 
 _DEVICE_ASSERTION_AUTH_SCHEME = "device_assertion"
 

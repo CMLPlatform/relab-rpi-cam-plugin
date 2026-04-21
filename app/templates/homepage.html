@@ -6,7 +6,7 @@
 
 {% block site_header_nav %}
   <nav class="site-header__nav" aria-label="Primary">
-    <a href="{{ url_for('setup_page') }}" class="btn btn--ghost">Setup</a>
+    <a href="{{ url_for('setup_page') }}" class="btn btn--ghost btn--nav-primary">Setup</a>
     <a href="{{ url_for('swagger_ui_html') }}" class="btn btn--ghost">API Docs</a>
   </nav>
 {% endblock %}
@@ -14,7 +14,7 @@
 {% block extra_scripts %}
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
   <script>
-    const HLS_SRC = "/hls/cam-preview/index.m3u8";
+    const HLS_SRC = "/preview/hls/cam-preview/index.m3u8";
     const PREVIEW_RETRY_DELAY_MS = 1200;
     const PREVIEW_MAX_RETRIES = 8;
     let hls = null;
@@ -99,20 +99,17 @@
   <section class="setup-hero">
     <div class="setup-eyebrow">Reverse Engineering Lab</div>
     <h1>Raspberry Pi Camera</h1>
-    <p>Remotely capture images and stream video from a Raspberry Pi camera. For more info on RELab, visit the <a href="https://github.com/CMLplatform/relab" target="_blank">GitHub page</a>.</p>
-    <div>
-      <a href="{{ url_for('setup_page') }}" class="btn">Setup</a>
-      <a href="{{ url_for('swagger_ui_html') }}" class="btn">API Docs</a>
-    </div>
+    <p>Remotely capture images and stream video from a Raspberry Pi camera. Learn more about RELab on the <a href="https://github.com/CMLplatform/relab" target="_blank" rel="noopener">GitHub page</a>.</p>
   </section>
 
   <section class="setup-status">
     <div class="setup-status-grid">
       <div class="status-chip status-chip--muted" id="preview-chip">Preview</div>
       <h2>Camera Preview</h2>
+      <p class="setup-status__lead">Start a live local preview when you want to check framing or focus.</p>
       <video id="preview-video" class="preview-video" controls playsinline muted></video>
       <p id="preview-msg" class="preview-message"></p>
-      <div>
+      <div class="setup-actions">
         <button class="btn" id="preview-btn" onclick="togglePreview()">Load Preview</button>
       </div>
     </div>
@@ -123,7 +120,7 @@
       <div class="status-chip status-chip--muted">Recent capture</div>
       <h2>Last Image</h2>
       {% if last_image_url %}
-        <a href="{{ last_image_url }}" target="_blank" rel="noopener">{{ last_image_url }}</a>
+        <a href="{{ last_image_url }}" target="_blank" rel="noopener" class="setup-link">Open full image</a>
         <img
           class="capture-preview"
           src="{{ last_image_url }}"
