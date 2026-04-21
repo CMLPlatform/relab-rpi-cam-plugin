@@ -9,9 +9,9 @@ import pytest
 from httpx import AsyncClient
 from pydantic import AnyUrl
 
-from app.api.services.camera_manager import CameraManager
-from app.api.services.image_sinks.base import ImageSinkError, StoredImage
+from app.camera.services.manager import CameraManager
 from app.core.config import settings
+from app.image_sinks.base import ImageSinkError, StoredImage
 from tests.constants import (
     QUEUED_STATUS,
     SAMPLE_IMAGE_ID,

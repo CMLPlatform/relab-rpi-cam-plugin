@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.dependencies.auth import reload_authorized_hashes, verify_request
-from app.api.services.camera_manager import CameraManager
+from app.auth.dependencies import reload_authorized_hashes, verify_request
+from app.camera.services.manager import CameraManager
 from app.core.runtime import AppRuntime, set_active_runtime
 from app.main import app
 from tests.support.fakes import build_test_runtime, make_camera_manager

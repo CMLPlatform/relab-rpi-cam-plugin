@@ -3,7 +3,7 @@
 import pytest
 from httpx import AsyncClient
 
-from app.api.dependencies.auth import create_session, reload_authorized_hashes
+from app.auth.dependencies import create_session, reload_authorized_hashes
 from app.core.config import settings
 from app.core.runtime import AppRuntime
 

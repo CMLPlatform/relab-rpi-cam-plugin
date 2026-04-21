@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import FastAPI
 
-import app.api.services.pairing as pairing_mod
-import app.lifespan as lifespan_mod
+import app.core.lifespan as lifespan_mod
 import app.main as main_mod
+import app.pairing.services.service as pairing_mod
 from app.core.config import settings
 from app.core.runtime import AppRuntime
 from tests.constants import EXAMPLE_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL
@@ -37,7 +37,7 @@ def runtime(monkeypatch: pytest.MonkeyPatch) -> AppRuntime:
     class LoggingPairingService(FakePairingService):
         def log_mode_started(self) -> None:
             super().log_mode_started()
-            logging.getLogger("app.api.services.pairing").info(PAIRING_MODE_LOG)
+            logging.getLogger("app.pairing.services.service").info(PAIRING_MODE_LOG)
 
     runtime = AppRuntime()
     runtime.camera_manager = StubCameraManager()

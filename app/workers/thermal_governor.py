@@ -27,8 +27,8 @@ from typing import TYPE_CHECKING
 
 from relab_rpi_cam_models.telemetry import ThermalState
 
-from app.api.services.hardware_protocols import Picamera2Like
-from app.api.services.preview_pipeline import PreviewPipelineManager
+from app.camera.services.hardware_protocols import Picamera2Like
+from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.logging import build_log_extra
 from app.observability.telemetry import collect_telemetry
 

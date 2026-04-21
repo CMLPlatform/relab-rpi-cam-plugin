@@ -31,15 +31,15 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from app.api.services.preview_pipeline import PreviewPipelineManager
-from app.api.services.relay_state import RelayRuntimeState
 from app.core.config import settings
+from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.logging import build_log_extra
+from app.relay.state import RelayRuntimeState
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from app.api.services.hardware_protocols import Picamera2Like
+    from app.camera.services.hardware_protocols import Picamera2Like
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from httpx import AsyncClient
 
-from app.api.services.camera_manager import CameraControlsNotSupportedError, CameraManager
+from app.camera.services.manager import CameraControlsNotSupportedError, CameraManager
 
 CURRENT_MODE_KEY = "current_mode"
 LAST_IMAGE_URL_KEY = "last_image_url"

@@ -7,9 +7,9 @@ from httpx import AsyncClient
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
-from app.api.dependencies.auth import verify_request
-from app.api.routers import hls as hls_mod
-from app.api.services.camera_manager import CameraManager
+from app.auth.dependencies import verify_request
+from app.camera.routers import hls as hls_mod
+from app.camera.services.manager import CameraManager
 from app.main import app
 from tests.constants import EXAMPLE_IMAGE_URL, HTML_CONTENT_TYPE, YOUTUBE_TEST_BROADCAST_URL
 

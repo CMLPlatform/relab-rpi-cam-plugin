@@ -7,10 +7,10 @@ from httpx import AsyncClient
 from pydantic import AnyUrl, SecretStr
 from relab_rpi_cam_models.stream import StreamMode
 
-from app.api.exceptions import ActiveStreamError
-from app.api.schemas.streaming import YoutubeConfigRequiredError, YoutubeStreamConfig
-from app.api.services.camera_manager import CameraManager
-from app.api.services.stream_state import ActiveStreamState
+from app.camera.exceptions import ActiveStreamError, YoutubeConfigRequiredError
+from app.camera.schemas import YoutubeStreamConfig
+from app.camera.services.manager import CameraManager
+from app.media.stream_state import ActiveStreamState
 from tests.constants import YOUTUBE_WATCH_URL_PREFIX
 
 YOUTUBE_CONFIG_KEY = "youtube_config"

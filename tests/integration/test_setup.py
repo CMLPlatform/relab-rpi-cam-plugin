@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
-from app.api.routers import setup as setup_router
 from app.core.config import DEFAULT_PAIRING_BACKEND_URL, settings
 from app.core.runtime import AppRuntime
+from app.pairing.routers import setup as setup_router
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, HTML_CONTENT_TYPE
 from tests.support.fakes import FakePairingService, FakeRelayService, SpyRuntime
 
@@ -245,9 +245,9 @@ class TestUnpair:
     async def test_unpair_returns_204(self, unauthed_client: AsyncClient) -> None:
         """Endpoint returns 204 No Content immediately."""
         with (
-            patch("app.api.routers.setup.delete_relay_credentials"),
-            patch("app.api.routers.setup.clear_runtime_relay_credentials"),
-            patch("app.api.routers.setup.asyncio.sleep"),
+            patch("app.pairing.routers.setup.delete_relay_credentials"),
+            patch("app.pairing.routers.setup.clear_runtime_relay_credentials"),
+            patch("app.pairing.routers.setup.asyncio.sleep"),
         ):
             resp = await unauthed_client.delete("/pairing")
         assert resp.status_code == 204
@@ -265,14 +265,14 @@ class TestUnpair:
         runtime.pairing_service = pairing_service
 
         with (
-            patch("app.api.routers.setup.delete_relay_credentials", side_effect=lambda: deleted.append(True)),
+            patch("app.pairing.routers.setup.delete_relay_credentials", side_effect=lambda: deleted.append(True)),
             patch(
-                "app.api.routers.setup.clear_runtime_relay_credentials",
+                "app.pairing.routers.setup.clear_runtime_relay_credentials",
                 side_effect=lambda _runtime_state: cleared.append(True),
             ),
-            patch("app.api.routers.setup.asyncio.sleep"),  # skip the 0.1s delay
+            patch("app.pairing.routers.setup.asyncio.sleep"),  # skip the 0.1s delay
             patch(
-                "app.api.routers.setup.get_request_runtime",
+                "app.pairing.routers.setup.get_request_runtime",
                 return_value=runtime,
             ),
         ):
@@ -289,7 +289,7 @@ class TestPairingCodeRefresh:
 
     async def test_refresh_returns_204(self, unauthed_client: AsyncClient) -> None:
         """Endpoint returns 204 No Content immediately."""
-        with patch("app.api.routers.setup.asyncio.sleep"):
+        with patch("app.pairing.routers.setup.asyncio.sleep"):
             resp = await unauthed_client.post("/pairing/code")
         assert resp.status_code == 204
 
@@ -317,9 +317,9 @@ class TestPairingCodeRefresh:
         runtime.pairing_service = pairing_service
 
         with (
-            patch("app.api.routers.setup.asyncio.sleep"),
+            patch("app.pairing.routers.setup.asyncio.sleep"),
             patch(
-                "app.api.routers.setup.get_request_runtime",
+                "app.pairing.routers.setup.get_request_runtime",
                 return_value=runtime,
             ),
         ):

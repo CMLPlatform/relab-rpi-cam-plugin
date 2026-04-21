@@ -10,19 +10,19 @@ from PIL import Image
 from pydantic import AnyUrl
 from relab_rpi_cam_models.camera import CameraMode
 
-from app.api.schemas.camera_controls import (
+from app.camera.schemas import (
     CameraControlInfo,
     CameraControlsView,
     FocusControlRequest,
     JsonValue,
+    YoutubeStreamConfig,
 )
-from app.api.schemas.streaming import YoutubeStreamConfig
-from app.api.services.camera_backend import CaptureResult, StreamingCameraBackend, StreamStartResult
-from app.api.services.camera_manager import CameraManager
-from app.api.services.pairing import PairingService, PairingState
-from app.api.services.relay import RelayService
-from app.api.services.upload_queue import UploadQueueWorker
+from app.camera.services.backend import CaptureResult, StreamingCameraBackend, StreamStartResult
+from app.camera.services.manager import CameraManager
 from app.core.runtime import AppRuntime
+from app.pairing.services.service import PairingService, PairingState
+from app.relay.service import RelayService
+from app.upload.queue import UploadQueueWorker
 from app.workers.preview_sleeper import PreviewSleeper
 from app.workers.preview_thumbnail import PreviewThumbnailWorker
 from app.workers.thermal_governor import ThermalGovernor

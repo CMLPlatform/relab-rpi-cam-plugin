@@ -8,17 +8,17 @@ from dataclasses import dataclass, field
 from inspect import isawaitable
 from typing import TYPE_CHECKING
 
-from app.api.services.camera_manager import CameraManager
-from app.api.services.hardware_protocols import Picamera2Like
-from app.api.services.pairing import PairingService
-from app.api.services.preview_pipeline import PreviewPipelineManager
-from app.api.services.relay import RelayService
-from app.api.services.relay_state import RelayRuntimeState
-from app.api.services.upload_queue import UploadQueueWorker
+from app.camera.services.hardware_protocols import Picamera2Like
+from app.camera.services.manager import CameraManager
 from app.core.config import settings
 from app.core.runtime_context import get_active_runtime, set_active_runtime
 from app.core.runtime_state import RuntimeState
+from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.tracing import ObservabilityHandle
+from app.pairing.services.service import PairingService
+from app.relay.service import RelayService
+from app.relay.state import RelayRuntimeState
+from app.upload.queue import UploadQueueWorker
 from app.workers.preview_sleeper import PreviewSleeper
 from app.workers.preview_thumbnail import PreviewThumbnailWorker
 from app.workers.thermal_governor import ThermalGovernor

@@ -7,7 +7,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from app.api.services.backend_client import BackendUploadError, upload_preview_thumbnail
+from app.backend.client import BackendUploadError, upload_preview_thumbnail
 from app.core.config import settings
 from app.observability.logging import build_log_extra
 
@@ -15,8 +15,8 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from pathlib import Path
 
-    from app.api.services.camera_manager import CameraManager
-    from app.api.services.relay_state import RelayRuntimeState
+    from app.camera.services.manager import CameraManager
+    from app.relay.state import RelayRuntimeState
 
 logger = logging.getLogger(__name__)
 

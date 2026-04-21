@@ -24,44 +24,16 @@ Supports **Raspberry Pi 5/4** with **Camera Module 3/v2**, running on Raspberry 
 
 ## Architecture
 
-The plugin is organized around a small runtime container that owns the long-lived
-process services for the app:
+A small runtime container (`AppRuntime`) owns the long-lived process services:
 
-- **FastAPI control plane**: HTTP routes, setup UI, auth, and local-access helpers
-- **Camera service**: capture, stream, focus/controls, upload fallback queue
-- **Preview/media path**: Picamera2 lores encoder -> MediaMTX -> LL-HLS proxy
-- **Relay/pairing path**: runtime-owned pairing state/service, outbound WebSocket relay service, local-access bootstrap
-- **Background services**: upload queue drain, preview sleeper, thermal governor, stream health checks
+- **FastAPI control plane** — HTTP routes, setup UI, auth, local-access helpers
+- **Camera + media path** — Picamera2 capture, lores encoder → MediaMTX → LL-HLS proxy, upload fallback queue
+- **Relay + pairing path** — runtime-owned `PairingService` and `RelayService`, local-access bootstrap
+- **Background services** — upload queue drain, preview sleeper, thermal governor, stream health checks
 
-Request flow is: router -> application service -> backend/adapter. Runtime-owned
-background services use the same camera manager and preview pipeline instances as
-the HTTP paths, so lifecycle and cleanup stay centralized in the app lifespan.
-Relay activity and pairing state are also runtime-owned now, so preview wake/
-hibernate logic and setup-page state do not depend on module-level globals.
-`PairingService` and `RelayService` are the only production orchestration
-entrypoints for those flows.
+Static config comes from `app.core.config.Settings`; live mutable state lives in `app.core.runtime_state.RuntimeState`. Bootstrap precedence is env `Settings` → persisted credentials file → generated first-boot defaults. The device contract (`relab_rpi_cam_models`) is a separately published PyPI package; the uv workspace link in this repo is a dev convenience only.
 
-Static configuration still comes from `app.core.config.Settings`, but live
-mutable process state now lives in `app.core.runtime_state.RuntimeState`
-through `AppRuntime`. Relay credentials, local API keys, and derived auth
-snapshots are runtime-owned, then rehydrated from the persisted credentials
-file on the next boot.
-
-The seam is split intentionally now:
-
-- **Public contract**: the RELab backend owns the app-facing API and OpenAPI
-- **Private device contract**: shared `relab_rpi_cam_models` DTOs cover
-  pairing, relay envelopes, local-access bootstrap, and Pi-initiated upload acks
-
-The uv workspace link to `relab_rpi_cam_models` in this repo is a local
-development convenience only. The release contract for other repos and
-deployments is the published PyPI package version.
-
-Bootstrap precedence is explicit:
-
-1. env-backed `Settings`
-1. persisted credentials file
-1. generated first-boot defaults for local-only secrets
+See [CONTRIBUTING.md](CONTRIBUTING.md) for a deeper tour of the module layout and request flow.
 
 ## Supported Modes
 

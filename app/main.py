@@ -7,15 +7,14 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.__version__ import version
-from app.api.exceptions import CameraInitializationError
-from app.api.routers.main import router as main_router
-from app.api.routers.setup import router as setup_router
+from app.camera.exceptions import CameraInitializationError
 from app.core.config import settings
+from app.core.lifespan import lifespan
+from app.core.middleware import register_middleware
 from app.core.runtime import ensure_app_runtime
-from app.lifespan import lifespan
-from app.middleware import register_middleware
 from app.observability.logging import setup_logging
 from app.observability.tracing import setup_observability
+from app.router import router as main_router
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -59,5 +58,4 @@ app.add_exception_handler(CameraInitializationError, camera_initialization_excep
 app.state.runtime = runtime
 
 app.include_router(main_router)
-app.include_router(setup_router)  # No auth: setup page must be publicly accessible
 app.mount("/static", StaticFiles(directory=settings.static_path), name="static")

@@ -26,23 +26,60 @@ The API will be available at `http://localhost:8018/docs`.
 
 ## Project Structure
 
+The app uses a **feature-first** layout: each domain is a self-contained package
+with its HTTP router, schemas, dependencies, exceptions, and services colocated.
+Cross-cutting infrastructure (relay, backend client, upload queue, image sinks,
+media pipeline) lives as peer packages at `app/` root.
+
 ```
 app/
-  main.py              # FastAPI app assembly and lifespan wiring
-  core/runtime.py      # Runtime-owned process services and task tracking
-  api/routers/         # HTTP translation layer
-  api/services/        # Application services and adapters
-  utils/               # Infra helpers (relay, pairing, logging, telemetry, etc.)
-  static/              # CSS and frontend assets
-  templates/           # HTML templates (setup page)
+  main.py                # FastAPI app creation + wiring
+  router.py              # Top-level HTTP router aggregator (public vs authed)
+  device_jwt.py          # Shared device-assertion primitive
+
+  core/                  # Runtime + config + lifespan/middleware wiring
+    runtime.py, runtime_state.py, runtime_context.py
+    config.py, settings.py, bootstrap.py
+    lifespan.py, middleware.py, templates_config.py
+
+  # Features (own a router.py that exports `public_router` and `router`)
+  camera/                # Camera controls, captures, HLS preview, streaming
+    router.py, routers/{controls,captures,hls,stream}.py
+    schemas.py, dependencies.py, exceptions.py
+    services/{manager,backend,picamera2_backend,hardware_protocols,hardware_stubs}.py
+  pairing/               # Device pairing flow + setup UI + local-access + local-key
+    router.py, routers/{setup,local_access,local_key}.py
+    services/{service,client}.py
+  auth/                  # Session auth + request-auth dependency
+    router.py, dependencies.py
+  system/                # /metrics + /telemetry HTTP surfaces
+    router.py, routers/{metrics,telemetry}.py
+  frontend/              # Landing HTML page
+    router.py
+
+  # Infrastructure (cross-cutting — no HTTP routers)
+  backend/               # Backend HTTP client + factory + contract adapters
+  relay/                 # Outbound WebSocket relay service + observable state
+  media/                 # MediaMTX client, preview pipeline, stream helpers
+  upload/                # Persistent upload queue
+  image_sinks/           # Backend / S3 image sink implementations
+
+  observability/         # Logging, tracing (OTel), telemetry collector
+  utils/                 # Generic helpers (files, network, task orchestration)
+  workers/               # Process-wide background tasks (preview sleeper, thermal, etc.)
+  static/, templates/    # Web assets
+
 relab_rpi_cam_models/
-  src/                 # Shared data models (PyPI package)
+  src/                   # Shared device-seam DTOs (separately published PyPI package)
+
 tests/
-  unit/                # Unit tests
-  integration/         # Integration tests
+  unit/                  # Mirrors app/ domain layout (camera/, pairing/, …, core/)
+  integration/           # ASGI app, routes, and lifespan behavior (flat)
+  support/               # Shared fakes and fixtures
+
 scripts/
-  local_setup.sh       # Local development setup
-  generate_compose_override.py  # Docker device mapping for the existing compose `app` service
+  local_setup.sh                  # Local development setup
+  generate_compose_override.py    # Docker device mapping for the compose `app` service
 ```
 
 ## Testing
@@ -125,18 +162,21 @@ When cleaning up old tests:
 
 ### Add a New Endpoint
 
-1. Add or extend a router in `app/api/routers/`
-1. Keep HTTP translation in the router and put orchestration in `app/api/services/`
-1. Wire dependencies through runtime-aware helpers rather than importing process globals
-1. Add unit or integration coverage in `tests/`
+1. Find or create the owning feature folder (e.g. `app/camera/`, `app/pairing/`)
+1. Add a sub-router under its `routers/` dir and register it in the feature's `router.py`
+1. Keep HTTP translation in the router; put orchestration in the feature's `services/`
+1. Attach schemas to `schemas.py` and feature-specific errors to `exceptions.py`
+1. Wire dependencies via runtime-aware helpers rather than importing process globals
+1. Mirror the test placement under `tests/unit/<feature>/`
 
 ### Update Camera Logic
 
-- Camera backend contract: `app/api/services/camera_backend.py`
-- Camera orchestration: `app/api/services/camera_manager.py`
+- Camera backend contract: `app/camera/services/backend.py`
+- Camera orchestration: `app/camera/services/manager.py`
+- Picamera2 implementation: `app/camera/services/picamera2_backend.py`
 - Runtime-owned service wiring: `app/core/runtime.py`
 - Shared DTOs: `relab_rpi_cam_models/src/relab_rpi_cam_models/`
-- Tests: `tests/unit/` and `tests/integration/`
+- Tests: `tests/unit/camera/` and `tests/integration/`
 
 ### Update Models
 
@@ -200,7 +240,7 @@ Contract ownership follows the same boundary:
 
 ### Connection
 
-The plugin connects to the RELab backend via **WebSocket relay** (`app/utils/relay.py`).
+The plugin connects to the RELab backend via **WebSocket relay** (`app/relay/service.py`).
 The Pi initiates an outbound WebSocket connection; the backend sends commands
 through this tunnel. No public IP or port forwarding is needed.
 
