@@ -80,7 +80,7 @@ The browser-based RELab frontend is different: if it is served over HTTPS, moder
 
 ## Getting Started
 
-1. [Prepare your Pi and install the plugin](INSTALL.md)
+1. [Prepare your Pi and install the plugin](INSTALL.md) — see [Step 2](INSTALL.md#step-2-configure-connection) for full `.env` and configuration precedence
 1. Set `PAIRING_BACKEND_URL` in your `.env` and start the plugin
 1. Enter the pairing code shown on `/setup` (or in logs) in the RELab app
 1. Visit `http://your-pi-ip:8018` to test
@@ -176,6 +176,8 @@ The local API key serves **two independent use-cases**:
 | **Standalone / custom clients** | No                      | Call the camera API directly with `X-API-Key: <key>` — no relay needed. Useful for scripts, custom dashboards, or standalone mode (see below).                                                                                                                            |
 
 > **The local key does not replace relay pairing.** To register a camera in the RELab app you still need to complete the relay pairing flow (6-character code). The local key is for latency improvement once already paired, or for non-RELab access.
+
+Optional: mDNS/Avahi discovery lets you reach the Pi at `<hostname>.local` instead of its IP — see [INSTALL.md — Zero-config discovery](INSTALL.md#zero-config-discovery-with-avahi-mdns-optional).
 
 ### Setup — zero configuration required
 

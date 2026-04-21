@@ -190,10 +190,7 @@ For headless operators, you can also read the pairing code from logs:
 
 ## Operating Modes
 
-- **Paired relay mode**: WebSocket relay to the RELab backend, with optional direct-mode bootstrap
-- **Local direct mode**: LAN access authenticated by the generated local API key
-- **Backend upload mode**: captures flow back into the RELab backend
-- **S3 upload mode**: captures are written to a configured S3-compatible bucket
+See [README — Supported Modes](README.md#supported-modes) for the mode matrix.
 
 Observability is intentionally split:
 
