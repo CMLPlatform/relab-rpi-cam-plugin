@@ -12,8 +12,8 @@ import pytest
 
 from app.backend import client as backend_client_mod
 from app.backend.client import BackendUploadError, upload_image
-from app.core.config import settings
 from app.core.runtime import AppRuntime, set_active_runtime
+from app.core.settings import settings
 from tests.constants import BACKEND_IMAGE_URL, SAMPLE_SERVER_IMAGE_ID
 
 if TYPE_CHECKING:

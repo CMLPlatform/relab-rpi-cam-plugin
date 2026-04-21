@@ -14,14 +14,14 @@ from uuid import uuid4
 from app.core.runtime_context import get_active_runtime
 
 if TYPE_CHECKING:
-    from app.core.config import Settings
+    from app.core.settings import Settings
 
 _request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
 
 
 def _get_settings() -> "Settings":
     """Load static config lazily to avoid startup-time import cycles."""
-    return importlib.import_module("app.core.config").settings
+    return importlib.import_module("app.core.settings").settings
 
 
 def new_request_id() -> str:

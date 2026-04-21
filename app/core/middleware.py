@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
 
-from app.core.config import settings
+from app.core.settings import settings
 from app.observability.logging import bind_request_id, new_request_id, reset_request_id
 
 if TYPE_CHECKING:

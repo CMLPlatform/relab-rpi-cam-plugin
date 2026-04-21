@@ -172,18 +172,15 @@ class FakePairingService(PairingService):
 
 
 class StubCameraManager(CameraManager):
-    """Camera manager stub with explicit call recording for lifespan tests."""
+    """Camera manager stub for lifespan tests; records cleanup force flags."""
 
     def __init__(self) -> None:
         super().__init__(backend=cast("StreamingCameraBackend", FakeBackend()))
-        self.setup_camera_calls: list[CameraMode] = []
         self.cleanup_calls: list[bool] = []
-        self.get_stream_info_calls = 0
-        self.stop_streaming_calls = 0
 
     async def setup_camera(self, mode: CameraMode) -> None:
-        """Record setup requests without touching hardware."""
-        self.setup_camera_calls.append(mode)
+        """No-op setup; avoids touching hardware during lifespan tests."""
+        del mode
 
     async def cleanup(self, *, force: bool = False) -> None:
         """Record cleanup requests without touching hardware."""
@@ -191,11 +188,10 @@ class StubCameraManager(CameraManager):
 
     async def get_stream_info(self) -> None:
         """Return no active stream metadata in lifespan-oriented tests."""
-        self.get_stream_info_calls += 1
+        return
 
     async def stop_streaming(self) -> None:
-        """Record stop-stream requests without touching hardware."""
-        self.stop_streaming_calls += 1
+        """Clear stream mode without touching hardware."""
         self.stream.mode = None
 
 

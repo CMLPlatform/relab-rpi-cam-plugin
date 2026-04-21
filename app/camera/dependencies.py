@@ -8,8 +8,8 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from app.camera.services.manager import CameraManager
-from app.core.config import settings
 from app.core.runtime import get_request_runtime
+from app.core.settings import settings
 from app.observability.logging import build_log_extra
 
 logger = logging.getLogger(__name__)

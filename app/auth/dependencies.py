@@ -9,9 +9,9 @@ from typing import Annotated
 from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 
-from app.core.config import settings
 from app.core.runtime import get_active_runtime, get_request_runtime
 from app.core.runtime_state import RuntimeState
+from app.core.settings import settings
 
 SESSION_TTL_HOURS = 12
 

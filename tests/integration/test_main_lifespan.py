@@ -11,8 +11,8 @@ from fastapi import FastAPI
 import app.core.lifespan as lifespan_mod
 import app.main as main_mod
 import app.pairing.services.service as pairing_mod
-from app.core.config import settings
 from app.core.runtime import AppRuntime
+from app.core.settings import settings
 from tests.constants import EXAMPLE_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL
 from tests.support.fakes import (
     FakePairingService,

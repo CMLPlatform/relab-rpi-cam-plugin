@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING
 import httpx
 from pydantic import AnyUrl
 
-from app.core.config import settings
 from app.core.runtime_context import get_active_runtime
+from app.core.settings import settings
 from app.device_jwt import build_device_assertion
 from app.observability.logging import build_log_extra
 from relab_rpi_cam_models import DeviceImageUploadAck, DevicePreviewThumbnailAck

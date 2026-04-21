@@ -23,7 +23,7 @@ from app.camera.schemas import (
     YoutubeStreamConfig,
 )
 from app.camera.services.backend import CameraBackend, ControllableCameraBackend, StreamingCameraBackend
-from app.core.config import settings
+from app.core.settings import settings
 from app.image_sinks import ImageSink, ImageSinkError, get_image_sink
 from app.media.stream_service import StreamService
 from app.media.stream_state import ActiveStreamState

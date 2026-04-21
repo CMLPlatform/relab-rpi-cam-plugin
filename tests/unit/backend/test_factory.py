@@ -6,7 +6,7 @@ import pytest
 
 from app.backend.factory import create_camera_backend
 from app.camera.services.picamera2_backend import Picamera2Backend
-from app.core.config import settings
+from app.core.settings import settings
 
 _DEFAULT_BACKEND_NAME = "picamera2"
 _UNKNOWN_BACKEND_NAME = "unicorn"

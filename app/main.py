@@ -8,10 +8,10 @@ from fastapi.staticfiles import StaticFiles
 
 from app.__version__ import version
 from app.camera.exceptions import CameraInitializationError
-from app.core.config import settings
 from app.core.lifespan import lifespan
 from app.core.middleware import register_middleware
 from app.core.runtime import ensure_app_runtime
+from app.core.settings import settings
 from app.observability.logging import setup_logging
 from app.observability.tracing import setup_observability
 from app.router import router as main_router

@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from relab_rpi_cam_models.stream import StreamMode
 
 from app.camera.dependencies import CameraManagerDependency
-from app.core.config import settings
+from app.core.settings import settings
 from app.core.templates_config import templates
 
 router = APIRouter()

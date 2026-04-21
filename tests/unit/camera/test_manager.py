@@ -27,8 +27,8 @@ from app.camera.schemas import (
 )
 from app.camera.services.backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.camera.services.manager import CameraControlsNotSupportedError, CameraManager
-from app.core.config import settings
 from app.core.runtime import AppRuntime
+from app.core.settings import settings
 from app.image_sinks.base import StoredImage
 from app.media.stream_service import StreamService
 from tests.constants import EXAMPLE_IMAGE_URL, YOUTUBE_WATCH_URL_PREFIX

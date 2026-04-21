@@ -7,8 +7,8 @@ import pytest
 from pydantic import HttpUrl
 
 import app.core.bootstrap as config_mod
-from app.core.config import Settings
 from app.core.runtime_state import RuntimeState
+from app.core.settings import Settings
 from tests.constants import (
     EXAMPLE_RELAY_BACKEND_URL,
     EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
@@ -46,15 +46,25 @@ class TestRelayUrlValidation:
         )
         assert s.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL
 
-    def test_ws_scheme_is_accepted_with_warning(self) -> None:
-        """Should accept ws:// URLs but emit a warning about unencrypted connections."""
-        with pytest.warns(UserWarning, match="unencrypted ws://"):
-            s = Settings(
+    def test_ws_scheme_is_rejected_without_opt_in(self) -> None:
+        """Should reject ws:// URLs unless ALLOW_PLAINTEXT_RELAY is explicitly set."""
+        with pytest.raises(ValueError, match="unencrypted ws://"):
+            Settings(
                 relay_backend_url=EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
                 relay_camera_id="cam-1",
                 relay_key_id="key-1",
                 relay_private_key_pem="pem",
             )
+
+    def test_ws_scheme_is_accepted_with_opt_in(self) -> None:
+        """Should accept ws:// URLs only when ALLOW_PLAINTEXT_RELAY is True."""
+        s = Settings(
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
+            relay_camera_id="cam-1",
+            relay_key_id="key-1",
+            relay_private_key_pem="pem",
+            allow_plaintext_relay=True,
+        )
         assert s.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL_UNSECURE
 
     def test_http_scheme_is_rejected(self) -> None:

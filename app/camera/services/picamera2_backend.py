@@ -25,7 +25,7 @@ from app.camera.services.backend import (
 )
 from app.camera.services.hardware_protocols import Picamera2Like
 from app.camera.services.hardware_stubs import H264EncoderStub, Picamera2Stub
-from app.core.config import settings
+from app.core.settings import settings
 from app.media.mediamtx_client import MediaMTXAPIError, MediaMTXClient
 from app.media.stream import (
     build_hires_rtsp_output,

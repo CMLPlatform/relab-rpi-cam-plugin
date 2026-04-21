@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING
 
 from app.camera.services.hardware_protocols import Picamera2Like
 from app.camera.services.manager import CameraManager
-from app.core.config import settings
 from app.core.runtime_context import get_active_runtime, set_active_runtime
 from app.core.runtime_state import RuntimeState
+from app.core.settings import settings
 from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.tracing import ObservabilityHandle
 from app.pairing.services.service import PairingService

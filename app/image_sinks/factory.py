@@ -18,7 +18,7 @@ from app.image_sinks.backend_sink import BackendPushSink
 from app.image_sinks.base import ImageSink
 
 if TYPE_CHECKING:
-    from app.core.config import Settings
+    from app.core.settings import Settings
     from app.image_sinks.s3_sink import S3CompatibleSink
 
 

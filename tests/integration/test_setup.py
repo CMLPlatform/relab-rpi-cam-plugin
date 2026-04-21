@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
-from app.core.config import DEFAULT_PAIRING_BACKEND_URL, settings
 from app.core.runtime import AppRuntime
+from app.core.settings import DEFAULT_PAIRING_BACKEND_URL, settings
 from app.pairing.routers import setup as setup_router
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, HTML_CONTENT_TYPE
 from tests.support.fakes import FakePairingService, FakeRelayService, SpyRuntime

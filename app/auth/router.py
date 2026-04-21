@@ -8,8 +8,8 @@ from fastapi.responses import RedirectResponse
 from pydantic import AfterValidator
 
 from app.auth.dependencies import _is_authorized, create_session, delete_session, reload_authorized_hashes
-from app.core.config import settings
 from app.core.runtime import get_request_runtime
+from app.core.settings import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

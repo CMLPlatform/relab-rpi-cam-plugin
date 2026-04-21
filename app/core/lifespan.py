@@ -12,8 +12,9 @@ from relab_rpi_cam_models.camera import CameraMode
 from app.__version__ import version
 from app.camera.dependencies import check_stream_duration, check_stream_health
 from app.camera.exceptions import CameraInitializationError
-from app.core.config import bootstrap_runtime_state, settings
+from app.core.bootstrap import bootstrap_runtime_state
 from app.core.runtime import AppRuntime, ensure_app_runtime
+from app.core.settings import settings
 from app.observability.logging import configure_library_loggers
 from app.utils.files import cleanup_images, setup_directory
 

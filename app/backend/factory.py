@@ -2,7 +2,7 @@
 
 from app.camera.services.backend import CameraBackend
 from app.camera.services.picamera2_backend import Picamera2Backend
-from app.core.config import settings
+from app.core.settings import settings
 
 _PICAMERA2_BACKEND = "picamera2"
 

@@ -12,7 +12,7 @@ from typing import cast
 import psutil
 from relab_rpi_cam_models.telemetry import TelemetrySnapshot, ThermalState
 
-from app.core.config import settings
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

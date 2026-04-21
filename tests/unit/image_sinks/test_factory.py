@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.config import settings
+from app.core.settings import settings
 from app.image_sinks.backend_sink import BackendPushSink
 from app.image_sinks.factory import ImageSinkConfigError, get_image_sink
 from app.image_sinks.s3_sink import S3CompatibleSink

@@ -5,8 +5,8 @@ from unittest.mock import patch
 import pytest
 
 from app.core.bootstrap import _add_authorized_api_key, apply_relay_credentials
-from app.core.config import Settings
 from app.core.runtime_state import RuntimeState
+from app.core.settings import Settings
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL
 
 RELAY_CAMERA_ID = "cam-1"

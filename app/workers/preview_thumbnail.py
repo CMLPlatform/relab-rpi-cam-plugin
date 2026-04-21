@@ -8,7 +8,7 @@ import time
 from typing import TYPE_CHECKING
 
 from app.backend.client import BackendUploadError, upload_preview_thumbnail
-from app.core.config import settings
+from app.core.settings import settings
 from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:

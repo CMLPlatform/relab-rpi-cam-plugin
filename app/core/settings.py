@@ -1,7 +1,6 @@
 """Pydantic settings for the Raspberry Pi API app."""
 
 import json
-import warnings
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Literal, cast
@@ -121,6 +120,15 @@ class Settings(BaseSettings):
     relay_key_id: str = ""
     relay_private_key_pem: str = ""
     local_relay_api_key: str = ""  # Bootstrap-only relay-local auth key seed; runtime-owned after startup
+    # Relay reconnect/backoff tunables. Defaults chosen for typical home/LTE
+    # links; operators on flaky networks may want a higher ceiling.
+    relay_reconnect_min_s: float = 2.0
+    relay_reconnect_max_s: float = 60.0
+    relay_max_concurrent_commands: int = 8
+    # Opt-in escape hatch for local development against a non-TLS backend.
+    # Production must leave this False so the device-assertion JWT is never
+    # sent over an unencrypted WebSocket.
+    allow_plaintext_relay: bool = False
 
     @property
     def relay_enabled(self) -> bool:
@@ -155,11 +163,6 @@ class Settings(BaseSettings):
         if not v.startswith(("wss://", "ws://")):
             msg = "relay_backend_url must use the wss:// (or ws://) scheme, not http/https"
             raise ValueError(msg)
-        if v.startswith("ws://"):
-            warnings.warn(
-                "relay_backend_url uses unencrypted ws://. Switch to wss:// in production.",
-                stacklevel=2,
-            )
         return v
 
     @field_validator("authorized_api_keys", mode="before")
@@ -219,6 +222,12 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         if self.relay_backend_url and self.relay_auth_scheme != RELAY_AUTH_SCHEME_DEVICE_ASSERTION:
             msg = "RELAY_AUTH_SCHEME must be device_assertion when relay bootstrap credentials are configured."
+            raise ValueError(msg)
+        if self.relay_backend_url.startswith("ws://") and not self.allow_plaintext_relay:
+            msg = (
+                "relay_backend_url uses unencrypted ws://. "
+                "Set ALLOW_PLAINTEXT_RELAY=true for local development, or switch to wss://."
+            )
             raise ValueError(msg)
         if self.image_sink == IMAGE_SINK_BACKEND and not self.pairing_backend_url:
             msg = "IMAGE_SINK=backend requires PAIRING_BACKEND_URL."

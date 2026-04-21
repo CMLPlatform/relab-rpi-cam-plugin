@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core.config import settings
+from app.core.settings import settings
 from app.pairing.services import service as pairing_mod
 from app.pairing.services.service import PAIRING_CODE_TTL_SECONDS, PairingState, _generate_code_and_fingerprint
 from app.utils.files import cleanup_images, clear_directory, setup_directory

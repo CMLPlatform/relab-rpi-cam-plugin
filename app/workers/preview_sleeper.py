@@ -31,7 +31,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from app.core.config import settings
+from app.core.settings import settings
 from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.logging import build_log_extra
 from app.relay.state import RelayRuntimeState
