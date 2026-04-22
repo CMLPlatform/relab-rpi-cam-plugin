@@ -20,11 +20,9 @@ services:
       # Override to ``runtime-standalone`` in .env for standalone mode.
       target: ${APP_BUILD_TARGET:-runtime}
     restart: unless-stopped
-    # Host networking lets the app reach MediaMTX (RTSP :8554, HLS :8888,
-    # control API :9997) over loopback, keeping those listeners localhost-only
-    # without any ``host.docker.internal`` bridge gymnastics. Port 8018 is bound
-    # directly on the host — equivalent to the previous ports mapping.
-    network_mode: host
+    depends_on:
+      mediamtx:
+        condition: service_healthy
     volumes:
       - /run/udev:/run/udev:ro
       - app_logs:/app/logs
@@ -33,14 +31,16 @@ services:
       - .env
     group_add:
       - video
-    depends_on:
-      mediamtx:
-        condition: service_healthy
     logging:
       driver: local
       options:
         max-size: "10m"
         max-file: "3"
+    # Host networking lets the app reach MediaMTX (RTSP :8554, HLS :8888,
+    # control API :9997) over loopback, keeping those listeners localhost-only
+    # without any ``host.docker.internal`` bridge gymnastics. Port 8018 is bound
+    # directly on the host — equivalent to the previous ports mapping.
+    network_mode: host
 
   mediamtx:
     # MediaMTX sidecar: the single media seam for the plugin.
