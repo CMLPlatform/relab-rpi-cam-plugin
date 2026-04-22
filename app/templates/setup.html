@@ -246,6 +246,42 @@
     window.setInterval(tick, 1000);
   });
 </script>
+<script>
+  // Poll the pairing state so the page auto-reloads when the pair or unpair
+  // finishes server-side (no manual refresh needed).
+  document.addEventListener("DOMContentLoaded", () => {
+    const initialRelayEnabled = {{ "true" if relay_enabled else "false" }};
+    const initialStatus = {{ pairing.status | tojson }};
+
+    let reloading = false;
+    const reload = () => {
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    };
+
+    const poll = async () => {
+      if (reloading) return;
+      try {
+        const resp = await fetch("/pairing/state", { cache: "no-store" });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (data.relay_enabled !== initialRelayEnabled) {
+          reload();
+          return;
+        }
+        if (data.status !== initialStatus) {
+          reload();
+        }
+      } catch {
+        // Network blip — keep polling.
+      }
+    };
+
+    const intervalId = window.setInterval(poll, 2000);
+    window.addEventListener("beforeunload", () => window.clearInterval(intervalId));
+  });
+</script>
 {% endblock %}
 
 {% block body %}

@@ -240,6 +240,34 @@ class TestSetupPage:
         assert SETUP_LOCAL_DNS_SUFFIX not in resp.text
 
 
+class TestPairingState:
+    """Tests for GET /pairing/state."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        runtime = AppRuntime()
+        runtime.pairing_service.state.status = "waiting"
+        monkeypatch.setattr(setup_router, "get_request_runtime", lambda _request: runtime)
+        self._runtime = runtime
+
+    async def test_returns_current_state(self, unauthed_client: AsyncClient) -> None:
+        resp = await unauthed_client.get("/pairing/state")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "waiting", "relay_enabled": False}
+
+    async def test_reflects_paired_state(self, unauthed_client: AsyncClient) -> None:
+        self._runtime.pairing_service.state.status = "paired"
+        self._runtime.runtime_state.set_relay_credentials(
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
+            relay_camera_id="00000000-0000-0000-0000-000000000001",
+            relay_auth_scheme="device_assertion",
+            relay_key_id="kid-1",
+            relay_private_key_pem="pem",
+        )
+        resp = await unauthed_client.get("/pairing/state")
+        assert resp.json() == {"status": "paired", "relay_enabled": True}
+
+
 class TestUnpair:
     """Tests for DELETE /pairing."""
 
