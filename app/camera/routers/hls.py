@@ -36,6 +36,7 @@ from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.logging import build_log_extra
 from app.relay.state import RelayRuntimeState
 from app.utils.network import is_local_client
+from app.workers.preview_thumbnail import PreviewThumbnailWorker
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +68,14 @@ def get_relay_state(request: Request) -> RelayRuntimeState:
     return get_request_runtime(request).relay_state
 
 
+def get_preview_thumbnail_worker(request: Request) -> PreviewThumbnailWorker:
+    """Resolve the preview thumbnail worker from the request runtime."""
+    return get_request_runtime(request).preview_thumbnail_worker
+
+
 PreviewPipelineDependency = Annotated[PreviewPipelineManager, Depends(get_preview_pipeline)]
 RelayStateDependency = Annotated[RelayRuntimeState, Depends(get_relay_state)]
+PreviewThumbnailWorkerDependency = Annotated[PreviewThumbnailWorker, Depends(get_preview_thumbnail_worker)]
 
 
 def _is_local_client(host: str | None) -> bool:
@@ -96,6 +103,59 @@ async def _wake_preview_encoder(
         # Leave the response path to report MediaMTX's current state. The next
         # playlist poll will retry after the sleeper has seen the HLS activity.
         logger.warning("Failed to wake preview encoder for HLS request: %s", exc, extra=build_log_extra())
+
+
+@router.post(
+    "/start",
+    summary="Start the preview encoder and RTSP publish to MediaMTX",
+    responses={
+        204: {"description": "Encoder started (or was already running)."},
+        503: {"description": "Camera not ready or encoder failed to start."},
+    },
+    status_code=204,
+)
+async def start_preview(
+    request: Request,
+    camera_manager: CameraManagerDependency,
+    pipeline: PreviewPipelineDependency,
+) -> Response:
+    """Explicitly start the preview pipeline. Idempotent."""
+    if not _is_local_client(request.client.host if request.client else None):
+        raise HTTPException(status_code=403, detail="Preview control is only available from the local network")
+    camera = camera_manager.backend.camera
+    if camera is None:
+        raise HTTPException(status_code=503, detail="Camera not ready")
+    try:
+        await pipeline.start(camera)
+    except RuntimeError as exc:
+        logger.warning("Failed to start preview encoder: %s", exc, extra=build_log_extra())
+        raise HTTPException(status_code=503, detail=f"Failed to start preview encoder: {exc}") from exc
+    return Response(status_code=204)
+
+
+@router.post(
+    "/stop",
+    summary="Stop the preview encoder and refresh the cached thumbnail",
+    responses={204: {"description": "Encoder stopped (or was already idle)."}},
+    status_code=204,
+)
+async def stop_preview(
+    request: Request,
+    camera_manager: CameraManagerDependency,
+    pipeline: PreviewPipelineDependency,
+    thumbnail_worker: PreviewThumbnailWorkerDependency,
+) -> Response:
+    """Explicitly stop the preview pipeline and refresh the cached thumbnail."""
+    if not _is_local_client(request.client.host if request.client else None):
+        raise HTTPException(status_code=403, detail="Preview control is only available from the local network")
+    camera = camera_manager.backend.camera
+    if camera is not None and pipeline.is_running:
+        try:
+            await pipeline.stop(camera)
+        except RuntimeError as exc:
+            logger.warning("Failed to stop preview encoder: %s", exc, extra=build_log_extra())
+    await thumbnail_worker.refresh_once(reason="preview-stop", upload=False)
+    return Response(status_code=204)
 
 
 @router.get(

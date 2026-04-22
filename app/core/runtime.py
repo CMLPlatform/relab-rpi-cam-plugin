@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Coroutine
 
     from fastapi import FastAPI, Request
+    from PIL.Image import Image as PilImage
 
 logger = logging.getLogger(__name__)
 __all__ = [
@@ -69,7 +70,13 @@ class AppRuntime:
             camera_manager=self.camera_manager,
             relay_state=self.relay_state,
             relay_enabled_getter=lambda: self.runtime_state.relay_enabled,
+            is_preview_running_getter=lambda: self.preview_pipeline.is_running,
         )
+
+        async def _refresh_thumbnail_from_capture(image: PilImage) -> None:
+            await self.preview_thumbnail_worker.refresh_from_frame(image)
+
+        self.camera_manager.set_capture_uploaded_hook(_refresh_thumbnail_from_capture)
         self.thermal_governor = ThermalGovernor(self.preview_pipeline)
 
     def create_task(

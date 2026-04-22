@@ -20,11 +20,9 @@ services:
       # Override to ``runtime-standalone`` in .env for standalone mode.
       target: ${APP_BUILD_TARGET:-runtime}
     restart: unless-stopped
-    # Host networking lets the app reach MediaMTX (RTSP :8554, HLS :8888,
-    # control API :9997) over loopback, keeping those listeners localhost-only
-    # without any ``host.docker.internal`` bridge gymnastics. Port 8018 is bound
-    # directly on the host — equivalent to the previous ports mapping.
-    network_mode: host
+    depends_on:
+      mediamtx:
+        condition: service_healthy
     volumes:
       - /run/udev:/run/udev:ro
       - app_logs:/app/logs
@@ -33,14 +31,16 @@ services:
       - .env
     group_add:
       - video
-    depends_on:
-      mediamtx:
-        condition: service_healthy
     logging:
       driver: local
       options:
         max-size: "10m"
         max-file: "3"
+    # Host networking lets the app reach MediaMTX (RTSP :8554, HLS :8888,
+    # control API :9997) over loopback, keeping those listeners localhost-only
+    # without any ``host.docker.internal`` bridge gymnastics. Port 8018 is bound
+    # directly on the host — equivalent to the previous ports mapping.
+    network_mode: host
 
   mediamtx:
     # MediaMTX sidecar: the single media seam for the plugin.
@@ -56,15 +56,18 @@ services:
     # ``-ffmpeg`` variant is required because ``runOnReady`` shells out to
     # ffmpeg and the default image doesn't ship it. Runs on the host network so
     # all three listeners (8554/8888/9997) are reachable from the app container.
-    image: bluenviron/mediamtx:1.12.0-ffmpeg
+    image: relab-rpi-cam-plugin-mediamtx
+    build:
+      context: .
+      dockerfile: docker/mediamtx.Dockerfile
     restart: unless-stopped
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
-    # Hit the control API on localhost:9997 — the image ships busybox wget
-    # (no ``--spider``, hence ``-O /dev/null``). Cheap, no auth, no side effects.
+    # Hit the control API on localhost:9997. Our wrapper image adds wget since
+    # the upstream image intentionally stays minimal.
     healthcheck:
       test: [ "CMD-SHELL", "wget -q -O /dev/null http://localhost:9997/v3/config/global/get || exit 1" ]
-      interval: 10s
+      interval: 30s
       timeout: 3s
       retries: 3
       start_period: 5s
@@ -126,7 +129,6 @@ services:
         max-file: "3"
     profiles:
       - standalone
-
 
 volumes:
   app_logs:

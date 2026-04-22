@@ -35,7 +35,6 @@ if TYPE_CHECKING:
 
 # WebSocket message types
 _MSG_TYPE_PING = RelayMessageType.PING
-_MSG_TYPE_PONG = RelayMessageType.PONG
 _MSG_TYPE_REQUEST = RelayMessageType.REQUEST
 
 # Content-type substrings used to detect binary responses. ``video`` covers
@@ -49,9 +48,17 @@ _BINARY_VIDEO = "video"
 class _AsyncWebSocket(Protocol):
     """Protocol for async WebSocket connections (e.g. websockets library)."""
 
-    async def send(self, data: str | bytes) -> None: ...
-    async def recv(self) -> str | bytes: ...
-    async def close(self) -> None: ...
+    async def send(self, data: str | bytes) -> None:
+        """Send a text or binary frame."""
+        raise NotImplementedError
+
+    async def recv(self) -> str | bytes:
+        """Receive the next text or binary frame."""
+        raise NotImplementedError
+
+    async def close(self) -> None:
+        """Close the connection."""
+        raise NotImplementedError
 
 
 logger = logging.getLogger(__name__)
@@ -215,9 +222,10 @@ async def _receive_loop(
 
 
 async def _recv_relay_message(ws: _WebSocketConnection) -> str | bytes | None:
-    with contextlib.suppress(*_WEBSOCKET_CONNECTION_ERRORS):
+    try:
         return await ws.recv()
-    return None
+    except _WEBSOCKET_CONNECTION_ERRORS:
+        return None
 
 
 async def _handle_relay_message(

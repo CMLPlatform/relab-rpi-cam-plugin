@@ -124,7 +124,7 @@ class UploadQueue:
         reference = now or datetime.now(UTC)
         return entry.next_attempt_at <= reference
 
-    async def mark_attempt_failed(self, entry: QueuedCapture) -> bool:
+    async def mark_attempt_failed(self, entry: QueuedCapture, reason: str | None = None) -> bool:
         """Record a failed attempt. Returns True if the entry was dead-lettered."""
         attempts = entry.attempts + 1
         if attempts >= _MAX_ATTEMPTS:
@@ -149,9 +149,10 @@ class UploadQueue:
             next_attempt_at=next_attempt,
         )
         logger.info(
-            "Capture %s upload attempt %d failed; retrying in %ds",
+            "Capture %s upload attempt %d failed (%s); retrying in %ds",
             entry.image_id,
             attempts,
+            reason or "reason unavailable",
             backoff,
             extra=build_log_extra(),
         )
@@ -188,23 +189,21 @@ class UploadQueue:
             except asyncio.CancelledError:
                 raise
             except ImageSinkError as exc:
-                logger.debug("Queue drain: %s still failing: %s", entry.image_id, exc)
-                await self.mark_attempt_failed(entry)
+                await self.mark_attempt_failed(entry, reason=f"sink error: {exc}")
                 continue
-            except TimeoutError:
-                logger.warning("Queue drain: %s upload timed out", entry.image_id, extra=build_log_extra())
-                await self.mark_attempt_failed(entry)
+            except TimeoutError as exc:
+                await self.mark_attempt_failed(entry, reason=f"timeout: {exc}" if str(exc) else "timeout")
                 continue
-            except OSError:
+            except OSError as exc:
                 logger.exception("Queue drain: %s file unreadable", entry.image_id, extra=build_log_extra())
-                await self.mark_attempt_failed(entry)
+                await self.mark_attempt_failed(entry, reason=f"file unreadable: {exc}")
                 continue
-            except Exception:
+            except Exception as exc:
                 # Unexpected exception: don't let one poisoned entry kill the drain
                 # pass. Log with stacktrace, mark as failed, and keep going.
                 logger.exception("Queue drain: %s hit unexpected error", entry.image_id, extra=build_log_extra())
                 with contextlib.suppress(Exception):
-                    await self.mark_attempt_failed(entry)
+                    await self.mark_attempt_failed(entry, reason=f"{type(exc).__name__}: {exc}")
                 continue
 
             await self.mark_attempt_succeeded(entry)

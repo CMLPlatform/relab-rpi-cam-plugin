@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 # is a plain loopback address (see compose.yml).
 DEFAULT_MEDIAMTX_URL = "rtsp://localhost:8554/cam-preview"
 _DEFAULT_LORES_BITRATE = 500_000
+_DEFAULT_RTSP_PKT_SIZE = 1400
 
 
 class _EncoderWithBitrate(Protocol):
@@ -57,7 +58,7 @@ class _EncoderWithBitrate(Protocol):
 
 def _build_ffmpeg_output(target_url: str) -> object:
     """Build a FfmpegOutput that RTSP-publishes lores H264 to MediaMTX."""
-    return FfmpegOutput(f"-c:v copy -f rtsp -rtsp_transport tcp {target_url}")
+    return FfmpegOutput(f"-f rtsp -rtsp_transport tcp -pkt_size {_DEFAULT_RTSP_PKT_SIZE} {target_url}")
 
 
 class PreviewPipelineManager:

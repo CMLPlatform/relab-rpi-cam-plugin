@@ -18,33 +18,61 @@
     "enabled": true,
     "automerge": true
   },
-  "ignorePaths": [".python-version"],
+  "ignorePaths": [
+    ".python-version"
+  ],
   "packageRules": [
     {
-      "matchUpdateTypes": ["minor", "patch"],
-      "matchPackagePatterns": ["*"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "automerge": true,
-      "labels": ["automerge"]
+      "labels": [
+        "automerge"
+      ],
+      "matchPackageNames": [
+        "*"
+      ]
     },
     {
       "groupName": "github-actions",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["digest", "minor", "patch"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "minor",
+        "patch"
+      ],
       "pinDigests": true,
       "automerge": true,
-      "labels": ["automerge", "github-actions"]
+      "labels": [
+        "automerge",
+        "github-actions"
+      ]
     },
     {
       "groupName": "docker",
-      "matchManagers": ["dockerfile", "docker-compose"],
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose"
+      ],
       "pinDigests": true
     },
     {
       "groupName": "pre-commit",
-      "matchManagers": ["pre-commit"],
+      "matchManagers": [
+        "pre-commit"
+      ],
       "automerge": true,
-      "labels": ["automerge"]
+      "labels": [
+        "automerge"
+      ]
     }
   ],
-  "labels": ["dependencies", "renovate"]
+  "labels": [
+    "dependencies",
+    "renovate"
+  ]
 }
