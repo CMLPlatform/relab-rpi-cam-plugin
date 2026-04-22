@@ -12,12 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json as json_mod
 import logging
-import os
 import secrets
 import socket
-import tempfile
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -29,11 +26,24 @@ import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
+from app.core.bootstrap import set_runtime_relay_credentials
 from app.core.runtime_context import get_active_runtime
 from app.core.settings import settings as app_settings
 from app.observability.logging import build_log_extra
 from app.pairing.services.client import PairingClient
+from app.pairing.services.credentials import (
+    _CREDENTIALS_FILE,
+    delete_relay_credentials,
+    load_relay_credentials,
+    save_relay_credentials,
+)
 from relab_rpi_cam_models import PairingClaimedBootstrap, PairingStatus, RelayAuthScheme
+
+__all__ = [
+    "_CREDENTIALS_FILE",
+    "delete_relay_credentials",
+    "load_relay_credentials",
+]
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -41,19 +51,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _get_credentials_file() -> Path:
-    """Get the path to the relay credentials file.
-
-    Respects env var RELAB_CREDENTIALS_FILE if set, otherwise uses:
-    ~/.config/relab/relay_credentials.json (following XDG Base Directory Spec)
-    """
-    if env_path := os.getenv("RELAB_CREDENTIALS_FILE"):
-        return Path(env_path)
-    config_dir = Path.home() / ".config" / "relab"
-    return config_dir / "relay_credentials.json"
-
-
-_CREDENTIALS_FILE = _get_credentials_file()
 _CODE_LENGTH = 3  # token_hex(3) → 6 hex chars
 PAIRING_CODE_TTL_SECONDS = 10 * 60
 
@@ -443,17 +440,13 @@ async def _complete_pairing_state(
     state.status = STATUS_PAIRED
     _clear_active_pairing_code(state)
 
-    _save_relay_credentials(
+    save_relay_credentials(
         relay_backend_url=relay_backend_url,
         camera_id=camera_id,
         relay_auth_scheme=relay_auth_scheme,
         key_id=key_id,
         private_key_pem=private_key_pem,
     )
-    # Local import: bootstrap imports _CREDENTIALS_FILE from this module, so a
-    # top-level import would create a circular dependency at startup.
-    from app.core.bootstrap import set_runtime_relay_credentials  # noqa: PLC0415
-
     set_runtime_relay_credentials(
         get_active_runtime().runtime_state,
         relay_backend_url=relay_backend_url,
@@ -497,67 +490,3 @@ def _private_key_pem(private_key: ec.EllipticCurvePrivateKey) -> str:
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode("ascii")
-
-
-def _save_relay_credentials(
-    relay_backend_url: str,
-    camera_id: str,
-    relay_auth_scheme: str,
-    key_id: str,
-    private_key_pem: str,
-) -> None:
-    """Persist relay credentials to a separate JSON file (not .env).
-
-    This avoids corrupting the user's .env which may contain comments,
-    quotes, or other settings. The config loads these on next boot.
-    Writes atomically to prevent corruption on power loss.
-    Ensures the credentials directory exists before writing.
-    """
-    data = {
-        "relay_backend_url": relay_backend_url,
-        "relay_camera_id": camera_id,
-        "relay_auth_scheme": relay_auth_scheme,
-        "relay_key_id": key_id,
-        "relay_private_key_pem": private_key_pem,
-    }
-    # Ensure the directory exists
-    _CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    # Write to a temp file first, then atomically replace
-    with tempfile.NamedTemporaryFile(
-        mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
-    ) as tmp:
-        tmp_path = tmp.name
-        tmp.write(json_mod.dumps(data, indent=2))
-    try:
-        Path(tmp_path).replace(_CREDENTIALS_FILE)
-        _CREDENTIALS_FILE.chmod(0o600)
-    except OSError:
-        # Clean up temp file if replace fails
-        with suppress(OSError):
-            Path(tmp_path).unlink()
-        raise
-    logger.info("Relay credentials saved to %s", _CREDENTIALS_FILE)
-
-
-def load_relay_credentials() -> dict[str, str | bool] | None:
-    """Load relay credentials from the JSON file, if it exists."""
-    if not _CREDENTIALS_FILE.exists():
-        return None
-    try:
-        return json_mod.loads(_CREDENTIALS_FILE.read_text())
-    except (json_mod.JSONDecodeError, OSError):
-        logger.warning("Failed to read %s", _CREDENTIALS_FILE)
-        return None
-
-
-def delete_relay_credentials() -> None:
-    """Delete the on-disk credentials file.
-
-    Does not touch runtime settings (relay_backend_url etc.) — call
-    ``clear_runtime_relay_credentials()`` separately for that.
-    """
-    try:
-        _CREDENTIALS_FILE.unlink(missing_ok=True)
-        logger.info("Relay credentials deleted from %s", _CREDENTIALS_FILE)
-    except OSError as exc:
-        logger.warning("Failed to delete relay credentials file: %s", exc)

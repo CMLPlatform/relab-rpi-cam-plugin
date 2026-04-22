@@ -20,6 +20,27 @@ IMAGE_SINK_S3 = "s3"
 DEFAULT_PAIRING_BACKEND_URL = "https://api.cml-relab.org"
 
 
+def _parse_list_env(v: object) -> list[str]:
+    """Accept a JSON array, comma-separated string, or empty value.
+
+    Falls back to comma-splitting on JSON decode errors so common .env
+    mistakes (e.g. ``[KEY]`` as unquoted JSON) still yield a useful list
+    rather than a cryptic ``JSONDecodeError`` at startup.
+    """
+    if isinstance(v, list):
+        return cast("list[str]", v)
+    if not isinstance(v, str):
+        return cast("list[str]", list(v)) if isinstance(v, Iterable) else []
+    stripped = v.strip()
+    if not stripped:
+        return []
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return [k.strip().strip("\"'") for k in stripped.strip("[]").split(",") if k.strip()]
+    return cast("list[str]", [parsed] if not isinstance(parsed, list) else parsed)
+
+
 class Settings(BaseSettings):
     """Settings class to store all the configurations for the app."""
 
@@ -101,19 +122,7 @@ class Settings(BaseSettings):
     @field_validator("local_allowed_origins", mode="before")
     @classmethod
     def _parse_local_origins(cls, v: object) -> list[str]:
-        """Accept a JSON array, comma-separated string, or empty value."""
-        if isinstance(v, list):
-            return cast("list[str]", v)
-        if not isinstance(v, str):
-            return cast("list[str]", list(v)) if isinstance(v, Iterable) else []
-        stripped = v.strip()
-        if not stripped:
-            return []
-        try:
-            parsed = json.loads(stripped)
-        except json.JSONDecodeError:
-            return [k.strip().strip("\"'") for k in stripped.strip("[]").split(",") if k.strip()]
-        return cast("list[str]", [parsed] if not isinstance(parsed, list) else parsed)
+        return _parse_list_env(v)
 
     # WebSocket relay (auto-enabled when all three fields are set)
     relay_backend_url: str = ""  # wss://your-backend/plugins/rpi-cam/ws/connect
@@ -170,24 +179,7 @@ class Settings(BaseSettings):
     @field_validator("authorized_api_keys", mode="before")
     @classmethod
     def _parse_api_keys(cls, v: object) -> list[str]:
-        """Accept a JSON array, a comma-separated string, or an empty value.
-
-        Handles common .env mistakes such as ``[KEY]`` (unquoted JSON string)
-        by falling back to comma-splitting so the app still starts with a
-        meaningful error rather than a cryptic JSONDecodeError.
-        """
-        if isinstance(v, list):
-            return cast("list[str]", v)
-        if not isinstance(v, str):
-            return cast("list[str]", list(v)) if isinstance(v, Iterable) else []
-        stripped = v.strip()
-        if not stripped:
-            return []
-        try:
-            parsed = json.loads(stripped)
-        except json.JSONDecodeError:
-            return [k.strip().strip("\"'") for k in stripped.strip("[]").split(",") if k.strip()]
-        return cast("list[str]", [parsed] if not isinstance(parsed, list) else parsed)
+        return _parse_list_env(v)
 
     @field_validator("debug", mode="before")
     @classmethod
