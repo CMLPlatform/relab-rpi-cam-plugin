@@ -8,12 +8,15 @@ import time
 from typing import TYPE_CHECKING
 
 from app.backend.client import BackendUploadError, upload_preview_thumbnail
+from app.camera.services.manager import encode_preview_jpeg
 from app.core.settings import settings
 from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from pathlib import Path
+
+    from PIL.Image import Image as PilImage
 
     from app.camera.services.manager import CameraManager
     from app.relay.state import RelayRuntimeState
@@ -29,6 +32,7 @@ _LOCK_TIMEOUT_S = 0.25
 _STARTUP_REASON = "startup"
 _INTERVAL_REASON = "interval"
 _ACTIVITY_REASON = "activity"
+_CAPTURE_REASON = "capture"
 
 
 class PreviewThumbnailWorker:
@@ -82,7 +86,19 @@ class PreviewThumbnailWorker:
                 extra=build_log_extra(),
             )
             return False
+        return await self._persist_and_maybe_upload(image_bytes, reason=reason)
 
+    async def refresh_from_frame(self, image: PilImage) -> bool:
+        """Refresh the preview thumbnail from a frame captured elsewhere.
+
+        Called after a user-triggered still capture so the camera-card mosaic
+        reflects the freshly uploaded image without re-acquiring the camera
+        lock or waiting for the next interval poll.
+        """
+        image_bytes = await asyncio.to_thread(encode_preview_jpeg, image)
+        return await self._persist_and_maybe_upload(image_bytes, reason=_CAPTURE_REASON)
+
+    async def _persist_and_maybe_upload(self, image_bytes: bytes, *, reason: str) -> bool:
         _write_preview_thumbnail_atomic(self._cache_path, image_bytes)
         now = self._monotonic()
         self._last_refresh_monotonic = now

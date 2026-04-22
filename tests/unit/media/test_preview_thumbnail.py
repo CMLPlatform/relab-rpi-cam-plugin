@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock
 
+from PIL import Image
+
 from app.backend.client import BackendUploadError
 from app.camera.services.manager import CameraManager
 from app.relay.state import RelayRuntimeState
@@ -124,6 +126,44 @@ class TestPreviewThumbnailWorker:
 
         assert refreshed is True
         assert worker.cache_path.read_bytes() == _NEW_BYTES
+
+    async def test_refresh_from_frame_encodes_caches_and_uploads(
+        self,
+        tmp_path: Path,
+        monkeypatch: MonkeyPatch,
+    ) -> None:
+        """refresh_from_frame should encode the PIL frame, cache it, and upload it when paired."""
+        camera_manager = cast(
+            "CameraManager",
+            SimpleNamespace(capture_preview_thumbnail_jpeg=AsyncMock(return_value=None)),
+        )
+        relay_state = cast(
+            "RelayRuntimeState",
+            SimpleNamespace(seconds_since_last_hls_activity=lambda: None),
+        )
+        uploaded: list[bytes] = []
+
+        async def _upload_preview_thumbnail(*, image_bytes: bytes, filename: str = _DEFAULT_FILENAME) -> None:
+            uploaded.append(image_bytes)
+            assert filename == _DEFAULT_FILENAME
+
+        monkeypatch.setattr("app.workers.preview_thumbnail.upload_preview_thumbnail", _upload_preview_thumbnail)
+
+        worker = PreviewThumbnailWorker(
+            camera_manager=camera_manager,
+            relay_state=relay_state,
+            relay_enabled_getter=lambda: True,
+            cache_dir=tmp_path,
+        )
+
+        frame = Image.new("RGB", (1280, 720), color="blue")
+        refreshed = await worker.refresh_from_frame(frame)
+
+        assert refreshed is True
+        cached_bytes = worker.cache_path.read_bytes()
+        assert cached_bytes.startswith(b"\xff\xd8")
+        assert uploaded == [cached_bytes]
+        camera_manager.capture_preview_thumbnail_jpeg.assert_not_awaited()
 
     async def test_activity_refresh_uses_recent_hls_activity(
         self,

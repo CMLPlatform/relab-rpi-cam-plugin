@@ -133,7 +133,12 @@ class TestGetCameraManager:
     def test_prefers_request_runtime_camera_manager(self) -> None:
         """Request-scoped runtime should override the legacy compatibility manager."""
         app = FastAPI()
-        runtime = AppRuntime(camera_manager=cast("CameraManager", SimpleNamespace(name="runtime-manager")))
+        runtime = AppRuntime(
+            camera_manager=cast(
+                "CameraManager",
+                SimpleNamespace(name="runtime-manager", set_capture_uploaded_hook=lambda _hook: None),
+            ),
+        )
         app.state.runtime = runtime
         request = Request(
             {
@@ -376,9 +381,87 @@ class TestCameraManagerCapture:
 
         assert response.metadata.camera_properties.camera_model == MOCK_CAMERA
         assert response.image_id == stub_image_id
+        assert str(response.image_url) == EXAMPLE_IMAGE_URL
         backend.capture_image.assert_awaited_once()
-        status = await manager.get_status()
-        assert str(status.last_image_url) == EXAMPLE_IMAGE_URL
+
+    async def test_capture_invokes_capture_uploaded_hook_with_captured_frame(self, tmp_path: Path) -> None:
+        """A successful capture should invoke the registered hook with the PIL frame."""
+        backend = FakeBackend()
+        image = Image.new("RGB", (64, 64), color="red")
+        backend.capture_image.return_value = CaptureResult(
+            image=image,
+            camera_properties={"Model": "mock-camera"},
+            capture_metadata={"FrameDuration": 33_333},
+        )
+
+        class _StubSink:
+            put = AsyncMock(
+                return_value=StoredImage(
+                    image_id="c" * 32,
+                    image_url=AnyUrl(EXAMPLE_IMAGE_URL),
+                )
+            )
+
+        manager = CameraManager(
+            backend=cast("StreamingCameraBackend", backend),
+            sink=_StubSink(),
+        )
+
+        hook_calls: list[object] = []
+
+        async def _hook(frame: object) -> None:
+            hook_calls.append(frame)
+
+        manager.set_capture_uploaded_hook(_hook)
+
+        original = settings.image_path
+        settings.image_path = tmp_path / "images"
+        settings.image_path.mkdir()
+        try:
+            await manager.capture_jpeg()
+        finally:
+            settings.image_path = original
+
+        assert hook_calls == [image]
+
+    async def test_capture_hook_failure_does_not_break_capture(self, tmp_path: Path) -> None:
+        """A failing hook must be logged but must not propagate out of capture_jpeg."""
+        backend = FakeBackend()
+        image = Image.new("RGB", (64, 64), color="red")
+        backend.capture_image.return_value = CaptureResult(
+            image=image,
+            camera_properties={"Model": "mock-camera"},
+            capture_metadata={"FrameDuration": 33_333},
+        )
+
+        class _StubSink:
+            put = AsyncMock(
+                return_value=StoredImage(
+                    image_id="d" * 32,
+                    image_url=AnyUrl(EXAMPLE_IMAGE_URL),
+                )
+            )
+
+        manager = CameraManager(
+            backend=cast("StreamingCameraBackend", backend),
+            sink=_StubSink(),
+        )
+
+        async def _hook(_frame: object) -> None:
+            msg = "hook boom"
+            raise RuntimeError(msg)
+
+        manager.set_capture_uploaded_hook(_hook)
+
+        original = settings.image_path
+        settings.image_path = tmp_path / "images"
+        settings.image_path.mkdir()
+        try:
+            response = await manager.capture_jpeg()
+        finally:
+            settings.image_path = original
+
+        assert response.status == ImageCaptureStatus.UPLOADED
 
     async def test_capture_allows_active_youtube_stream(self, tmp_path: Path) -> None:
         """Normal still capture should remain allowed while a YouTube stream is active."""
@@ -564,7 +647,6 @@ class TestCameraManagerGetStatus:
 
         assert status.current_mode is None
         assert status.stream is None
-        assert status.last_image_url is None
 
 
 class TestCameraManagerControls:

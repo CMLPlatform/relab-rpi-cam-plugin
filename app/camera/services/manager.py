@@ -9,7 +9,6 @@ import uuid
 from io import BytesIO
 from typing import TYPE_CHECKING
 
-from pydantic import AnyUrl
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 from relab_rpi_cam_models.images import ImageCaptureResponse, ImageCaptureStatus
 
@@ -32,7 +31,7 @@ from app.upload.queue import UploadQueue
 from app.utils.files import clear_directory
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Mapping
+    from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
     from pathlib import Path
 
     from PIL.Image import Exif
@@ -83,7 +82,7 @@ def _encode_jpeg_atomic(
     return image_bytes
 
 
-def _encode_preview_jpeg(image: PilImage) -> bytes:
+def encode_preview_jpeg(image: PilImage) -> bytes:
     """Encode a smaller JPEG suitable for cached preview thumbnails."""
     frame = image.copy()
     frame.thumbnail((640, 400))
@@ -109,10 +108,17 @@ class CameraManager:
         self._sink: ImageSink | None = sink
         self._upload_queue_override = upload_queue
         self._upload_queue: UploadQueue | None = None
-        self._last_image_url: AnyUrl | None = None
+        self._on_capture_uploaded: Callable[[PilImage], Awaitable[None]] | None = None
         self.stream_service = StreamService()
         self.lock = asyncio.Lock()
         self.lock_timeout = 10
+
+    def set_capture_uploaded_hook(
+        self,
+        hook: Callable[[PilImage], Awaitable[None]] | None,
+    ) -> None:
+        """Register a best-effort callback invoked with the PIL frame after a successful capture upload."""
+        self._on_capture_uploaded = hook
 
     @property
     def sink(self) -> ImageSink:
@@ -135,11 +141,6 @@ class CameraManager:
     def stream(self) -> ActiveStreamState:
         """Expose active stream state for existing callers."""
         return self.stream_service.state
-
-    @property
-    def last_image_url(self) -> AnyUrl | None:
-        """Return the most recently uploaded image URL, if any."""
-        return self._last_image_url
 
     def has_active_stream(self) -> bool:
         """Whether a stream is currently active."""
@@ -218,7 +219,6 @@ class CameraManager:
                 exc,
                 extra=build_log_extra(stream_mode=self.stream.mode),
             )
-            self._last_image_url = None
             await self.upload_queue.enqueue(
                 image_id=image_id,
                 image_path=image_path,
@@ -235,7 +235,15 @@ class CameraManager:
             )
 
         await asyncio.to_thread(_unlink_quiet, image_path)
-        self._last_image_url = stored.image_url
+
+        if self._on_capture_uploaded is not None:
+            try:
+                await self._on_capture_uploaded(result.image)
+            except Exception:
+                logger.exception(
+                    "Capture-uploaded hook failed",
+                    extra=build_log_extra(stream_mode=self.stream.mode),
+                )
 
         return ImageCaptureResponse(
             image_id=stored.image_id,
@@ -264,7 +272,7 @@ class CameraManager:
                 else:
                     result = await self.backend.capture_image()
                     frame = result.image
-                return await asyncio.to_thread(_encode_preview_jpeg, frame)
+                return await asyncio.to_thread(encode_preview_jpeg, frame)
         except RuntimeError:
             logger.debug("Preview thumbnail refresh skipped because the camera lock was busy")
             return None
@@ -376,7 +384,6 @@ class CameraManager:
         return CameraStatusView(
             current_mode=self.backend.current_mode,
             stream=stream_info if self.stream.is_active else None,
-            last_image_url=self._last_image_url,
         )
 
     async def get_camera_status(self) -> CameraStatusView:

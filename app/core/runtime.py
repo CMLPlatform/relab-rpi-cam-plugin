@@ -70,6 +70,7 @@ class AppRuntime:
             relay_state=self.relay_state,
             relay_enabled_getter=lambda: self.runtime_state.relay_enabled,
         )
+        self.camera_manager.set_capture_uploaded_hook(self.preview_thumbnail_worker.refresh_from_frame)
         self.thermal_governor = ThermalGovernor(self.preview_pipeline)
 
     def create_task(
