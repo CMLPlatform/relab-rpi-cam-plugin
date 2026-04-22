@@ -7,15 +7,14 @@ from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock
 
 from app.backend.client import BackendUploadError
+from app.camera.services.manager import CameraManager
+from app.relay.state import RelayRuntimeState
 from app.workers.preview_thumbnail import PreviewThumbnailWorker
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from _pytest.monkeypatch import MonkeyPatch
-
-    from app.camera.services.manager import CameraManager
-    from app.relay.state import RelayRuntimeState
 
 _FRESH_BYTES = b"fresh-bytes"
 _OLD_BYTES = b"old-bytes"

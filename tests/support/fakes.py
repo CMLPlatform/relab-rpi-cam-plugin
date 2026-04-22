@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from PIL import Image
@@ -20,16 +22,18 @@ from app.camera.schemas import (
 from app.camera.services.backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.camera.services.manager import CameraManager
 from app.core.runtime import AppRuntime
+from app.image_sinks.base import ImageSink, StoredImage
 from app.pairing.services.service import PairingService, PairingState
 from app.relay.service import RelayService
-from app.upload.queue import UploadQueueWorker
+from app.relay.state import RelayRuntimeState
+from app.upload.queue import UploadQueue, UploadQueueWorker
 from app.workers.preview_sleeper import PreviewSleeper
 from app.workers.preview_thumbnail import PreviewThumbnailWorker
 from app.workers.thermal_governor import ThermalGovernor
 from tests.constants import YOUTUBE_TEST_BROADCAST_URL
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Coroutine
+    from collections.abc import Awaitable, Callable, Coroutine, Mapping
 
     from relab_rpi_cam_models.stream import StreamMode
 
@@ -241,6 +245,11 @@ class FakePreviewThumbnailWorker(PreviewThumbnailWorker):
     """Preview-thumbnail worker double that records runtime-managed lifecycle."""
 
     def __init__(self) -> None:
+        super().__init__(
+            camera_manager=make_camera_manager(),
+            relay_state=RelayRuntimeState(),
+            relay_enabled_getter=lambda: False,
+        )
         self.run_calls = 0
 
     async def run_forever(self) -> None:
@@ -253,6 +262,8 @@ class FakeUploadQueueWorker(UploadQueueWorker):
     """Upload queue worker double that records runtime-managed lifecycle."""
 
     def __init__(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        super().__init__(UploadQueue(Path(self._temp_dir.name), sink=_NoopImageSink()))
         self.run_calls = 0
 
     async def run_forever(self) -> None:
@@ -290,6 +301,20 @@ class SpyRuntime(AppRuntime):
 def make_camera_manager() -> CameraManager:
     """Create a camera manager backed by the typed fake backend."""
     return CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
+
+
+class _NoopImageSink(ImageSink):
+    async def put(
+        self,
+        *,
+        image_id: str,
+        image_bytes: bytes,
+        filename: str,
+        capture_metadata: Mapping[str, object],
+        upload_metadata: Mapping[str, object],
+    ) -> StoredImage:
+        del image_bytes, filename, capture_metadata, upload_metadata
+        return StoredImage(image_id=image_id, image_url=AnyUrl("https://example.invalid/noop-image.jpg"))
 
 
 def build_test_runtime(*, camera_manager: CameraManager | None = None) -> AppRuntime:

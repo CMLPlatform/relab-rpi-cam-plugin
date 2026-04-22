@@ -111,7 +111,6 @@ def _persist_local_api_key(key: str) -> None:
             os.fchmod(tmp.fileno(), 0o600)
             os.fsync(tmp.fileno())
         tmp_path.replace(_CREDENTIALS_FILE)
-        tmp_path = None  # ownership transferred to the final path
     except OSError:
         if tmp_path is not None:
             with suppress(OSError):

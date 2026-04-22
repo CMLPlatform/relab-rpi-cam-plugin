@@ -1,5 +1,6 @@
 """Tests for setup page endpoints."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -277,7 +278,7 @@ class TestUnpair:
             ),
         ):
             resp = await unauthed_client.delete("/pairing")
-            await runtime.created_tasks[0]
+            await asyncio.wait_for(runtime.created_tasks[0], timeout=1)
 
         assert resp.status_code == 204
         assert deleted == [True]
@@ -324,7 +325,7 @@ class TestPairingCodeRefresh:
             ),
         ):
             resp = await unauthed_client.post("/pairing/code")
-            await runtime.created_tasks[0]
+            await asyncio.wait_for(runtime.created_tasks[0], timeout=1)
 
         assert resp.status_code == 204
         assert reset_called == [True]
