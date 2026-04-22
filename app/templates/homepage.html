@@ -5,93 +5,118 @@
 {% block body_class %}setup-page{% endblock %}
 
 {% block site_header_nav %}
-  <nav class="site-header__nav" aria-label="Primary">
-    <a href="{{ url_for('setup_page') }}" class="btn btn--ghost btn--nav-primary">Setup</a>
-    <a href="{{ url_for('swagger_ui_html') }}" class="btn btn--ghost">API Docs</a>
-  </nav>
+<nav class="site-header__nav" aria-label="Primary">
+  <a href="{{ url_for('setup_page') }}" class="btn btn--ghost btn--nav-primary">Setup</a>
+  <a href="{{ url_for('swagger_ui_html') }}" class="btn btn--ghost">API Docs</a>
+</nav>
 {% endblock %}
 
 {% block extra_scripts %}
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
-  <script>
-    const HLS_SRC = "/preview/hls/cam-preview/index.m3u8";
-    const PREVIEW_RETRY_DELAY_MS = 1200;
-    const PREVIEW_MAX_RETRIES = 8;
-    let hls = null;
-    let previewRetryTimer = null;
-    let previewWanted = false;
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+<script>
+  const HLS_SRC = "/preview/hls/cam-preview/index.m3u8";
+  const THUMBNAIL_SRC = "/preview-thumbnail.jpg";
+  const START_DELAY_MS = 2000;
+  let hls = null;
+  let state = "idle";
 
-    function resetPreviewMedia() {
-      const video = document.getElementById("preview-video");
-      if (hls) { hls.destroy(); hls = null; }
-      video.removeAttribute("src");
-      video.load();
+  function setChip(kind, text) {
+    const chip = document.getElementById("preview-chip");
+    chip.className = "status-chip status-chip--" + kind;
+    chip.textContent = text;
+  }
+
+  function showThumbnail() {
+    document.getElementById("preview-thumbnail").src = THUMBNAIL_SRC + "?t=" + Date.now();
+    document.getElementById("preview-thumbnail").hidden = false;
+    document.getElementById("preview-video").hidden = true;
+  }
+
+  function showVideo() {
+    document.getElementById("preview-thumbnail").hidden = true;
+    document.getElementById("preview-video").hidden = false;
+  }
+
+  function attachPlayer() {
+    const video = document.getElementById("preview-video");
+    if (Hls.isSupported()) {
+      hls = new Hls({
+        // MediaMTX serves classic HLS (mpegts), not LL-HLS, so we hug the live
+        // edge by keeping the player's buffer tight instead. Expect ~3s latency.
+        liveSyncDurationCount: 2,
+        liveMaxLatencyDurationCount: 2,
+        backBufferLength: 4,
+        maxLiveSyncPlaybackRate: 1.5,
+      });
+      hls.loadSource(HLS_SRC);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = HLS_SRC;
+      video.play();
+    } else {
+      throw new Error("HLS playback not supported in this browser.");
     }
+  }
 
-    function startPreview(attempt = 0) {
-      previewWanted = true;
-      const video = document.getElementById("preview-video");
-      const btn = document.getElementById("preview-btn");
-      const chip = document.getElementById("preview-chip");
-      const msg = document.getElementById("preview-msg");
-
+  async function startPreview() {
+    if (state !== "idle") return;
+    state = "starting";
+    const btn = document.getElementById("preview-btn");
+    const msg = document.getElementById("preview-msg");
+    btn.disabled = true;
+    btn.textContent = "Starting...";
+    msg.textContent = "Waking the encoder...";
+    setChip("muted", "Starting");
+    try {
+      const resp = await fetch("/preview/start", { method: "POST" });
+      if (!resp.ok) throw new Error("Server failed to start preview (HTTP " + resp.status + ")");
+      await new Promise(r => setTimeout(r, START_DELAY_MS));
+      showVideo();
+      attachPlayer();
+      state = "live";
+      btn.disabled = false;
       btn.textContent = "Stop Preview";
-      msg.textContent = attempt > 0 ? "Starting preview — waking the encoder..." : "";
-
-      const onError = () => {
-        resetPreviewMedia();
-        if (attempt < PREVIEW_MAX_RETRIES) {
-          msg.textContent = "Starting preview — waking the encoder...";
-          previewRetryTimer = window.setTimeout(() => {
-            if (previewWanted) startPreview(attempt + 1);
-          }, PREVIEW_RETRY_DELAY_MS);
-          return;
-        }
-        stopPreview();
-        msg.textContent = "Preview unavailable — check that the camera and local MediaMTX sidecar are running.";
-      };
-
-      if (Hls.isSupported()) {
-        hls = new Hls({ lowLatencyMode: true });
-        hls.loadSource(HLS_SRC);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play();
-          chip.className = "status-chip status-chip--live";
-          chip.textContent = "Live";
-        });
-        hls.on(Hls.Events.ERROR, (_e, data) => { if (data.fatal) onError(); });
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = HLS_SRC;
-        video.addEventListener("error", onError, { once: true });
-        video.play();
-        chip.className = "status-chip status-chip--live";
-        chip.textContent = "Live";
-      } else {
-        msg.textContent = "HLS playback not supported in this browser.";
-      }
-    }
-
-    function stopPreview() {
-      const video = document.getElementById("preview-video");
-      const btn = document.getElementById("preview-btn");
-      const chip = document.getElementById("preview-chip");
-
-      previewWanted = false;
-      if (previewRetryTimer) {
-        window.clearTimeout(previewRetryTimer);
-        previewRetryTimer = null;
-      }
-      resetPreviewMedia();
+      msg.textContent = "";
+      setChip("live", "Live");
+    } catch (err) {
+      state = "idle";
+      btn.disabled = false;
       btn.textContent = "Load Preview";
-      chip.className = "status-chip status-chip--muted";
-      chip.textContent = "Preview";
+      msg.textContent = "Preview unavailable: " + err.message;
+      setChip("muted", "Preview");
     }
+  }
 
-    function togglePreview() {
-      previewWanted ? stopPreview() : startPreview();
+  async function stopPreview() {
+    if (state === "idle") return;
+    state = "stopping";
+    const btn = document.getElementById("preview-btn");
+    const msg = document.getElementById("preview-msg");
+    btn.disabled = true;
+    btn.textContent = "Stopping...";
+    if (hls) { hls.destroy(); hls = null; }
+    const video = document.getElementById("preview-video");
+    video.removeAttribute("src");
+    video.load();
+    try {
+      await fetch("/preview/stop", { method: "POST" });
+    } catch (_err) {
+      // Best-effort — the encoder will hibernate on its own.
     }
-  </script>
+    showThumbnail();
+    state = "idle";
+    btn.disabled = false;
+    btn.textContent = "Load Preview";
+    msg.textContent = "";
+    setChip("muted", "Preview");
+  }
+
+  function togglePreview() {
+    if (state === "idle") startPreview();
+    else if (state === "live") stopPreview();
+  }
+</script>
 {% endblock %}
 
 {% block body %}
@@ -99,36 +124,23 @@
   <section class="setup-hero">
     <div class="setup-eyebrow">Reverse Engineering Lab</div>
     <h1>Raspberry Pi Camera</h1>
-    <p>Remotely capture images and stream video from a Raspberry Pi camera. Learn more about RELab on the <a href="https://github.com/CMLplatform/relab" target="_blank" rel="noopener">GitHub page</a>.</p>
+    <p>Remotely capture images and stream video from a Raspberry Pi camera. Learn more about RELab on the <a
+        href="https://github.com/CMLplatform/relab" target="_blank" rel="noopener">GitHub page</a>.</p>
   </section>
 
   <section class="setup-status">
     <div class="setup-status-grid">
       <div class="status-chip status-chip--muted" id="preview-chip">Preview</div>
       <h2>Camera Preview</h2>
-      <p class="setup-status__lead">Start a live local preview when you want to check framing or focus.</p>
-      <video id="preview-video" class="preview-video" controls playsinline muted></video>
+      <p class="setup-status__lead">The thumbnail below refreshes periodically. Start a live preview to check framing or
+        focus.</p>
+      <img id="preview-thumbnail" class="preview-video" src="{{ url_for('preview_thumbnail') }}"
+        alt="Latest camera preview thumbnail" />
+      <video id="preview-video" class="preview-video" controls playsinline muted hidden></video>
       <p id="preview-msg" class="preview-message"></p>
       <div class="setup-actions">
         <button class="btn" id="preview-btn" onclick="togglePreview()">Load Preview</button>
       </div>
-    </div>
-  </section>
-
-  <section class="setup-status">
-    <div class="setup-status-grid">
-      <div class="status-chip status-chip--muted">Recent capture</div>
-      <h2>Last Image</h2>
-      {% if last_image_url %}
-        <a href="{{ last_image_url }}" target="_blank" rel="noopener" class="setup-link">Open full image</a>
-        <img
-          class="capture-preview"
-          src="{{ last_image_url }}"
-          alt="Latest captured image"
-        />
-      {% else %}
-        <p>No image has been captured yet.</p>
-      {% endif %}
     </div>
   </section>
 

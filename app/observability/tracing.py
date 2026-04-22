@@ -18,13 +18,23 @@ if TYPE_CHECKING:
 
 
 class _FastAPIInstrumentorProtocol(Protocol):
-    def instrument_app(self, app: FastAPI, *, tracer_provider: TracerProvider) -> None: ...
-    def uninstrument_app(self, app: FastAPI) -> None: ...
+    def instrument_app(self, app: FastAPI, *, tracer_provider: TracerProvider) -> None:
+        """Attach tracing hooks to the FastAPI app."""
+        raise NotImplementedError
+
+    def uninstrument_app(self, app: FastAPI) -> None:
+        """Remove tracing hooks from the FastAPI app."""
+        raise NotImplementedError
 
 
 class _HTTPXInstrumentorProtocol(Protocol):
-    def instrument(self, *, tracer_provider: TracerProvider) -> None: ...
-    def uninstrument(self) -> None: ...
+    def instrument(self, *, tracer_provider: TracerProvider) -> None:
+        """Attach tracing hooks to HTTPX."""
+        raise NotImplementedError
+
+    def uninstrument(self) -> None:
+        """Remove tracing hooks from HTTPX."""
+        raise NotImplementedError
 
 
 logger = logging.getLogger(__name__)

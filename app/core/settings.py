@@ -8,6 +8,8 @@ from typing import Literal, cast
 from pydantic import HttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+__all__ = ["Settings", "settings"]
+
 # Set the project base directory and .env file
 BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
 HTTPS_SCHEME = "https"

@@ -25,9 +25,11 @@ class TestAppRuntime:
 
         task = runtime.create_task(_work(), name=BACKGROUND_TASK_NAME)
         assert task in runtime.background_tasks
+        discarded = asyncio.Event()
+        task.add_done_callback(lambda _task: discarded.set())
 
-        await task
-        await asyncio.sleep(0)
+        await asyncio.wait_for(task, timeout=1)
+        await asyncio.wait_for(discarded.wait(), timeout=1)
 
         assert task not in runtime.background_tasks
         assert BACKGROUND_TASK_NAME not in runtime.managed_tasks_by_name

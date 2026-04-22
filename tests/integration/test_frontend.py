@@ -10,8 +10,9 @@ from relab_rpi_cam_models.stream import StreamMode
 from app.auth.dependencies import verify_request
 from app.camera.routers import hls as hls_mod
 from app.camera.services.manager import CameraManager
+from app.core.settings import settings
 from app.main import app
-from tests.constants import EXAMPLE_IMAGE_URL, HTML_CONTENT_TYPE, YOUTUBE_TEST_BROADCAST_URL
+from tests.constants import HTML_CONTENT_TYPE, JPEG_CONTENT_TYPE, NO_STORE_CACHE_CONTROL, YOUTUBE_TEST_BROADCAST_URL
 
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
@@ -26,8 +27,8 @@ LOGO_SRC = "/static/logo.png"
 SITE_JS_SRC = "/static/site.js"
 SETUP_LINK_TEXT = ">Setup</a>"
 API_DOCS_LINK_TEXT = ">API Docs</a>"
-HOMEPAGE_SECONDARY_COPY = "Start a live local preview when you want to check framing or focus."
-OPEN_FULL_IMAGE_TEXT = "Open full image"
+HOMEPAGE_SECONDARY_COPY = "Start a live preview to check framing"
+PREVIEW_THUMBNAIL_URL = "/preview-thumbnail.jpg"
 THEME_AUTO_LABEL = "Theme: Auto"
 
 
@@ -90,20 +91,41 @@ class TestHomepage:
         assert resp.status_code == 200
         assert YOUTUBE_DOMAIN not in resp.text
 
-    async def test_homepage_shows_last_image_url_when_available(
+    async def test_homepage_embeds_preview_thumbnail_as_poster(
         self,
-        client: AsyncClient,
-        camera_manager: CameraManager,
+        unauthed_client: AsyncClient,
     ) -> None:
-        """Homepage should surface the latest uploaded image URL in the recent-capture card."""
-        camera_manager_any = cast("Any", camera_manager)
-        camera_manager_any._last_image_url = AnyUrl(EXAMPLE_IMAGE_URL)
-
-        resp = await client.get("/")
-
+        """Homepage should embed the cached preview thumbnail as the video poster."""
+        resp = await unauthed_client.get("/")
         assert resp.status_code == 200
-        assert EXAMPLE_IMAGE_URL in resp.text
-        assert OPEN_FULL_IMAGE_TEXT in resp.text
+        assert PREVIEW_THUMBNAIL_URL in resp.text
+
+    async def test_preview_thumbnail_returns_cached_jpeg(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """The preview-thumbnail route serves the worker-maintained JPEG cache."""
+        cache_dir = settings.image_path / "preview-thumbnail"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        jpeg_path = cache_dir / "current.jpg"
+        jpeg_path.write_bytes(b"\xff\xd8\xff\xd9")
+        try:
+            resp = await unauthed_client.get("/preview-thumbnail.jpg")
+            assert resp.status_code == 200
+            assert resp.headers["content-type"] == JPEG_CONTENT_TYPE
+            assert resp.headers["cache-control"] == NO_STORE_CACHE_CONTROL
+        finally:
+            jpeg_path.unlink(missing_ok=True)
+
+    async def test_preview_thumbnail_returns_404_when_missing(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """The preview-thumbnail route 404s when the worker hasn't produced one yet."""
+        jpeg_path = settings.image_path / "preview-thumbnail" / "current.jpg"
+        jpeg_path.unlink(missing_ok=True)
+        resp = await unauthed_client.get("/preview-thumbnail.jpg")
+        assert resp.status_code == 404
 
     async def test_hls_preview_proxy_is_available_without_auth(self, unauthed_client: AsyncClient) -> None:
         """Local preview HLS stays usable before pairing/login."""

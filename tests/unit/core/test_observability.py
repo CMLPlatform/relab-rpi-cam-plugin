@@ -11,7 +11,6 @@ from app.observability import tracing as observability_mod
 
 if TYPE_CHECKING:
     import pytest
-    from opentelemetry.sdk.trace import TracerProvider
 
 FASTAPI_TEARDOWN_ERROR = "fastapi teardown failed"
 HTTPX_TEARDOWN_ERROR = "httpx teardown failed"
@@ -170,7 +169,7 @@ class TestSetupObservability:
         handle = observability_mod.ObservabilityHandle(
             fastapi_instrumentor=fastapi_instrumentor,
             httpx_instrumentor=httpx_instrumentor,
-            tracer_provider=cast("TracerProvider", tracer_provider),
+            tracer_provider=cast("observability_mod.TracerProvider", tracer_provider),
         )
 
         handle.shutdown(app)
@@ -188,7 +187,7 @@ class TestSetupObservability:
         handle = observability_mod.ObservabilityHandle(
             fastapi_instrumentor=_ExplodingFastAPIInstrumentor(),
             httpx_instrumentor=_ExplodingHTTPXInstrumentor(),
-            tracer_provider=cast("TracerProvider", _ExplodingTracerProvider(resource={})),
+            tracer_provider=cast("observability_mod.TracerProvider", _ExplodingTracerProvider(resource={})),
         )
 
         with caplog.at_level(logging.ERROR):

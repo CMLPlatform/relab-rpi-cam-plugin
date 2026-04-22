@@ -11,6 +11,8 @@ VALID_API_KEY = "valid-key"
 AUTH_COOKIE_NAME = "relab_session"
 SECURE_ATTR = "Secure"
 REQUEST_ID_HEADER = "x-request-id"
+ROOT_REDIRECT = "/"
+LIVE_TAB_REDIRECT = "/camera?tab=live"
 
 
 @pytest.fixture(autouse=True)
@@ -52,18 +54,19 @@ class TestLoginEndpoint:
         """Test that logging in with a valid API key sets the auth cookie and redirects to the specified URL."""
         resp = await unauthed_client.post(
             "/auth/login",
-            data={"api_key": VALID_API_KEY, "redirect_url": "/"},
+            data={"api_key": VALID_API_KEY, "redirect_url": ROOT_REDIRECT},
             follow_redirects=False,
         )
         assert resp.status_code == 303
         assert AUTH_COOKIE_NAME in resp.cookies
         assert VALID_API_KEY not in resp.headers["set-cookie"]
+        assert resp.headers["location"] == ROOT_REDIRECT
 
     async def test_login_uses_insecure_cookie_for_local_http(self, unauthed_client: AsyncClient) -> None:
         """Local HTTP deployments should not mark auth cookies as secure by default."""
         resp = await unauthed_client.post(
             "/auth/login",
-            data={"api_key": VALID_API_KEY, "redirect_url": "/"},
+            data={"api_key": VALID_API_KEY, "redirect_url": ROOT_REDIRECT},
             follow_redirects=False,
         )
         assert SECURE_ATTR not in resp.headers["set-cookie"]
@@ -76,6 +79,36 @@ class TestLoginEndpoint:
             follow_redirects=False,
         )
         assert resp.status_code == 403
+
+    async def test_login_rejects_absolute_redirect_urls(self, unauthed_client: AsyncClient) -> None:
+        """Absolute redirect targets should be replaced with the local root."""
+        resp = await unauthed_client.post(
+            "/auth/login",
+            data={"api_key": VALID_API_KEY, "redirect_url": "https://evil.example/phish?next=/camera"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == ROOT_REDIRECT
+
+    async def test_login_preserves_safe_local_redirect_query(self, unauthed_client: AsyncClient) -> None:
+        """Safe local redirects may keep their query string."""
+        resp = await unauthed_client.post(
+            "/auth/login",
+            data={"api_key": VALID_API_KEY, "redirect_url": LIVE_TAB_REDIRECT},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == LIVE_TAB_REDIRECT
+
+    async def test_login_rejects_non_absolute_local_paths(self, unauthed_client: AsyncClient) -> None:
+        """Relative redirect targets without a leading slash should fall back to root."""
+        resp = await unauthed_client.post(
+            "/auth/login",
+            data={"api_key": VALID_API_KEY, "redirect_url": "camera"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == ROOT_REDIRECT
 
 
 class TestLogoutEndpoint:

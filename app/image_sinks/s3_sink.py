@@ -25,7 +25,9 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     class _S3ClientProtocol(Protocol):
-        async def create_bucket(self, **kwargs: object) -> object: ...
+        async def create_bucket(self, **kwargs: object) -> object:
+            """Create a bucket if it does not yet exist."""
+            raise NotImplementedError
 
 
 aioboto3: Any = None

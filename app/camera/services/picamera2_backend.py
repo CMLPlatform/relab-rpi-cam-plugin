@@ -93,9 +93,8 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
         """Initialise the persistent pipeline on first call; idempotent thereafter."""
         if self._camera is None:
             try:
-                self._camera = cast(
-                    "Picamera2Like", await asyncio.to_thread(lambda: Picamera2(camera_num=settings.camera_device_num))
-                )
+                camera = await asyncio.to_thread(lambda: Picamera2(settings.camera_device_num))
+                self._camera = cast("Picamera2Like", camera)
             except IndexError as e:
                 raise CameraInitializationError(
                     settings.camera_device_num,
@@ -346,16 +345,16 @@ def _normalize_control_value(name: str, value: JsonValue) -> object:
 def _focus_mode_to_af_mode(value: str) -> object:
     """Map a friendly or libcamera-style focus mode string to AfModeEnum."""
     normalized = value.removeprefix("AfModeEnum.").lower()
-    match normalized:
-        case "manual":
-            return _af_mode_manual()
-        case "auto":
-            return _af_mode_auto()
-        case "continuous":
-            return _af_mode_continuous()
-        case _:
-            msg = f"Unsupported AfMode value: {value}"
-            raise ValueError(msg)
+    af_mode_by_name = {
+        "manual": _af_mode_manual,
+        "auto": _af_mode_auto,
+        "continuous": _af_mode_continuous,
+    }
+    try:
+        return af_mode_by_name[normalized]()
+    except KeyError as e:
+        msg = f"Unsupported AfMode value: {value}"
+        raise ValueError(msg) from e
 
 
 def _control_options(name: str) -> list[JsonValue] | None:

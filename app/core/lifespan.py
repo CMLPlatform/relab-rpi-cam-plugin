@@ -113,6 +113,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     except (CameraInitializationError, RuntimeError) as exc:
         logger.warning("Camera not primed at startup: %s", exc)
 
+    # Prime a baseline thumbnail before the sleeper has a chance to wake the
+    # encoder, so /preview-thumbnail.jpg serves a real image from the first
+    # page load.
+    primed = await runtime.preview_thumbnail_worker.refresh_once(reason="startup")
+    if not primed:
+        logger.warning(
+            "Preview thumbnail could not be primed at startup — /preview-thumbnail.jpg will 404 until the next refresh"
+        )
+
     runtime.start_thermal_governor()
     logger.info("Thermal governor started")
 

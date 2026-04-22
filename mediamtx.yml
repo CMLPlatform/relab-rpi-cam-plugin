@@ -3,6 +3,7 @@
 
 logLevel: info
 logDestinations: [stdout]
+udpMaxPayloadSize: 1472
 
 # Disable unused protocols
 rtmp: no
@@ -16,16 +17,17 @@ rtsp: yes
 rtspAddress: :8554
 rtspTransports: [tcp]
 
-# LL-HLS preview (low-latency)
+# Browser/native preview HLS. Standard HLS is a little less aggressive than
+# LL-HLS, but it avoids MediaMTX's variable part-duration warnings that break
+# playback on iOS clients when the preview stream cadence jitters slightly.
 hls: yes
 hlsAddress: :8888
 hlsAlwaysRemux: yes
-hlsVariant: lowLatency
+hlsVariant: mpegts
 hlsSegmentCount: 7
-hlsSegmentDuration: 200ms
-hlsPartDuration: 200ms
+hlsSegmentDuration: 1s
 hlsSegmentMaxSize: 50M
-hlsAllowOrigin: '*'
+hlsAllowOrigins: ['*']
 
 # Local control API (app reaches this on 127.0.0.1:9997)
 api: yes

@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/system", tags=["system"])
 
 _API_PORT = 8018
-_MEDIA_PORT = 8888
 _DOCKERISH_INTERFACE_PREFIXES = ("docker", "veth", "br-", "virbr", "tap", "tun", "zt")
 
 
