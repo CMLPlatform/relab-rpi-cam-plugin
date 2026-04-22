@@ -251,11 +251,13 @@ class TestPairingState:
         self._runtime = runtime
 
     async def test_returns_current_state(self, unauthed_client: AsyncClient) -> None:
+        """Endpoint should return the current pairing state from the runtime."""
         resp = await unauthed_client.get("/pairing/state")
         assert resp.status_code == 200
         assert resp.json() == {"status": "waiting", "relay_enabled": False}
 
     async def test_reflects_paired_state(self, unauthed_client: AsyncClient) -> None:
+        """When the pairing service reports paired, the endpoint should reflect that."""
         self._runtime.pairing_service.state.status = "paired"
         self._runtime.runtime_state.set_relay_credentials(
             relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,

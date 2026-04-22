@@ -50,6 +50,8 @@ PAIRING_UNREACHABLE_ERROR = "Pairing backend unreachable — retrying…"
 PAIRING_RETRYING_ERROR = "Pairing failed — retrying…"
 PAIRING_READ_WARNING = "Failed to read"
 PAIRING_DELETE_WARNING = "Failed to delete relay credentials file"
+HTTP_502 = "HTTP 502"
+HTML_DOCTYPE_TAG = "<!DOCTYPE html>"
 
 
 class FakeResponse:
@@ -215,7 +217,7 @@ class TestPairingHelpers:
         bad_gateway = httpx.HTTPStatusError(
             "bad",
             request=request,
-            response=httpx.Response(502, request=request, text="<!DOCTYPE html>"),
+            response=httpx.Response(502, request=request, text=HTML_DOCTYPE_TAG),
         )
 
         with caplog.at_level(logging.WARNING):
@@ -223,9 +225,9 @@ class TestPairingHelpers:
             pairing_mod._log_pairing_http_status_error(bad_gateway)
 
         assert PAIRING_REGISTER_REFUSAL in caplog.text
-        assert "HTTP 502" in caplog.text
+        assert HTTP_502 in caplog.text
         # 5xx responses should not dump the gateway's HTML body.
-        assert "<!DOCTYPE html>" not in caplog.text
+        assert HTML_DOCTYPE_TAG not in caplog.text
 
     def test_log_pairing_http_status_error_truncates_long_response_body(
         self,
