@@ -53,6 +53,7 @@ def _pipeline(*, running: bool = True) -> MagicMock:
     pipeline = MagicMock()
     pipeline.is_running = running
     pipeline.start = AsyncMock()
+    pipeline.stop = AsyncMock()
     return pipeline
 
 
@@ -174,6 +175,25 @@ class TestProxyHLS:
         assert excinfo.value.status_code == 404
         assert HLS_PREVIEW_ENCODER_FRAGMENT in str(excinfo.value.detail)
         assert relay_state.seconds_since_last_hls_activity() is not None
+
+    async def test_404_with_running_pipeline_recycles_encoder(self) -> None:
+        """A 404 while the pipeline claims to be running means the publisher went stale — recycle it."""
+        camera = MagicMock(name="camera")
+        pipeline = _pipeline(running=True)
+        relay_state = RelayRuntimeState()
+
+        with _patch_httpx(_Response(404)), pytest.raises(HTTPException) as excinfo:
+            await proxy_hls(
+                request=_request(),
+                hls_path="cam-preview/index.m3u8",
+                camera_manager=_camera_manager(camera),
+                pipeline=pipeline,
+                relay_state=relay_state,
+            )
+
+        assert excinfo.value.status_code == 404
+        pipeline.stop.assert_awaited_once_with(camera)
+        pipeline.start.assert_awaited_once_with(camera)
 
     async def test_other_4xx_raises_502(self) -> None:
         """Anything other than 404 becomes a 502 upstream-error."""

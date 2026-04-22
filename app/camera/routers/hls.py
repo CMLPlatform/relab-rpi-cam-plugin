@@ -98,6 +98,37 @@ async def _wake_preview_encoder(
         logger.warning("Failed to wake preview encoder for HLS request: %s", exc, extra=build_log_extra())
 
 
+async def _restart_stale_preview_encoder(
+    *,
+    hls_path: str,
+    camera_manager: CameraManager,
+    pipeline: PreviewPipelineManager,
+) -> None:
+    """Restart the encoder when MediaMTX 404s despite the pipeline reporting running.
+
+    The RTSP publisher connection can drop (ffmpeg stall, MediaMTX i/o timeout)
+    while the app still thinks ``pipeline.is_running``. In that state the cold-
+    start wake is a no-op, so the client keeps seeing 404s until the pipeline
+    is recycled.
+    """
+    if not hls_path.startswith(_PREVIEW_HLS_PREFIX) or not pipeline.is_running:
+        return
+
+    camera = camera_manager.backend.camera
+    if camera is None:
+        return
+
+    logger.info(
+        "MediaMTX 404 while preview pipeline reports running — recycling encoder",
+        extra=build_log_extra(),
+    )
+    try:
+        await pipeline.stop(camera)
+        await pipeline.start(camera)
+    except RuntimeError as exc:
+        logger.warning("Failed to recycle stale preview encoder: %s", exc, extra=build_log_extra())
+
+
 @router.get(
     "/hls/{hls_path:path}",
     summary="Proxy an LL-HLS playlist or segment from MediaMTX",
@@ -141,6 +172,9 @@ async def proxy_hls(
         raise HTTPException(status_code=503, detail=f"MediaMTX HLS unreachable: {exc}") from exc
 
     if response.status_code == 404:
+        await _restart_stale_preview_encoder(
+            hls_path=hls_path, camera_manager=camera_manager, pipeline=pipeline
+        )
         raise HTTPException(
             status_code=404,
             detail=(
