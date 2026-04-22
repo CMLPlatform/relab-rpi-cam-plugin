@@ -15,11 +15,18 @@
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
   <script>
     const HLS_SRC = "/preview/hls/cam-preview/index.m3u8";
+    const THUMBNAIL_SRC = "/preview-thumbnail.jpg";
     const PREVIEW_RETRY_DELAY_MS = 1200;
-    const PREVIEW_MAX_RETRIES = 8;
+    const PREVIEW_MAX_RETRIES = 20;
     let hls = null;
     let previewRetryTimer = null;
     let previewWanted = false;
+
+    function refreshPoster() {
+      const video = document.getElementById("preview-video");
+      if (!video) return;
+      video.poster = THUMBNAIL_SRC + "?t=" + Date.now();
+    }
 
     function resetPreviewMedia() {
       const video = document.getElementById("preview-video");
@@ -57,6 +64,7 @@
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play();
+          msg.textContent = "";
           chip.className = "status-chip status-chip--live";
           chip.textContent = "Live";
         });
@@ -65,6 +73,7 @@
         video.src = HLS_SRC;
         video.addEventListener("error", onError, { once: true });
         video.play();
+        msg.textContent = "";
         chip.className = "status-chip status-chip--live";
         chip.textContent = "Live";
       } else {
@@ -82,6 +91,7 @@
         previewRetryTimer = null;
       }
       resetPreviewMedia();
+      refreshPoster();
       btn.textContent = "Load Preview";
       chip.className = "status-chip status-chip--muted";
       chip.textContent = "Preview";
@@ -105,29 +115,19 @@
     <div class="setup-status-grid">
       <div class="status-chip status-chip--muted" id="preview-chip">Preview</div>
       <h2>Camera Preview</h2>
-      <p class="setup-status__lead">Start a live local preview when you want to check framing or focus.</p>
-      <video id="preview-video" class="preview-video" controls playsinline muted></video>
+      <p class="setup-status__lead">The thumbnail below refreshes periodically. Start a live preview to check framing or focus.</p>
+      <video
+        id="preview-video"
+        class="preview-video"
+        controls
+        playsinline
+        muted
+        poster="{{ url_for('preview_thumbnail') }}"
+      ></video>
       <p id="preview-msg" class="preview-message"></p>
       <div class="setup-actions">
         <button class="btn" id="preview-btn" onclick="togglePreview()">Load Preview</button>
       </div>
-    </div>
-  </section>
-
-  <section class="setup-status">
-    <div class="setup-status-grid">
-      <div class="status-chip status-chip--muted">Recent capture</div>
-      <h2>Last Image</h2>
-      {% if last_image_url %}
-        <a href="{{ last_image_url }}" target="_blank" rel="noopener" class="setup-link">Open full image</a>
-        <img
-          class="capture-preview"
-          src="{{ last_image_url }}"
-          alt="Latest captured image"
-        />
-      {% else %}
-        <p>No image has been captured yet.</p>
-      {% endif %}
     </div>
   </section>
 
