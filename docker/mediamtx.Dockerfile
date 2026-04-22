@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM bluenviron/mediamtx:1.17.0-ffmpeg
+FROM bluenviron/mediamtx:1.17.1-ffmpeg
 
 USER root
 
