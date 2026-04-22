@@ -18,13 +18,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0 # commitizen needs full history to find the last tag
 
       - name: Bump version
         id: cz
-        uses: commitizen-tools/commitizen-action@0.26.0
+        uses: commitizen-tools/commitizen-action@bb4f1df6601e2a1a891506581b0c53acdc88e07d # 0.26.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
