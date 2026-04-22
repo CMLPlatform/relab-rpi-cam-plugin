@@ -44,6 +44,7 @@ class PreviewThumbnailWorker:
         camera_manager: CameraManager,
         relay_state: RelayRuntimeState,
         relay_enabled_getter: Callable[[], bool],
+        is_preview_running_getter: Callable[[], bool] | None = None,
         cache_dir: Path | None = None,
         refresh_interval_s: float = _REFRESH_INTERVAL_S,
         poll_interval_s: float = _POLL_INTERVAL_S,
@@ -54,6 +55,7 @@ class PreviewThumbnailWorker:
         self._camera_manager = camera_manager
         self._relay_state = relay_state
         self._relay_enabled_getter = relay_enabled_getter
+        self._is_preview_running_getter = is_preview_running_getter or (lambda: False)
         self._cache_path = (cache_dir or settings.image_path / "preview-thumbnail") / "current.jpg"
         self._refresh_interval_s = refresh_interval_s
         self._poll_interval_s = poll_interval_s
@@ -76,9 +78,19 @@ class PreviewThumbnailWorker:
             await self._maybe_refresh()
             await self._sleep(self._poll_interval_s)
 
-    async def refresh_once(self, *, reason: str) -> bool:
-        """Capture, cache, and optionally upload one preview thumbnail."""
-        image_bytes = await self._camera_manager.capture_preview_thumbnail_jpeg(lock_timeout_s=_LOCK_TIMEOUT_S)
+    async def refresh_once(self, *, reason: str, upload: bool = True) -> bool:
+        """Capture, cache, and optionally upload one preview thumbnail.
+
+        Callers that run outside the background-task context (e.g. HTTP endpoints
+        via Starlette's BaseHTTPMiddleware) should pass ``upload=False`` — the
+        backend upload path depends on the active-runtime ContextVar that the
+        middleware task hop does not propagate reliably, and uploads are
+        already handled by the long-running worker on its own cadence.
+        """
+        image_bytes = await self._camera_manager.capture_preview_thumbnail_jpeg(
+            lock_timeout_s=_LOCK_TIMEOUT_S,
+            preview_encoder_running=self._is_preview_running_getter(),
+        )
         if image_bytes is None:
             logger.debug(
                 "Preview thumbnail refresh skipped (%s): camera busy or preview stream active",
@@ -86,7 +98,7 @@ class PreviewThumbnailWorker:
                 extra=build_log_extra(),
             )
             return False
-        return await self._persist_and_maybe_upload(image_bytes, reason=reason)
+        return await self._persist_and_maybe_upload(image_bytes, reason=reason, upload=upload)
 
     async def refresh_from_frame(self, image: PilImage) -> bool:
         """Refresh the preview thumbnail from a frame captured elsewhere.
@@ -96,16 +108,16 @@ class PreviewThumbnailWorker:
         lock or waiting for the next interval poll.
         """
         image_bytes = await asyncio.to_thread(encode_preview_jpeg, image)
-        return await self._persist_and_maybe_upload(image_bytes, reason=_CAPTURE_REASON)
+        return await self._persist_and_maybe_upload(image_bytes, reason=_CAPTURE_REASON, upload=True)
 
-    async def _persist_and_maybe_upload(self, image_bytes: bytes, *, reason: str) -> bool:
+    async def _persist_and_maybe_upload(self, image_bytes: bytes, *, reason: str, upload: bool) -> bool:
         _write_preview_thumbnail_atomic(self._cache_path, image_bytes)
         now = self._monotonic()
         self._last_refresh_monotonic = now
         if reason == _ACTIVITY_REASON:
             self._last_activity_refresh_monotonic = now
 
-        if not self._relay_enabled_getter():
+        if not upload or not self._relay_enabled_getter():
             logger.debug("Preview thumbnail refreshed locally (%s)", reason, extra=build_log_extra())
             return True
 

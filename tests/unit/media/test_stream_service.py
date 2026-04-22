@@ -81,13 +81,13 @@ class _FakeFfmpegOutput:
     match the real class's attribute name so the assertions stay accurate.
     """
 
-    def __init__(self, output_filename: str) -> None:
+    def __init__(self, output_filename: str, **_kwargs: object) -> None:
         self.output_filename = output_filename
 
 
-_FFMPEG_FLAG_COPY = "-c:v copy"
 _FFMPEG_FLAG_RTSP = "-f rtsp"
 _FFMPEG_FLAG_TCP = "-rtsp_transport tcp"
+_FFMPEG_FLAG_PKT_SIZE = "-pkt_size 1400"
 _FFMPEG_ANULLSRC = "anullsrc"
 _FFMPEG_RTMPS = "rtmps"
 
@@ -107,10 +107,8 @@ class TestHiresRtspOutput:
         output = cast("_FakeFfmpegOutput", stream_service.build_hires_rtsp_output())
 
         assert HIRES_RTSP_URL in output.output_filename
-        assert _FFMPEG_FLAG_COPY in output.output_filename
         assert _FFMPEG_FLAG_RTSP in output.output_filename
         assert _FFMPEG_FLAG_TCP in output.output_filename
-        # No silent-audio hack on the Pi. MediaMTX's ``runOnReady`` owns the
-        # YouTube egress (with its own audio track).
+        assert _FFMPEG_FLAG_PKT_SIZE in output.output_filename
         assert _FFMPEG_ANULLSRC not in output.output_filename
         assert _FFMPEG_RTMPS not in output.output_filename

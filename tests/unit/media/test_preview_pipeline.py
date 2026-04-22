@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.media import preview_pipeline as preview_pipeline_mod
-from app.media.preview_pipeline import PreviewPipelineManager
+from app.media.preview_pipeline import PreviewPipelineManager, _build_ffmpeg_output
 
 
 @pytest.fixture(autouse=True)
@@ -88,6 +89,26 @@ class TestStartStop:
         await manager.stop(camera)
 
         assert not manager.is_running
+
+
+class TestFfmpegOutput:
+    """RTSP publisher settings for the lores preview encoder."""
+
+    def test_output_limits_rtp_packet_size(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The preview RTSP output passes ffmpeg a packet-size cap."""
+        pkt_size_flag = "-pkt_size 1400"
+        rtsp_target = "rtsp://localhost:8554/cam-preview"
+
+        class _FakeFfmpegOutput:
+            def __init__(self, output_filename: str) -> None:
+                self.output_filename = output_filename
+
+        monkeypatch.setattr(preview_pipeline_mod, "FfmpegOutput", _FakeFfmpegOutput)
+
+        output = cast("_FakeFfmpegOutput", _build_ffmpeg_output(rtsp_target))
+
+        assert pkt_size_flag in output.output_filename
+        assert rtsp_target in output.output_filename
 
 
 class TestSetBitrate:

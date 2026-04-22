@@ -41,9 +41,8 @@
     const video = document.getElementById("preview-video");
     if (Hls.isSupported()) {
       hls = new Hls({
-        lowLatencyMode: true,
-        // Ride the live edge: target 1 part behind, chase 2, cap back-buffer to 4s.
-        // Combined with MediaMTX's 250ms parts this gets wall-clock latency under 1s on LAN.
+        // MediaMTX serves classic HLS (mpegts), not LL-HLS, so we hug the live
+        // edge by keeping the player's buffer tight instead. Expect ~3s latency.
         liveSyncDurationCount: 2,
         liveMaxLatencyDurationCount: 2,
         backBufferLength: 4,

@@ -32,6 +32,8 @@ else:
     except ImportError:
         FfmpegOutput = FfmpegOutputStub
 
+_DEFAULT_RTSP_PKT_SIZE = 1400
+
 
 def build_hires_rtsp_output() -> object:
     """Build the ``FfmpegOutput`` that publishes the main H264 encoder to MediaMTX.
@@ -42,9 +44,7 @@ def build_hires_rtsp_output() -> object:
     remuxer with no filters, no audio, no re-encoding. MediaMTX handles the
     rest (LL-HLS preview, YouTube egress, anything else).
     """
-    # ``-c:v copy`` keeps the H264 bytes verbatim; ``-f rtsp -rtsp_transport tcp``
-    # forces TCP so corporate proxies / NAT tables don't drop the stream.
-    return FfmpegOutput(f"-c:v copy -f rtsp -rtsp_transport tcp {HIRES_RTSP_URL}")
+    return FfmpegOutput(f"-f rtsp -rtsp_transport tcp -pkt_size {_DEFAULT_RTSP_PKT_SIZE} {HIRES_RTSP_URL}")
 
 
 def validate_youtube_mode(mode: StreamMode, youtube_config: YoutubeStreamConfig | None) -> None:

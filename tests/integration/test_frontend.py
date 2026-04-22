@@ -12,7 +12,7 @@ from app.camera.routers import hls as hls_mod
 from app.camera.services.manager import CameraManager
 from app.core.settings import settings
 from app.main import app
-from tests.constants import HTML_CONTENT_TYPE, YOUTUBE_TEST_BROADCAST_URL
+from tests.constants import HTML_CONTENT_TYPE, JPEG_CONTENT_TYPE, NO_STORE_CACHE_CONTROL, YOUTUBE_TEST_BROADCAST_URL
 
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
@@ -27,7 +27,7 @@ LOGO_SRC = "/static/logo.png"
 SITE_JS_SRC = "/static/site.js"
 SETUP_LINK_TEXT = ">Setup</a>"
 API_DOCS_LINK_TEXT = ">API Docs</a>"
-HOMEPAGE_SECONDARY_COPY = "Start a live preview to check framing or focus."
+HOMEPAGE_SECONDARY_COPY = "Start a live preview to check framing"
 PREVIEW_THUMBNAIL_URL = "/preview-thumbnail.jpg"
 THEME_AUTO_LABEL = "Theme: Auto"
 
@@ -112,8 +112,8 @@ class TestHomepage:
         try:
             resp = await unauthed_client.get("/preview-thumbnail.jpg")
             assert resp.status_code == 200
-            assert resp.headers["content-type"] == "image/jpeg"
-            assert resp.headers["cache-control"] == "no-store"
+            assert resp.headers["content-type"] == JPEG_CONTENT_TYPE
+            assert resp.headers["cache-control"] == NO_STORE_CACHE_CONTROL
         finally:
             jpeg_path.unlink(missing_ok=True)
 

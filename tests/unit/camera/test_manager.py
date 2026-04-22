@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
 from fastapi import FastAPI, Request
@@ -748,6 +748,29 @@ class TestPreviewThumbnailCapture:
 
         assert result is None
         backend.capture_image.assert_not_awaited()
+
+    async def test_preview_encoder_running_uses_lock_free_fast_path(self) -> None:
+        """When the encoder owns the lores buffer, tap it without touching the camera lock."""
+        backend = FakeBackend()
+        hw_camera = MagicMock()
+        hw_camera.capture_image.return_value = Image.new("RGB", (640, 480), color="red")
+        backend_camera = PropertyMock(return_value=hw_camera)
+        type(backend).camera = backend_camera  # type: ignore[misc]
+        try:
+            manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
+
+            await manager.lock.acquire()  # lock is held; fast path must ignore it
+            try:
+                result = await manager.capture_preview_thumbnail_jpeg(lock_timeout_s=0.01, preview_encoder_running=True)
+            finally:
+                manager.lock.release()
+
+            assert result is not None
+            assert result.startswith(b"\xff\xd8")
+            hw_camera.capture_image.assert_called_once_with("main")
+            backend.open.assert_not_awaited()
+        finally:
+            del type(backend).camera  # type: ignore[misc]
 
 
 class TestStreamService:

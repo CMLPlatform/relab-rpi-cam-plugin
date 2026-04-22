@@ -27,6 +27,7 @@ RATE_LIMIT_PATH = "/auth/login"
 _SETUP_CSP = (
     "default-src 'self'; "
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "worker-src 'self' blob:; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
     "connect-src 'self' http: https: ws: wss:; "

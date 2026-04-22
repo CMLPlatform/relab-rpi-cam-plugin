@@ -253,22 +253,35 @@ class CameraManager:
             expires_at=stored.expires_at,
         )
 
-    async def capture_preview_thumbnail_jpeg(self, *, lock_timeout_s: float = 0.25) -> bytes | None:
+    async def capture_preview_thumbnail_jpeg(
+        self,
+        *,
+        lock_timeout_s: float = 0.25,
+        preview_encoder_running: bool = False,
+    ) -> bytes | None:
         """Capture a best-effort cached preview thumbnail without using still-capture flow.
 
         Returns ``None`` when the camera is busy, actively streaming, or otherwise
         unavailable for a cheap lores grab. This is intended for background cache
         maintenance only, never for request/response paths.
+
+        When ``preview_encoder_running`` is True, the lores ring buffer is already
+        active and owned by the encoder; tap it directly without acquiring the
+        camera-manager lock (the lock serialises reconfiguration, not reads).
         """
+        backend_camera = self.backend.camera
+        if preview_encoder_running and backend_camera is not None:
+            frame = await asyncio.to_thread(backend_camera.capture_image, "main")
+            return await asyncio.to_thread(encode_preview_jpeg, frame)
+
         try:
             async with self._locked(timeout_s=lock_timeout_s):
                 if self.stream.is_active:
                     return None
 
-                backend_camera = self.backend.camera
                 if backend_camera is not None:
                     await self.backend.open(CameraMode.VIDEO)
-                    frame = await asyncio.to_thread(backend_camera.capture_image, "lores")
+                    frame = await asyncio.to_thread(backend_camera.capture_image, "main")
                 else:
                     result = await self.backend.capture_image()
                     frame = result.image

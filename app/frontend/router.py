@@ -9,6 +9,7 @@ from relab_rpi_cam_models.stream import StreamMode
 from app.camera.dependencies import CameraManagerDependency
 from app.core.settings import settings
 from app.core.templates_config import templates
+from app.utils.network import is_local_client
 
 router = APIRouter()
 
@@ -33,8 +34,10 @@ async def favicon() -> FileResponse:
 
 
 @router.get("/preview-thumbnail.jpg", include_in_schema=False)
-async def preview_thumbnail() -> FileResponse:
+async def preview_thumbnail(request: Request) -> FileResponse:
     """Serve the cached preview thumbnail written by PreviewThumbnailWorker."""
+    if not is_local_client(request.client.host if request.client else None):
+        raise HTTPException(status_code=403, detail="Preview thumbnail is only available from the local network")
     path = settings.image_path / "preview-thumbnail" / "current.jpg"
     if not path.exists():
         raise HTTPException(status_code=404, detail="No preview thumbnail cached yet")
