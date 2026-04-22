@@ -132,13 +132,13 @@ class PairingService:
                     return
                 except httpx.HTTPStatusError as exc:
                     _log_pairing_http_status_error(exc)
-                    logger.exception("Pairing cycle failed | retry_in_s=%.0f", retry_delay)
+                    logger.info("Pairing cycle retrying in %.0fs", retry_delay)
                     _clear_transient_pairing_state(self.state, status="error", error="Pairing failed — retrying…")
                     await asyncio.sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, max_retry_delay)
                 except httpx.ConnectError as exc:
                     _log_pairing_connect_error(exc, base)
-                    logger.exception("Pairing cycle failed | retry_in_s=%.0f", retry_delay)
+                    logger.info("Pairing cycle retrying in %.0fs", retry_delay)
                     _clear_transient_pairing_state(
                         self.state, status="error", error="Pairing backend unreachable — retrying…"
                     )
@@ -304,6 +304,18 @@ def _log_pairing_http_status_error(exc: httpx.HTTPStatusError) -> None:
     """Log actionable guidance for backend rejections during pairing."""
     response = exc.response
     request = exc.request
+
+    # 5xx = the backend (or a gateway in front of it) is broken. These are
+    # transient and the body is usually a generic HTML error page from the
+    # gateway (Cloudflare, nginx) — logging it just adds noise.
+    if 500 <= response.status_code < 600:
+        logger.warning(
+            "Pairing backend %s returned HTTP %s — will retry.",
+            request.url,
+            response.status_code,
+        )
+        return
+
     body_snippet = response.text.strip().replace("\n", " ")
     if len(body_snippet) > 160:
         body_snippet = f"{body_snippet[:157]}..."

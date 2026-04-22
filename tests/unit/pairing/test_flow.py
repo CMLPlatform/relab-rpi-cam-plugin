@@ -205,37 +205,39 @@ class TestPairingHelpers:
         assert f"Pairing backend {EXAMPLE_BACKEND_URL} could not be reached." in caplog.text
 
     def test_log_pairing_http_status_error_variants(self, caplog: pytest.LogCaptureFixture) -> None:
-        """Register-specific 403s and generic failures should both be logged."""
+        """Register-specific 403s and 5xx failures should both be logged."""
         request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/register")
         forbidden = httpx.HTTPStatusError(
             "forbidden",
             request=request,
             response=httpx.Response(403, request=request, text="nope"),
         )
-        generic = httpx.HTTPStatusError(
+        bad_gateway = httpx.HTTPStatusError(
             "bad",
             request=request,
-            response=httpx.Response(500, request=request, text="boom"),
+            response=httpx.Response(502, request=request, text="<!DOCTYPE html>"),
         )
 
-        with caplog.at_level(logging.ERROR):
+        with caplog.at_level(logging.WARNING):
             pairing_mod._log_pairing_http_status_error(forbidden)
-            pairing_mod._log_pairing_http_status_error(generic)
+            pairing_mod._log_pairing_http_status_error(bad_gateway)
 
         assert PAIRING_REGISTER_REFUSAL in caplog.text
-        assert PAIRING_HTTP_500 in caplog.text
+        assert "HTTP 502" in caplog.text
+        # 5xx responses should not dump the gateway's HTML body.
+        assert "<!DOCTYPE html>" not in caplog.text
 
     def test_log_pairing_http_status_error_truncates_long_response_body(
         self,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Very long backend bodies should be trimmed in logs."""
+        """Very long 4xx backend bodies should be trimmed in logs."""
         request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/poll")
         long_body = "x" * 300
         error = httpx.HTTPStatusError(
             "bad",
             request=request,
-            response=httpx.Response(500, request=request, text=long_body),
+            response=httpx.Response(400, request=request, text=long_body),
         )
 
         with caplog.at_level(logging.ERROR):
