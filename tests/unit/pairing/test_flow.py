@@ -14,6 +14,7 @@ import pytest
 from app.auth.dependencies import reload_authorized_hashes
 from app.core.runtime import AppRuntime, set_active_runtime
 from app.core.settings import settings
+from app.pairing.services import credentials as pairing_credentials
 from app.pairing.services import service as pairing_mod
 from tests.constants import (
     EXAMPLE_BACKEND_URL,
@@ -49,6 +50,8 @@ PAIRING_UNREACHABLE_ERROR = "Pairing backend unreachable — retrying…"
 PAIRING_RETRYING_ERROR = "Pairing failed — retrying…"
 PAIRING_READ_WARNING = "Failed to read"
 PAIRING_DELETE_WARNING = "Failed to delete relay credentials file"
+HTTP_502 = "HTTP 502"
+HTML_DOCTYPE_TAG = "<!DOCTYPE html>"
 
 
 class FakeResponse:
@@ -133,12 +136,12 @@ class TestPairingHelpers:
         override = tmp_path / "relay.json"
         monkeypatch.setenv("RELAB_CREDENTIALS_FILE", str(override))
 
-        assert pairing_mod._get_credentials_file() == override
+        assert pairing_credentials._get_credentials_file() == override
 
     def test_get_credentials_file_falls_back_to_xdg_style_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Without an override, pairing should use the default config-home location."""
         monkeypatch.delenv("RELAB_CREDENTIALS_FILE", raising=False)
-        assert str(pairing_mod._get_credentials_file()).endswith(".config/relab/relay_credentials.json")
+        assert str(pairing_credentials._get_credentials_file()).endswith(".config/relab/relay_credentials.json")
 
     def test_pairing_service_reset_and_get_state(self) -> None:
         """Pairing service should expose and reset its observable state."""
@@ -204,37 +207,39 @@ class TestPairingHelpers:
         assert f"Pairing backend {EXAMPLE_BACKEND_URL} could not be reached." in caplog.text
 
     def test_log_pairing_http_status_error_variants(self, caplog: pytest.LogCaptureFixture) -> None:
-        """Register-specific 403s and generic failures should both be logged."""
+        """Register-specific 403s and 5xx failures should both be logged."""
         request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/register")
         forbidden = httpx.HTTPStatusError(
             "forbidden",
             request=request,
             response=httpx.Response(403, request=request, text="nope"),
         )
-        generic = httpx.HTTPStatusError(
+        bad_gateway = httpx.HTTPStatusError(
             "bad",
             request=request,
-            response=httpx.Response(500, request=request, text="boom"),
+            response=httpx.Response(502, request=request, text=HTML_DOCTYPE_TAG),
         )
 
-        with caplog.at_level(logging.ERROR):
+        with caplog.at_level(logging.WARNING):
             pairing_mod._log_pairing_http_status_error(forbidden)
-            pairing_mod._log_pairing_http_status_error(generic)
+            pairing_mod._log_pairing_http_status_error(bad_gateway)
 
         assert PAIRING_REGISTER_REFUSAL in caplog.text
-        assert PAIRING_HTTP_500 in caplog.text
+        assert HTTP_502 in caplog.text
+        # 5xx responses should not dump the gateway's HTML body.
+        assert HTML_DOCTYPE_TAG not in caplog.text
 
     def test_log_pairing_http_status_error_truncates_long_response_body(
         self,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Very long backend bodies should be trimmed in logs."""
+        """Very long 4xx backend bodies should be trimmed in logs."""
         request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/poll")
         long_body = "x" * 300
         error = httpx.HTTPStatusError(
             "bad",
             request=request,
-            response=httpx.Response(500, request=request, text=long_body),
+            response=httpx.Response(400, request=request, text=long_body),
         )
 
         with caplog.at_level(logging.ERROR):
@@ -431,7 +436,7 @@ class TestPairingCycle:
         monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
         monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
         monkeypatch.setattr(pairing_mod, "_lan_setup_url", lambda _port: None)
-        monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(pairing_mod, "save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         client: Any = FakeClient(
             post_responses=[FakeResponse(409), FakeResponse(201)],
@@ -488,7 +493,7 @@ class TestPairingCycle:
         """Expired pairing codes should rotate cleanly and log the new ready code."""
         monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
         monkeypatch.setattr(settings, "base_url", "https://camera.example/")
-        monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(pairing_mod, "save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         service = pairing_mod.PairingService()
         client: Any = FakeClient(
@@ -530,7 +535,7 @@ class TestPairingCycle:
         """A timeout while registering should be retried before the pairing cycle gives up."""
         monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
         monkeypatch.setattr(settings, "base_url", "https://camera.example/")
-        monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(pairing_mod, "save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         service = pairing_mod.PairingService()
         client: Any = FakeClient(
@@ -572,7 +577,7 @@ class TestPairingCycle:
         """A timeout while polling should be treated as transient and retried in place."""
         monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
         monkeypatch.setattr(settings, "base_url", "https://camera.example/")
-        monkeypatch.setattr(pairing_mod, "_save_relay_credentials", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(pairing_mod, "save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         service = pairing_mod.PairingService()
         client: Any = FakeClient(
@@ -655,10 +660,10 @@ class TestPairingCycle:
     async def test_saves_and_loads_credentials(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that credentials are saved to and loaded from disk correctly."""
         creds_file = tmp_path / "relay_credentials.json"
-        monkeypatch.setattr(pairing_mod, "_CREDENTIALS_FILE", creds_file)
+        monkeypatch.setattr(pairing_credentials, "_CREDENTIALS_FILE", creds_file)
         private_key = pairing_mod._private_key_pem(pairing_mod._generate_private_key())
 
-        pairing_mod._save_relay_credentials(
+        pairing_credentials.save_relay_credentials(
             EXAMPLE_RELAY_BACKEND_URL,
             RELAY_CAMERA_ID,
             RELAY_AUTH_SCHEME,
@@ -686,7 +691,7 @@ class TestPairingCycle:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test that missing credentials files return None."""
-        monkeypatch.setattr(pairing_mod, "_CREDENTIALS_FILE", tmp_path / "missing.json")
+        monkeypatch.setattr(pairing_credentials, "_CREDENTIALS_FILE", tmp_path / "missing.json")
         assert pairing_mod.load_relay_credentials() is None
 
     async def test_register_pairing_code_raises_after_three_timeouts(
@@ -728,7 +733,7 @@ class TestPairingCycle:
         on_paired = AsyncMock()
         monkeypatch.setattr(
             pairing_mod,
-            "_save_relay_credentials",
+            "save_relay_credentials",
             lambda **kwargs: saved.append(
                 (
                     str(kwargs["relay_backend_url"]),
@@ -774,7 +779,7 @@ class TestPairingCycle:
     ) -> None:
         """A failed replace should remove the temp file and re-raise."""
         creds_file = tmp_path / "relay_credentials.json"
-        monkeypatch.setattr(pairing_mod, "_CREDENTIALS_FILE", creds_file)
+        monkeypatch.setattr(pairing_credentials, "_CREDENTIALS_FILE", creds_file)
         observed_tmp_paths: list[Path] = []
         original_replace = Path.replace
 
@@ -786,7 +791,7 @@ class TestPairingCycle:
         monkeypatch.setattr(Path, "replace", _failing_replace)
 
         with pytest.raises(OSError, match=PAIRING_FAILURE_LOG):
-            pairing_mod._save_relay_credentials(
+            pairing_credentials.save_relay_credentials(
                 EXAMPLE_RELAY_BACKEND_URL,
                 RELAY_CAMERA_ID,
                 RELAY_AUTH_SCHEME,
@@ -807,7 +812,7 @@ class TestPairingCycle:
         """Unreadable credentials files should warn and return None."""
         creds_file = tmp_path / "relay_credentials.json"
         creds_file.write_text("{invalid")
-        monkeypatch.setattr(pairing_mod, "_CREDENTIALS_FILE", creds_file)
+        monkeypatch.setattr(pairing_credentials, "_CREDENTIALS_FILE", creds_file)
 
         with caplog.at_level(logging.WARNING):
             assert pairing_mod.load_relay_credentials() is None
@@ -823,7 +828,7 @@ class TestPairingCycle:
         """Delete failures should be logged without crashing the caller."""
         creds_file = tmp_path / "relay_credentials.json"
         creds_file.write_text("x")
-        monkeypatch.setattr(pairing_mod, "_CREDENTIALS_FILE", creds_file)
+        monkeypatch.setattr(pairing_credentials, "_CREDENTIALS_FILE", creds_file)
 
         def _boom(*_args: object, **_kwargs: object) -> None:
             raise OSError(PAIRING_FAILURE_LOG)

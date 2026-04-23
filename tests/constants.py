@@ -73,7 +73,6 @@ TRACEBACK_TEXT = "Traceback"
 # Image sink / MediaMTX test literals
 IMAGE_SINK_BACKEND = "backend"
 IMAGE_SINK_S3 = "s3"
-IMAGE_SINK_AUTO = "auto"
 DEFAULT_S3_REGION = "us-east-1"
 S3_BUCKET_NAME = "rpi-cam"
 S3_OBJECT_KEY = "rpi-cam/42/abc123.jpg"

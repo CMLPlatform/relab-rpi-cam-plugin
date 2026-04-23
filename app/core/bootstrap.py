@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 from app.core.runtime_state import RuntimeState
 from app.core.settings import IMAGE_SINK_AUTO, IMAGE_SINK_BACKEND, IMAGE_SINK_S3, Settings, settings
-from app.pairing.services.service import _CREDENTIALS_FILE, load_relay_credentials
+from app.pairing.services.credentials import _CREDENTIALS_FILE, load_relay_credentials
 
 logger = logging.getLogger(__name__)
 
