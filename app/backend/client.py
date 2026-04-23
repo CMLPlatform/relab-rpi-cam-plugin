@@ -255,8 +255,12 @@ async def notify_self_unpair() -> None:
             )
         else:
             logger.warning(
-                "notify_self_unpair: backend returned HTTP %d — camera may remain registered",
+                "notify_self_unpair: backend returned HTTP %d — camera may remain registered "
+                "(url=%s server=%s body=%r)",
                 response.status_code,
+                response.request.url,
+                response.headers.get("server", "?"),
+                response.text[:500],
                 extra=build_log_extra(),
             )
     except httpx.HTTPError as exc:

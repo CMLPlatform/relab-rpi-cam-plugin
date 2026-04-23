@@ -87,15 +87,15 @@ class UploadQueue:
         await asyncio.to_thread(shutil.move, str(image_path), str(target_image))
 
         now = datetime.now(UTC)
-        entry_data = {
-            "image_id": image_id,
-            "filename": filename,
-            "capture_metadata": dict(capture_metadata),
-            "upload_metadata": dict(upload_metadata),
-            "attempts": 0,
-            "next_attempt_at": now.isoformat(),
-        }
-        await asyncio.to_thread(target_metadata.write_text, json.dumps(entry_data, indent=2))
+        await self._persist_metadata(
+            target_metadata,
+            image_id=image_id,
+            filename=filename,
+            capture_metadata=capture_metadata,
+            upload_metadata=upload_metadata,
+            attempts=0,
+            next_attempt_at=now,
+        )
 
         logger.info("Enqueued capture %s for backend retry", image_id, extra=build_log_extra())
         return QueuedCapture(

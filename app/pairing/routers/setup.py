@@ -7,7 +7,7 @@ import logging
 
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app.backend.client import notify_self_unpair
 from app.core.bootstrap import clear_runtime_relay_credentials
@@ -81,6 +81,19 @@ async def setup_page(request: Request) -> HTMLResponse:
             "lan_ips": lan_ips,
             "pairing_backend_reachable": pairing_backend_reachable,
         },
+    )
+
+
+@router.get("/pairing/state")
+async def pairing_state(request: Request) -> JSONResponse:
+    """Return the current pairing state for client-side polling by the setup page."""
+    runtime = get_request_runtime(request)
+    state = runtime.pairing_service.get_state()
+    return JSONResponse(
+        {
+            "status": state.status,
+            "relay_enabled": runtime.runtime_state.relay_enabled,
+        }
     )
 
 
