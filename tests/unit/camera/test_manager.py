@@ -130,8 +130,8 @@ class TestCheckStreamDuration:
 class TestGetCameraManager:
     """Tests for runtime-aware camera manager resolution."""
 
-    def test_prefers_request_runtime_camera_manager(self) -> None:
-        """Request-scoped runtime should override the legacy compatibility manager."""
+    def test_returns_request_runtime_camera_manager(self) -> None:
+        """Request-scoped runtime provides the camera manager dependency."""
         app = FastAPI()
         runtime = AppRuntime(
             camera_manager=cast(
