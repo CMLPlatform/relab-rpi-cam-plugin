@@ -10,6 +10,9 @@ from relab_rpi_cam_models import DevicePublicKeyJWK, PairingPollResponse, Pairin
 if TYPE_CHECKING:
     import httpx
 
+PAIRING_REGISTER_PATH = "/v1/plugins/rpi-cam/pairing/register"
+PAIRING_POLL_PATH = "/v1/plugins/rpi-cam/pairing/poll"
+
 
 @dataclass(frozen=True)
 class PairingClient:
@@ -34,14 +37,14 @@ class PairingClient:
             key_id=key_id,
         )
         return await self.http_client.post(
-            f"{self.base_url}/plugins/rpi-cam/pairing/register",
+            f"{self.base_url}{PAIRING_REGISTER_PATH}",
             json=request.model_dump(mode="json"),
         )
 
     async def poll(self, *, code: str, fingerprint: str) -> httpx.Response:
         """Submit one poll request."""
         return await self.http_client.get(
-            f"{self.base_url}/plugins/rpi-cam/pairing/poll",
+            f"{self.base_url}{PAIRING_POLL_PATH}",
             params={"code": code, "fingerprint": fingerprint},
         )
 

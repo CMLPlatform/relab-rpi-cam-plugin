@@ -42,7 +42,7 @@ def test_pairing_poll_response_from_claimed_bootstrap() -> None:
     """The paired poll payload should derive cleanly from the bootstrap contract."""
     bootstrap = PairingClaimedBootstrap(
         camera_id=CAMERA_ID,
-        ws_url="wss://backend.example/plugins/rpi-cam/ws/connect",
+        ws_url="wss://backend.example/v1/plugins/rpi-cam/ws/connect",
         auth_scheme=RelayAuthScheme.DEVICE_ASSERTION,
         key_id="kid-12345",
     )

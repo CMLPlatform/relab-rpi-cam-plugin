@@ -208,7 +208,7 @@ Verify camera is properly connected to the CSI port.
 
 - If the plugin runs in Docker, `http://localhost:8011` points at the plugin container itself, not your host machine. Use `http://host.docker.internal:8011`, your host's LAN IP, or the real HTTPS API URL instead.
 
-- **403 on pairing or WebSocket connect?** If the backend sits behind Cloudflare, the machine-facing paths may be challenged. Add a WAF bypass rule for `/plugins/rpi-cam/pairing/*` and `/plugins/rpi-cam/ws/connect` on the relevant hosts.
+- **403 on pairing or WebSocket connect?** If the backend sits behind Cloudflare, the machine-facing paths may be challenged. Add a WAF bypass rule for `/v1/plugins/rpi-cam/pairing/*`, `/v1/plugins/rpi-cam/device/*`, and `/v1/plugins/rpi-cam/ws/connect` on the relevant hosts.
 
 - Remove `~/.config/relab/relay_credentials.json` if it exists (pairing is skipped when credentials present)
 

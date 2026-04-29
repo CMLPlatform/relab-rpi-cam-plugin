@@ -3,7 +3,7 @@
 The Pi authenticates every upload with a fresh short-lived device assertion
 (ES256 JWT signed by the relay private key, verified by the backend against
 the public key it stored during pairing). The backend accepts the bytes via
-``POST /plugins/rpi-cam/cameras/{camera_id}/image-upload`` and returns a
+``POST /v1/plugins/rpi-cam/device/cameras/{camera_id}/image-upload`` and returns a
 small JSON envelope with the stored image's id and URL.
 """
 
@@ -29,9 +29,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _UPLOAD_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=5.0)
-_UPLOAD_ENDPOINT_TEMPLATE = "/plugins/rpi-cam/cameras/{camera_id}/image-upload"
-_PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE = "/plugins/rpi-cam/cameras/{camera_id}/preview-thumbnail-upload"
-_SELF_UNPAIR_ENDPOINT_TEMPLATE = "/plugins/rpi-cam/cameras/{camera_id}/self"
+_UPLOAD_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/image-upload"
+_PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/preview-thumbnail-upload"
+_SELF_UNPAIR_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/self"
 _SELF_UNPAIR_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
 
 

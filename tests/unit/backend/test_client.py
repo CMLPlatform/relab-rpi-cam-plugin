@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from app.backend import client as backend_client_mod
-from app.backend.client import BackendUploadError, upload_image
+from app.backend.client import BackendUploadError, upload_image, upload_preview_thumbnail
 from app.core.runtime import AppRuntime, set_active_runtime
 from app.core.settings import settings
 from tests.constants import BACKEND_IMAGE_URL, SAMPLE_SERVER_IMAGE_ID
@@ -30,6 +30,8 @@ ASSERTION_WARNING_LOG = "notify_self_unpair: could not mint device assertion"
 ACKNOWLEDGED_UNPAIR_LOG = "backend acknowledged unpair"
 UNEXPECTED_STATUS_LOG = "backend returned HTTP 500"
 NETWORK_WARNING_LOG = "network error reaching backend"
+DEVICE_UPLOAD_PATH = "/v1/plugins/rpi-cam/device/cameras/"
+PREVIEW_THUMBNAIL_URL = "https://backend.example/uploads/rpi-cam/previews/cam.jpg"
 
 
 @pytest.fixture(autouse=True)
@@ -95,10 +97,26 @@ class TestUploadImage:
         assert str(result.image_url) == BACKEND_IMAGE_URL
         client_instance = patched_client.return_value
         client_instance.post.assert_awaited_once()
-        _, kwargs = client_instance.post.await_args
+        args, kwargs = client_instance.post.await_args
+        assert str(args[0]).startswith(f"https://backend.example{DEVICE_UPLOAD_PATH}")
+        assert str(args[0]).endswith("/image-upload")
         assert kwargs["files"]["file"] == ("test.jpg", b"\xff\xd8fake-jpg", "image/jpeg")
         assert kwargs["data"]["capture_metadata"] == CAPTURE_METADATA_JSON
         assert kwargs["data"]["upload_metadata"] == UPLOAD_METADATA_JSON
+        assert kwargs["headers"]["Authorization"] == AUTHORIZATION_HEADER
+
+    async def test_preview_thumbnail_uses_device_callback_route(self) -> None:
+        """Preview thumbnails should use the backend's canonical device callback route."""
+        response = _fake_response(200, {"preview_thumbnail_url": "/uploads/rpi-cam/previews/cam.jpg"})
+
+        with _patch_async_client(response) as patched_client:
+            result = await upload_preview_thumbnail(image_bytes=b"\xff\xd8preview")
+
+        assert str(result.preview_thumbnail_url) == PREVIEW_THUMBNAIL_URL
+        args, kwargs = patched_client.return_value.post.await_args
+        assert str(args[0]).startswith(f"https://backend.example{DEVICE_UPLOAD_PATH}")
+        assert str(args[0]).endswith("/preview-thumbnail-upload")
+        assert kwargs["files"]["file"] == ("preview-thumbnail.jpg", b"\xff\xd8preview", "image/jpeg")
         assert kwargs["headers"]["Authorization"] == AUTHORIZATION_HEADER
 
     async def test_relative_image_url_is_prefixed_with_base_url(self) -> None:
@@ -273,6 +291,10 @@ class TestNotifySelfUnpair:
             await backend_client_mod.notify_self_unpair()
 
         patched_client.return_value.delete.assert_awaited_once()
+        args, kwargs = patched_client.return_value.delete.await_args
+        assert str(args[0]).startswith(f"https://backend.example{DEVICE_UPLOAD_PATH}")
+        assert str(args[0]).endswith("/self")
+        assert kwargs["headers"]["Authorization"] == AUTHORIZATION_HEADER
         assert ACKNOWLEDGED_UNPAIR_LOG in caplog.text
 
     async def test_warns_when_backend_returns_unexpected_status(self, caplog: pytest.LogCaptureFixture) -> None:

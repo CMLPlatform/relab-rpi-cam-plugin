@@ -125,7 +125,7 @@ class Settings(BaseSettings):
         return _parse_list_env(v)
 
     # WebSocket relay (auto-enabled when all three fields are set)
-    relay_backend_url: str = ""  # wss://your-backend/plugins/rpi-cam/ws/connect
+    relay_backend_url: str = ""  # wss://your-backend/v1/plugins/rpi-cam/ws/connect
     relay_camera_id: str = ""
     relay_auth_scheme: str = "device_assertion"
     relay_key_id: str = ""
