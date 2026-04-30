@@ -57,7 +57,6 @@ PAIRING_CODE_TTL_SECONDS = 10 * 60
 # Pairing status values
 STATUS_WAITING = "waiting"
 STATUS_PAIRED = "paired"
-AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
 _DOCKER_HOST_ALIAS = "host.docker.internal"
 
