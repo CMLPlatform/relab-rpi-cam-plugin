@@ -28,6 +28,30 @@ class TestStreamUrls:
         """A public watch URL converts into the matching embed URL."""
         assert stream_service.get_youtube_embed_url(AnyUrl(YOUTUBE_WATCH_URL)) == YOUTUBE_EMBED_URL
 
+    @pytest.mark.parametrize(
+        "watch_url",
+        [
+            "https://www.youtube.com/watch?v=broadcast-key&feature=youtu.be",
+            "https://www.youtube.com/watch?feature=youtu.be&v=broadcast-key",
+        ],
+    )
+    def test_embed_url_allows_additional_query_params(self, watch_url: str) -> None:
+        """Watch URLs with extra query parameters still resolve to the same embed URL."""
+        assert stream_service.get_youtube_embed_url(AnyUrl(watch_url)) == YOUTUBE_EMBED_URL
+
+    @pytest.mark.parametrize(
+        "bad_url",
+        [
+            "https://www.youtube.com/watch",
+            "https://www.youtube.com/watch?x=broadcast-key",
+            "https://example.com/watch?v=broadcast-key",
+        ],
+    )
+    def test_embed_url_rejects_invalid_watch_urls(self, bad_url: str) -> None:
+        """Malformed or non-YouTube watch URLs are rejected."""
+        with pytest.raises(ValueError, match="Expected a YouTube watch URL"):
+            stream_service.get_youtube_embed_url(AnyUrl(bad_url))
+
 
 class TestValidateYoutubeMode:
     """``validate_youtube_mode`` is the fail-fast guard at the top of ``start_stream``."""
@@ -46,6 +70,16 @@ class TestValidateYoutubeMode:
 
         with pytest.raises(ValueError, match="Unsupported"):
             stream_service.validate_youtube_mode(cast("StreamMode", _FakeMode()), None)
+
+    def test_real_non_youtube_modes_raise(self) -> None:
+        """Any real ``StreamMode`` member other than YouTube is unsupported."""
+        non_youtube_modes = [mode for mode in StreamMode if mode != StreamMode.YOUTUBE]
+        if not non_youtube_modes:
+            pytest.skip("No non-YouTube StreamMode members defined.")
+
+        for mode in non_youtube_modes:
+            with pytest.raises(ValueError, match="Unsupported"):
+                stream_service.validate_youtube_mode(mode, None)
 
     def test_valid_youtube_mode_is_noop(self) -> None:
         """Valid (mode, config) pairs return ``None`` without raising."""
