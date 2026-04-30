@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
+from pydantic import HttpUrl
 
 from app.core.runtime import AppRuntime
 from app.core.settings import DEFAULT_PAIRING_BACKEND_URL, settings
@@ -49,11 +50,16 @@ SETUP_OPEN_HINT = "click to open"
 SETUP_LOCAL_DNS_SUFFIX = ".local"
 PAIRING_TASK_NAME = "pairing"
 HTTP_EQUIV_REFRESH = 'http-equiv="refresh"'
-HEADER_FRAME_OPTIONS = "DENY"
+HEADER_FRAME_OPTIONS = "x-frame-options"
+HEADER_HSTS = "strict-transport-security"
 HEADER_NOSNIFF = "nosniff"
 HEADER_NO_REFERRER = "no-referrer"
+HSTS_HOST_ONLY = "max-age=31536000"
+HSTS_INCLUDE_SUBDOMAINS = "includeSubDomains"
+HSTS_PRELOAD = "preload"
 SETUP_CSP_DEFAULT = "default-src 'self'"
 SETUP_CSP_INLINE = "'unsafe-inline'"
+SETUP_CSP_OBJECTS_BLOCKED = "object-src 'none'"
 THEME_TOGGLE_MARKER = "data-theme-toggle"
 LOGO_SRC = "/static/logo.png"
 THEME_AUTO_LABEL = "Theme: Auto"
@@ -91,11 +97,27 @@ class TestSetupPage:
     async def test_setup_page_sets_security_headers(self, unauthed_client: AsyncClient) -> None:
         """Setup page responses should carry the hardened browser headers."""
         resp = await unauthed_client.get("/setup")
-        assert resp.headers["x-frame-options"] == HEADER_FRAME_OPTIONS
+        assert HEADER_FRAME_OPTIONS not in resp.headers
+        assert HEADER_HSTS not in resp.headers
         assert resp.headers["x-content-type-options"] == HEADER_NOSNIFF
         assert resp.headers["referrer-policy"] == HEADER_NO_REFERRER
         assert SETUP_CSP_DEFAULT in resp.headers["content-security-policy"]
         assert SETUP_CSP_INLINE in resp.headers["content-security-policy"]
+        assert SETUP_CSP_OBJECTS_BLOCKED in resp.headers["content-security-policy"]
+
+    async def test_setup_page_sets_host_only_hsts_for_https_base_url(
+        self,
+        unauthed_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """HTTPS deployments should get HSTS without subdomain or preload commitments."""
+        monkeypatch.setattr(settings, "base_url", HttpUrl("https://camera.example/"))
+
+        resp = await unauthed_client.get("/setup")
+
+        assert resp.headers[HEADER_HSTS] == HSTS_HOST_ONLY
+        assert HSTS_INCLUDE_SUBDOMAINS not in resp.headers[HEADER_HSTS]
+        assert HSTS_PRELOAD not in resp.headers[HEADER_HSTS]
 
     async def test_setup_page_contains_title(self, unauthed_client: AsyncClient) -> None:
         """Test that the setup page contains the correct title."""

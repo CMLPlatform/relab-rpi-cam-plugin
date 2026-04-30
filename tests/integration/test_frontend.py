@@ -17,10 +17,13 @@ from tests.constants import HTML_CONTENT_TYPE, JPEG_CONTENT_TYPE, NO_STORE_CACHE
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
 HLS_ROUTE_PATH = "/preview/hls/{hls_path:path}"
-DEFAULT_CSP = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-FRAME_OPTIONS_DENY = "DENY"
+DEFAULT_CSP = (
+    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+)
 SETUP_CSP_INLINE = "'unsafe-inline'"
 SETUP_CSP_CDN = "https://cdn.jsdelivr.net"
+SETUP_CSP_CONNECT_SELF = "connect-src 'self'"
+SETUP_CSP_BROAD_CONNECT = "connect-src 'self' http:"
 DOCS_FAVICON_HOST = "https://fastapi.tiangolo.com"
 THEME_TOGGLE_MARKER = "data-theme-toggle"
 LOGO_SRC = "/static/logo.png"
@@ -44,9 +47,10 @@ class TestHomepage:
     async def test_homepage_sets_relaxed_csp_for_embedded_preview_assets(self, unauthed_client: AsyncClient) -> None:
         """The landing page CSP should allow its inline script and hls.js dependency."""
         resp = await unauthed_client.get("/")
-        assert resp.headers["x-frame-options"] == FRAME_OPTIONS_DENY
         assert SETUP_CSP_CDN in resp.headers["content-security-policy"]
         assert SETUP_CSP_INLINE in resp.headers["content-security-policy"]
+        assert SETUP_CSP_CONNECT_SELF in resp.headers["content-security-policy"]
+        assert SETUP_CSP_BROAD_CONNECT not in resp.headers["content-security-policy"]
 
     async def test_homepage_renders_shared_header_assets_and_theme_control(self, unauthed_client: AsyncClient) -> None:
         """The landing page should expose the shared brand header and theme chooser."""

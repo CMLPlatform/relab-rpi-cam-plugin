@@ -30,7 +30,8 @@ _SETUP_CSP = (
     "worker-src 'self' blob:; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
-    "connect-src 'self' http: https: ws: wss:; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
     "form-action 'self'"
@@ -42,11 +43,17 @@ _DOCS_CSP = (
     "img-src 'self' data: https://fastapi.tiangolo.com; "
     "font-src 'self' data: https://cdn.jsdelivr.net; "
     "connect-src 'self'; "
+    "object-src 'none'; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
     "form-action 'self'"
 )
-_DEFAULT_CSP = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+_DEFAULT_CSP = (
+    "default-src 'none'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'none'; "
+    "form-action 'none'"
+)
 _HTTPS_SCHEME = "https"
 _HTTP_SCOPE_TYPE = "http"
 _HTTP_RESPONSE_START = "http.response.start"
@@ -144,12 +151,11 @@ def _content_security_policy_for_path(path: str) -> str:
 async def security_headers_middleware(request: Request, call_next: Callable) -> Response:
     """Attach baseline security headers to every HTTP response."""
     response = await call_next(request)
-    response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("Content-Security-Policy", _content_security_policy_for_path(request.url.path))
     if settings.base_url.scheme == _HTTPS_SCHEME:
-        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     return response
 
 
