@@ -68,10 +68,21 @@ class UploadQueue:
     changes here. The same retry / dead-letter machinery covers both paths.
     """
 
-    def __init__(self, root: Path, sink: ImageSink) -> None:
+    def __init__(
+        self,
+        root: Path,
+        sink: ImageSink,
+        *,
+        max_pending_entries: int | None = None,
+        max_pending_bytes: int | None = None,
+        dead_max_entries: int | None = None,
+    ) -> None:
         self._root = root
         self._sink = sink
         self._dead_root = root / "dead"
+        self._max_pending_entries = max_pending_entries
+        self._max_pending_bytes = max_pending_bytes
+        self._dead_max_entries = dead_max_entries
         self._root.mkdir(parents=True, exist_ok=True)
         self._dead_root.mkdir(parents=True, exist_ok=True)
 
@@ -87,14 +98,11 @@ class UploadQueue:
         upload_metadata: Mapping[str, object],
     ) -> QueuedCapture:
         """Move a captured file into the queue for retry."""
+        _validate_image_id(image_id)
         target_image = self._root / f"{image_id}.jpg"
         target_metadata = self._root / f"{image_id}.json"
-
-        await asyncio.to_thread(shutil.move, str(image_path), str(target_image))
-
         now = datetime.now(UTC)
-        await self._persist_metadata(
-            target_metadata,
+        metadata_payload = _metadata_payload(
             image_id=image_id,
             filename=filename,
             capture_metadata=capture_metadata,
@@ -102,6 +110,11 @@ class UploadQueue:
             attempts=0,
             next_attempt_at=now,
         )
+        self._ensure_capacity_for(image_path=image_path, metadata_payload=metadata_payload)
+
+        await asyncio.to_thread(shutil.move, str(image_path), str(target_image))
+
+        await asyncio.to_thread(target_metadata.write_text, json.dumps(metadata_payload, indent=2))
 
         logger.info("Enqueued capture %s for backend retry", image_id, extra=build_log_extra())
         return QueuedCapture(
@@ -124,6 +137,10 @@ class UploadQueue:
                 entries.append(entry)
         entries.sort(key=lambda e: e.next_attempt_at)
         return entries
+
+    async def prune_dead_letters(self) -> None:
+        """Apply deterministic dead-letter retention by oldest-over-count."""
+        await asyncio.to_thread(self._prune_dead_letters_sync)
 
     def is_due(self, entry: QueuedCapture, *, now: datetime | None = None) -> bool:
         """Whether the entry's next_attempt_at has arrived."""
@@ -231,7 +248,15 @@ class UploadQueue:
         except (OSError, json.JSONDecodeError):
             logger.warning("Queue: skipping unreadable metadata %s", metadata_path, extra=build_log_extra())
             return None
-        image_id = payload.get("image_id") or metadata_path.stem
+        image_id = metadata_path.stem
+        if not _is_valid_image_id(image_id):
+            logger.warning(
+                "Queue: metadata %s has invalid image_id; cleaning up",
+                metadata_path,
+                extra=build_log_extra(),
+            )
+            _unlink_queue_pair(metadata_path)
+            return None
         image_path = self._root / f"{image_id}.jpg"
         if not image_path.exists():
             logger.warning(
@@ -268,14 +293,14 @@ class UploadQueue:
         next_attempt_at: datetime,
     ) -> None:
         """Persist updated metadata for an entry, e.g. after a failed attempt."""
-        payload = {
-            "image_id": image_id,
-            "filename": filename,
-            "capture_metadata": dict(capture_metadata),
-            "upload_metadata": dict(upload_metadata),
-            "attempts": attempts,
-            "next_attempt_at": next_attempt_at.isoformat(),
-        }
+        payload = _metadata_payload(
+            image_id=image_id,
+            filename=filename,
+            capture_metadata=capture_metadata,
+            upload_metadata=upload_metadata,
+            attempts=attempts,
+            next_attempt_at=next_attempt_at,
+        )
         await asyncio.to_thread(metadata_path.write_text, json.dumps(payload, indent=2))
 
     async def _dead_letter(self, entry: QueuedCapture) -> None:
@@ -284,12 +309,103 @@ class UploadQueue:
         dead_metadata = self._dead_root / entry.metadata_path.name
         await asyncio.to_thread(shutil.move, str(entry.image_path), str(dead_image))
         await asyncio.to_thread(shutil.move, str(entry.metadata_path), str(dead_metadata))
+        await self.prune_dead_letters()
+
+    def _ensure_capacity_for(self, *, image_path: Path, metadata_payload: dict[str, object]) -> None:
+        pending_entries = self.iter_pending()
+        if self._max_pending_entries is not None and len(pending_entries) >= self._max_pending_entries:
+            msg = f"Upload queue is full: {len(pending_entries)} pending entries"
+            raise UploadQueueFullError(msg)
+        if self._max_pending_bytes is None:
+            return
+        pending_bytes = _directory_bytes(self._root)
+        incoming_bytes = _path_size(image_path) + len(json.dumps(metadata_payload, indent=2).encode())
+        if pending_bytes + incoming_bytes > self._max_pending_bytes:
+            msg = f"Upload queue is full: {pending_bytes + incoming_bytes} bytes would exceed limit"
+            raise UploadQueueFullError(msg)
+
+    def _prune_dead_letters_sync(self) -> None:
+        entries = _dead_letter_entries(self._dead_root)
+        if self._dead_max_entries is None or len(entries) <= self._dead_max_entries:
+            return
+        for image_path, metadata_path, _mtime in entries[: len(entries) - self._dead_max_entries]:
+            _unlink_quiet(image_path)
+            _unlink_quiet(metadata_path)
 
 
 def _unlink_quiet(path: Path) -> None:
     """Unlink a file, ignoring if it's already gone."""
     with contextlib.suppress(FileNotFoundError):
         path.unlink()
+
+
+def _is_valid_image_id(image_id: str) -> bool:
+    return bool(_IMAGE_ID_PATTERN.fullmatch(image_id))
+
+
+def _validate_image_id(image_id: str) -> None:
+    if not _is_valid_image_id(image_id):
+        msg = "image_id must be a lowercase 32-character hexadecimal string"
+        raise ValueError(msg)
+
+
+def _unlink_queue_pair(metadata_path: Path) -> None:
+    _unlink_quiet(metadata_path)
+    _unlink_quiet(metadata_path.with_suffix(".jpg"))
+
+
+def _path_size(path: Path) -> int:
+    with contextlib.suppress(OSError):
+        return path.stat().st_size
+    return 0
+
+
+def _directory_bytes(root: Path) -> int:
+    total = 0
+    for path in (*root.glob("*.jpg"), *root.glob("*.json")):
+        total += _path_size(path)
+    return total
+
+
+def _dead_letter_entries(dead_root: Path) -> list[tuple[Path, Path, float]]:
+    entries: list[tuple[Path, Path, float]] = []
+    for metadata_path in dead_root.glob("*.json"):
+        if not _is_valid_image_id(metadata_path.stem):
+            _unlink_queue_pair(metadata_path)
+            continue
+        image_path = dead_root / f"{metadata_path.stem}.jpg"
+        if not image_path.exists():
+            _unlink_quiet(metadata_path)
+            continue
+        mtime = min(_path_mtime(image_path), _path_mtime(metadata_path))
+        entries.append((image_path, metadata_path, mtime))
+    entries.sort(key=lambda entry: entry[2])
+    return entries
+
+
+def _path_mtime(path: Path) -> float:
+    with contextlib.suppress(OSError):
+        return path.stat().st_mtime
+    return 0.0
+
+
+def _metadata_payload(
+    *,
+    image_id: str,
+    filename: str,
+    capture_metadata: Mapping[str, object],
+    upload_metadata: Mapping[str, object],
+    attempts: int,
+    next_attempt_at: datetime,
+) -> dict[str, object]:
+    return {
+        "image_id": image_id,
+        "filename": filename,
+        "capture_metadata": dict(capture_metadata),
+        "upload_metadata": dict(upload_metadata),
+        "attempts": attempts,
+        "next_attempt_at": next_attempt_at.isoformat(),
+    }
 
 
 class UploadQueueWorker:

@@ -27,7 +27,7 @@ from app.image_sinks import ImageSink, ImageSinkError, get_image_sink
 from app.media.stream_service import StreamService
 from app.media.stream_state import ActiveStreamState
 from app.observability.logging import build_log_extra
-from app.upload.queue import UploadQueue
+from app.upload.queue import UploadQueue, UploadQueueFullError
 from app.utils.files import cleanup_images
 
 if TYPE_CHECKING:
@@ -134,6 +134,9 @@ class CameraManager:
             self._upload_queue = self._upload_queue_override or UploadQueue(
                 settings.image_path / "queue",
                 sink=self.sink,
+                max_pending_entries=settings.upload_queue_max_pending_entries,
+                max_pending_bytes=settings.upload_queue_max_pending_bytes,
+                dead_max_entries=settings.upload_queue_dead_max_entries,
             )
         return self._upload_queue
 
@@ -219,13 +222,17 @@ class CameraManager:
                 exc,
                 extra=build_log_extra(stream_mode=self.stream.mode),
             )
-            await self.upload_queue.enqueue(
-                image_id=image_id,
-                image_path=image_path,
-                filename=filename,
-                capture_metadata=capture_metadata_dict,
-                upload_metadata=upload_meta,
-            )
+            try:
+                await self.upload_queue.enqueue(
+                    image_id=image_id,
+                    image_path=image_path,
+                    filename=filename,
+                    capture_metadata=capture_metadata_dict,
+                    upload_metadata=upload_meta,
+                )
+            except UploadQueueFullError:
+                await asyncio.to_thread(_unlink_quiet, image_path)
+                raise
             return ImageCaptureResponse(
                 image_id=image_id,
                 status=ImageCaptureStatus.QUEUED,

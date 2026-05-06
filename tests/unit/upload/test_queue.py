@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock
@@ -15,7 +16,11 @@ from app.upload import queue as upload_queue_mod
 from app.upload.queue import UploadQueue, UploadQueueWorker
 from tests.constants import EXAMPLE_IMAGE_URL
 
-BAD_IMAGE_ID = "bad"
+
+def image_id(seed: int) -> str:
+    """Return a generated capture ID-shaped test value."""
+    return f"{seed:032x}"
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -71,18 +76,19 @@ class TestEnqueue:
         sink: _FakeSink,
     ) -> None:
         """Enqueue should move the jpg into the queue root and write a metadata sidecar."""
+        capture_id = image_id(1)
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         entry = await queue.enqueue(
-            image_id="abc123",
+            image_id=capture_id,
             image_path=sample_image,
-            filename="abc123.jpg",
+            filename=f"{capture_id}.jpg",
             capture_metadata={"width": 1920},
             upload_metadata={"product_id": 42},
         )
 
         assert not await asyncio.to_thread(sample_image.exists)
-        assert entry.image_path == queue_root / "abc123.jpg"
-        assert entry.metadata_path == queue_root / "abc123.json"
+        assert entry.image_path == queue_root / f"{capture_id}.jpg"
+        assert entry.metadata_path == queue_root / f"{capture_id}.json"
         assert await asyncio.to_thread(entry.image_path.exists)
         assert await asyncio.to_thread(entry.metadata_path.exists)
 
@@ -97,6 +103,27 @@ class TestEnqueue:
         assert await asyncio.to_thread(queue_root.is_dir)
         assert await asyncio.to_thread((queue_root / "dead").is_dir)
 
+    async def test_rejects_enqueue_when_pending_entry_limit_is_reached(
+        self,
+        queue_root: Path,
+        sample_image: Path,
+        sink: _FakeSink,
+    ) -> None:
+        """Queue capacity should prevent unbounded pending entries."""
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink), max_pending_entries=0)
+        capture_id = image_id(1)
+
+        with pytest.raises(upload_queue_mod.UploadQueueFullError):
+            await queue.enqueue(
+                image_id=capture_id,
+                image_path=sample_image,
+                filename=f"{capture_id}.jpg",
+                capture_metadata={},
+                upload_metadata={},
+            )
+
+        assert await asyncio.to_thread(sample_image.exists)
+
 
 class TestIterPending:
     """Tests for iter_pending ordering + resilience."""
@@ -108,36 +135,53 @@ class TestIterPending:
         sink: _FakeSink,
     ) -> None:
         """Entries with earlier next_attempt_at should come first."""
+        first_id = image_id(1)
+        second_id = image_id(2)
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
 
         # Enqueue one entry that's due now.
         await queue.enqueue(
-            image_id="entry-a",
+            image_id=first_id,
             image_path=sample_image,
-            filename="entry-a.jpg",
+            filename=f"{first_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
 
         # Manually add a second entry dated in the future.
         future = datetime.now(UTC) + timedelta(hours=1)
-        image_b = queue_root / "entry-b.jpg"
+        image_b = queue_root / f"{second_id}.jpg"
         image_b.write_bytes(b"\xff\xd8bbb")
-        (queue_root / "entry-b.json").write_text(
-            f'{{"image_id": "entry-b", "filename": "entry-b.jpg", "capture_metadata": {{}}, '
+        (queue_root / f"{second_id}.json").write_text(
+            f'{{"image_id": "{second_id}", "filename": "{second_id}.jpg", "capture_metadata": {{}}, '
             f'"upload_metadata": {{}}, "attempts": 1, "next_attempt_at": "{future.isoformat()}"}}'
         )
 
         entries = queue.iter_pending()
-        assert [e.image_id for e in entries] == ["entry-a", "entry-b"]
+        assert [e.image_id for e in entries] == [first_id, second_id]
 
     def test_skips_orphan_metadata(self, queue_root: Path, sink: _FakeSink) -> None:
         """A .json without a matching .jpg should be cleaned up, not yielded."""
+        capture_id = image_id(1)
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
-        orphan = queue_root / "orphan.json"
-        orphan.write_text('{"image_id": "orphan"}')
+        orphan = queue_root / f"{capture_id}.json"
+        orphan.write_text(f'{{"image_id": "{capture_id}"}}')
         assert queue.iter_pending() == []
         assert not orphan.exists()
+
+    def test_uses_sidecar_filename_as_authoritative_image_id(self, queue_root: Path, sink: _FakeSink) -> None:
+        """Sidecar JSON may not redirect queue processing to a different generated ID."""
+        capture_id = image_id(1)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
+        metadata_path = queue_root / f"{capture_id}.json"
+        image_path = queue_root / f"{capture_id}.jpg"
+        image_path.write_bytes(b"\xff\xd8")
+        metadata_path.write_text(f'{{"image_id": "{image_id(2)}"}}')
+
+        entries = queue.iter_pending()
+
+        assert len(entries) == 1
+        assert entries[0].image_id == capture_id
 
 
 class TestDrainOnce:
@@ -150,11 +194,12 @@ class TestDrainOnce:
         sink: _FakeSink,
     ) -> None:
         """When the sink succeeds, the queue entry should be deleted."""
+        capture_id = image_id(3)
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         entry = await queue.enqueue(
-            image_id="happy",
+            image_id=capture_id,
             image_path=sample_image,
-            filename="happy.jpg",
+            filename=f"{capture_id}.jpg",
             capture_metadata={},
             upload_metadata={"product_id": 1},
         )
@@ -173,11 +218,12 @@ class TestDrainOnce:
         failing_sink: _FakeSink,
     ) -> None:
         """A failed sink put should bump attempts and schedule a later retry."""
+        capture_id = image_id(4)
         queue = UploadQueue(queue_root, sink=cast("ImageSink", failing_sink))
         entry = await queue.enqueue(
-            image_id="sad",
+            image_id=capture_id,
             image_path=sample_image,
-            filename="sad.jpg",
+            filename=f"{capture_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
@@ -198,12 +244,13 @@ class TestDrainOnce:
         sink: _FakeSink,
     ) -> None:
         """Upload timeouts should count as a failed attempt, not kill the drain."""
+        capture_id = image_id(5)
         sink.put.side_effect = asyncio.TimeoutError
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         entry = await queue.enqueue(
-            image_id="slow",
+            image_id=capture_id,
             image_path=sample_image,
-            filename="slow.jpg",
+            filename=f"{capture_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
@@ -223,9 +270,11 @@ class TestDrainOnce:
         sink: _FakeSink,
     ) -> None:
         """One poisoned entry should not stop later due entries from draining."""
+        bad_id = image_id(6)
+        good_id = image_id(7)
 
         async def _put(**kwargs: object) -> StoredImage:
-            if kwargs["image_id"] == BAD_IMAGE_ID:
+            if kwargs["image_id"] == bad_id:
                 msg = "boom"
                 raise ValueError(msg)
             return StoredImage(image_id="srv-1", image_url=AnyUrl(EXAMPLE_IMAGE_URL))
@@ -233,22 +282,22 @@ class TestDrainOnce:
         sink.put.side_effect = _put
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
 
-        bad_image = tmp_path / "bad.jpg"
+        bad_image = tmp_path / f"{bad_id}.jpg"
         bad_image.write_bytes(b"\xff\xd8bad")
-        good_image = tmp_path / "good.jpg"
+        good_image = tmp_path / f"{good_id}.jpg"
         good_image.write_bytes(b"\xff\xd8good")
 
         bad_entry = await queue.enqueue(
-            image_id="bad",
+            image_id=bad_id,
             image_path=bad_image,
-            filename="bad.jpg",
+            filename=f"{bad_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
         good_entry = await queue.enqueue(
-            image_id="good",
+            image_id=good_id,
             image_path=good_image,
-            filename="good.jpg",
+            filename=f"{good_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
@@ -260,7 +309,7 @@ class TestDrainOnce:
         assert await asyncio.to_thread(bad_entry.image_path.exists)
         assert not await asyncio.to_thread(good_entry.image_path.exists)
         reloaded = {entry.image_id: entry for entry in queue.iter_pending()}
-        assert reloaded["bad"].attempts == 1
+        assert reloaded[bad_id].attempts == 1
 
     async def test_skips_entries_not_yet_due(
         self,
@@ -268,11 +317,12 @@ class TestDrainOnce:
         sink: _FakeSink,
     ) -> None:
         """Entries with next_attempt_at in the future must be ignored this pass."""
+        capture_id = image_id(8)
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         future = datetime.now(UTC) + timedelta(hours=1)
-        (queue_root / "waiting.jpg").write_bytes(b"\xff\xd8")
-        (queue_root / "waiting.json").write_text(
-            f'{{"image_id": "waiting", "filename": "waiting.jpg", "capture_metadata": {{}}, '
+        (queue_root / f"{capture_id}.jpg").write_bytes(b"\xff\xd8")
+        (queue_root / f"{capture_id}.json").write_text(
+            f'{{"image_id": "{capture_id}", "filename": "{capture_id}.jpg", "capture_metadata": {{}}, '
             f'"upload_metadata": {{}}, "attempts": 2, "next_attempt_at": "{future.isoformat()}"}}'
         )
 
@@ -292,11 +342,12 @@ class TestDeadLetter:
         sink: _FakeSink,
     ) -> None:
         """After _MAX_ATTEMPTS consecutive failures the entry should move under dead/."""
+        capture_id = image_id(9)
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         entry = await queue.enqueue(
-            image_id="doomed",
+            image_id=capture_id,
             image_path=sample_image,
-            filename="doomed.jpg",
+            filename=f"{capture_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
@@ -316,8 +367,33 @@ class TestDeadLetter:
         dead = await queue.mark_attempt_failed(current)
         assert dead is True
         assert queue.iter_pending() == []
-        assert await asyncio.to_thread((queue_root / "dead" / "doomed.jpg").exists)
-        assert await asyncio.to_thread((queue_root / "dead" / "doomed.json").exists)
+        assert await asyncio.to_thread((queue_root / "dead" / f"{capture_id}.jpg").exists)
+        assert await asyncio.to_thread((queue_root / "dead" / f"{capture_id}.json").exists)
+
+    async def test_prunes_oldest_dead_letters_over_count_limit(
+        self,
+        queue_root: Path,
+        sink: _FakeSink,
+    ) -> None:
+        """Dead-letter retention should keep only the newest entries over count."""
+        old_id = image_id(10)
+        new_id = image_id(11)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink), dead_max_entries=1)
+        for index, name in enumerate((old_id, new_id)):
+            dead_image = queue_root / "dead" / f"{name}.jpg"
+            dead_meta = queue_root / "dead" / f"{name}.json"
+            dead_image.write_bytes(b"\xff\xd8")
+            dead_meta.write_text("{}")
+            mtime = (datetime.now(UTC) + timedelta(seconds=index)).timestamp()
+            os.utime(dead_image, (mtime, mtime))
+            os.utime(dead_meta, (mtime, mtime))
+
+        await queue.prune_dead_letters()
+
+        assert not (queue_root / "dead" / f"{old_id}.jpg").exists()
+        assert not (queue_root / "dead" / f"{old_id}.json").exists()
+        assert (queue_root / "dead" / f"{new_id}.jpg").exists()
+        assert (queue_root / "dead" / f"{new_id}.json").exists()
 
 
 class TestUploadQueueWorker:
