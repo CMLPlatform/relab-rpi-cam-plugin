@@ -11,6 +11,10 @@ VALID_API_KEY = "valid-key"
 AUTH_COOKIE_NAME = "relab_session"
 SECURE_ATTR = "Secure"
 REQUEST_ID_HEADER = "x-request-id"
+ALLOW_ORIGIN_HEADER = "access-control-allow-origin"
+ALLOW_PRIVATE_NETWORK_HEADER = "access-control-allow-private-network"
+WILDCARD_ORIGIN = "*"
+TRUE_HEADER_VALUE = "true"
 ROOT_REDIRECT = "/"
 LIVE_TAB_REDIRECT = "/camera?tab=live"
 SAME_ORIGIN = "http://test"
@@ -210,3 +214,36 @@ class TestCorsConfig:
         allow_headers = resp.headers["access-control-allow-headers"].lower()
         assert settings.auth_key_name.lower() in allow_headers
         assert REQUEST_ID_HEADER in allow_headers
+
+    async def test_local_mode_cors_does_not_allow_arbitrary_origins(self, unauthed_client: AsyncClient) -> None:
+        """Local mode should not advertise wildcard browser access."""
+        resp = await unauthed_client.options(
+            "/camera",
+            headers={
+                "Origin": CROSS_SITE_ORIGIN,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": settings.auth_key_name,
+            },
+        )
+        assert resp.status_code == 400
+        assert resp.headers.get(ALLOW_ORIGIN_HEADER) != WILDCARD_ORIGIN
+        assert ALLOW_PRIVATE_NETWORK_HEADER not in resp.headers
+
+    async def test_private_network_access_is_limited_to_allowed_cors_origins(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """PNA should only be advertised on accepted CORS paths."""
+        origin = str(settings.allowed_cors_origins[0]).rstrip("/")
+        resp = await unauthed_client.options(
+            "/camera",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": settings.auth_key_name,
+                "Access-Control-Request-Private-Network": TRUE_HEADER_VALUE,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.headers[ALLOW_ORIGIN_HEADER] == origin
+        assert resp.headers[ALLOW_PRIVATE_NETWORK_HEADER] == TRUE_HEADER_VALUE

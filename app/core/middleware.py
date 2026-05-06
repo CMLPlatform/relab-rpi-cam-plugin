@@ -1,4 +1,4 @@
-"""HTTP middleware: rate limiting, request IDs, security headers, CORS, PNA."""
+"""HTTP middleware: rate limiting, request IDs, security headers, and CORS."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.datastructures import MutableHeaders
 
 from app.core.settings import settings
 from app.observability.logging import bind_request_id, new_request_id, reset_request_id
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
 
     from fastapi import FastAPI
     from starlette.responses import Response
-    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 RATE_LIMIT_METHOD = "POST"
 RATE_LIMIT_PATH = "/auth/login"
@@ -43,7 +41,7 @@ _SETUP_CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
     "worker-src 'self' blob:; "
-    "style-src 'self' 'unsafe-inline'; "
+    "style-src 'self'; "
     "img-src 'self' data:; "
     "connect-src 'self'; "
     "object-src 'none'; "
@@ -65,8 +63,6 @@ _DOCS_CSP = (
 )
 _DEFAULT_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 _HTTPS_SCHEME = "https"
-_HTTP_SCOPE_TYPE = "http"
-_HTTP_RESPONSE_START = "http.response.start"
 
 
 class RateLimiter:
@@ -155,7 +151,7 @@ def _content_security_policy_for_path(path: str) -> str:
         return _HOMEPAGE_CSP
     if path == _SETUP_PATH:
         return _SETUP_CSP
-    if path.startswith("/docs"):
+    if path.startswith(_DOCS_PATH_PREFIX):
         return _DOCS_CSP
     return _DEFAULT_CSP
 
@@ -171,64 +167,20 @@ async def security_headers_middleware(request: Request, call_next: Callable) -> 
     return response
 
 
-class _PrivateNetworkAccessMiddleware:
-    """Add Access-Control-Allow-Private-Network: true to every response.
-
-    Chrome's Private Network Access (PNA) spec requires this header on both
-    preflight and regular responses when an HTTPS page fetches resources from a
-    private-network host (e.g. a LAN IP).  Without it, once Chrome enforces PNA
-    fully, requests from ``https://app.cml-relab.org`` to the Pi's HTTP API will
-    be blocked.  Browsers currently warn (``Local Network Access detected``) but
-    do not block — this header suppresses the warnings and future-proofs the app.
-
-    Must be registered AFTER CORSMiddleware so it wraps it (last added =
-    outermost in Starlette's middleware stack), ensuring the header is appended
-    to CORS preflight (OPTIONS) responses as well as regular responses.
-    """
-
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != _HTTP_SCOPE_TYPE or not settings.local_mode_enabled:
-            await self.app(scope, receive, send)
-            return
-
-        async def _send_with_pna(message: Message) -> None:
-            if message["type"] == _HTTP_RESPONSE_START:
-                headers = MutableHeaders(scope=message)
-                headers.append("Access-Control-Allow-Private-Network", "true")
-            await send(message)
-
-        await self.app(scope, receive, _send_with_pna)
-
-
 def register_middleware(app: FastAPI) -> None:
     """Install the full middleware stack on the FastAPI app."""
     app.middleware("http")(rate_limit_middleware)
     app.middleware("http")(request_context_middleware)
     app.middleware("http")(security_headers_middleware)
 
-    # CORS: wildcard when local_mode is enabled (X-API-Key auth, no cookies),
-    # explicit allow-list otherwise (relay-only security model).
-    if settings.local_mode_enabled:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_credentials=False,
-            allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
-            allow_headers=["Content-Type", "Authorization", "Accept", "X-Request-ID", settings.auth_key_name],
-        )
-    else:
-        cors_origins = [str(origin).rstrip("/") for origin in settings.allowed_cors_origins]
-        cors_origins += [o.rstrip("/") for o in settings.local_allowed_origins]
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=cors_origins,
-            allow_credentials=True,
-            allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
-            allow_headers=["Content-Type", "Authorization", "Accept", "X-Request-ID", settings.auth_key_name],
-        )
+    cors_origins = [str(origin).rstrip("/") for origin in settings.allowed_cors_origins]
+    cors_origins += [o.rstrip("/") for o in settings.local_allowed_origins]
 
-    if settings.local_mode_enabled:
-        app.add_middleware(_PrivateNetworkAccessMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=not settings.local_mode_enabled,
+        allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
+        allow_headers=["Content-Type", "Authorization", "Accept", "X-Request-ID", settings.auth_key_name],
+        allow_private_network=settings.local_mode_enabled,
+    )
