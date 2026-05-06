@@ -18,6 +18,7 @@ from app.relay.service import (
     _extract_trace_headers,
     _format_relay_connection_error,
     _handle_command,
+    _handle_relay_message,
     _receive_loop,
     _send_error,
 )
@@ -29,6 +30,7 @@ RELAY_KEY_ID = "key-1"
 RELAY_PRIVATE_KEY_PEM = "private-key"
 MESSAGE_ID = "msg-1"
 MALFORMED_MESSAGE_ID = "msg-bad"
+OVERFLOW_MESSAGE_ID = "overflow"
 DETAIL = "oops"
 PONG_TYPE = "pong"
 RELAY_403_FRAGMENT = "Relay received 403"
@@ -195,6 +197,37 @@ class TestReceiveLoop:
         await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
         await asyncio.sleep(0)
         handler.assert_awaited_once()
+
+    async def test_rejects_request_when_pending_limit_is_reached(self) -> None:
+        """Relay request floods should receive backpressure before spawning tasks."""
+        ws = AsyncMock()
+        http = AsyncMock()
+        blocker = asyncio.Event()
+
+        async def _wait_until_released() -> None:
+            await blocker.wait()
+
+        pending_task = asyncio.create_task(_wait_until_released())
+        pending_tasks = {pending_task}
+        try:
+            await _handle_relay_message(
+                ws,
+                http,
+                json.dumps({"type": "request", "id": OVERFLOW_MESSAGE_ID, "method": "GET", "path": CAMERA_PATH}),
+                pending_tasks,
+                pending_tasks.discard,
+                asyncio.Semaphore(1),
+                relay_state=RelayRuntimeState(),
+                max_pending_commands=1,
+            )
+        finally:
+            blocker.set()
+            await asyncio.gather(pending_task, return_exceptions=True)
+
+        payload = json.loads(ws.send.call_args.args[0])
+        assert payload["id"] == OVERFLOW_MESSAGE_ID
+        assert payload["status"] == 429
+        assert len(pending_tasks) == 1
 
 
 class TestHandleCommand:

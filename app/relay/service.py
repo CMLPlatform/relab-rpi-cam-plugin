@@ -235,6 +235,7 @@ async def _receive_loop(
                     _on_task_done,
                     command_semaphore,
                     relay_state=relay_state,
+                    max_pending_commands=app_settings.relay_max_pending_commands,
                 )
         except asyncio.CancelledError:
             await _drain_pending_tasks(pending_tasks, cancel=True)
@@ -259,6 +260,7 @@ async def _handle_relay_message(
     command_semaphore: asyncio.Semaphore,
     *,
     relay_state: RelayRuntimeState,
+    max_pending_commands: int,
 ) -> None:
     if isinstance(raw, bytes):
         logger.warning("Unexpected binary frame from backend; ignoring.", extra=build_log_extra())
@@ -286,6 +288,13 @@ async def _handle_relay_message(
     # Only real command traffic resets the idle timer — pings and noise don't
     # mean "a user is watching", so we don't hibernate on pings alone.
     relay_state.mark_activity()
+    if len(pending_tasks) >= max_pending_commands:
+        msg_id = msg.get("id")
+        if isinstance(msg_id, str) and msg_id:
+            await _send_error(ws, msg_id, 429, "Too many pending relay commands.")
+        else:
+            logger.warning("Dropping relay command because the pending command limit was reached.")
+        return
     task = asyncio.create_task(_run_command(ws, http, msg, command_semaphore))
     pending_tasks.add(task)
     task.add_done_callback(on_task_done)
