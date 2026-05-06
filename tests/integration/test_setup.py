@@ -8,6 +8,7 @@ import pytest
 from httpx import AsyncClient
 from pydantic import HttpUrl
 
+from app.auth.dependencies import create_session
 from app.core.runtime import AppRuntime
 from app.core.settings import DEFAULT_PAIRING_BACKEND_URL, settings
 from app.pairing.routers import setup as setup_router
@@ -31,17 +32,19 @@ PAIRED_SUCCESS_TEXT = "Connecting now."
 THIS_IP_PLACEHOLDER = "&lt;this-ip&gt;"
 COPY_PAIRING_CODE_LABEL = "Copy pairing code"
 NEW_PAIRING_CODE_LABEL = "Generate a new pairing code"
+NEW_PAIRING_CODE_BUTTON = 'class="setup-refresh-code-btn"'
+UNPAIR_BUTTON_CALL = 'onclick="unpair()"'
 LATENCY_BOOST_TEXT = "Native RELab app latency boost"
 STANDALONE_CLIENTS_TEXT = "Browser and script access"
 LOCAL_KEY_WARNING_TEXT = "Relay pairing still uses the 6-character code above."
 LOCAL_KEY_NOTE_TEXT = "Direct LAN access for browser, app, and scripts."
 LOCAL_API_KEY_TEXT = "Local API key"
+SETUP_LOCAL_API_KEY_VALUE = "test-local-api-key"
 HLS_PREVIEW_TEXT = "HLS preview"
 PREVIEW_HLS_URL = f"http://{THIS_IP_PLACEHOLDER}:8018/preview/hls/cam-preview/index.m3u8"
 API_TEXT = "API"
 PAIRING_EXPIRY_ATTR = "data-pairing-expiry"
 PAIRING_TTL_ATTR = 'data-ttl-ms="600000"'
-UNPAIR_FUNCTION_CALL = "unpair()"
 PAIRING_REFRESH_HINT_TEXT = "Refresh after pairing or unpairing to see the latest state."
 SETUP_ADVANCED_OPEN = '<details class="setup-advanced" open'
 SETUP_PAIRING_INSTRUCTION = "Enter this code in ReLab."
@@ -178,8 +181,24 @@ class TestSetupPage:
         assert SETUP_PAIRING_INSTRUCTION in resp.text
         assert PAIRING_REFRESH_HINT_TEXT in resp.text
         assert COPY_PAIRING_CODE_LABEL in resp.text
-        assert NEW_PAIRING_CODE_LABEL in resp.text
+        assert NEW_PAIRING_CODE_BUTTON not in resp.text
         assert PAIRED_TEXT not in resp.text
+
+    async def test_setup_page_shows_pairing_refresh_to_browser_sessions(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        """Authenticated setup visitors should see the pairing-code refresh action."""
+        self._pairing_state.status = "waiting"
+        self._pairing_state.code = PAIRING_CODE
+        self._pairing_state.error = None
+        self._pairing_state.expires_at = datetime.now(UTC) + timedelta(minutes=10)
+        client.cookies.set(settings.session_cookie_name, create_session())
+        resp = await client.get("/setup")
+        assert resp.status_code == 200
+        assert COPY_PAIRING_CODE_LABEL in resp.text
+        assert NEW_PAIRING_CODE_BUTTON in resp.text
+        assert NEW_PAIRING_CODE_LABEL in resp.text
 
     async def test_setup_page_shows_pairing_error(
         self,
@@ -206,11 +225,11 @@ class TestSetupPage:
         assert PAIRED_TEXT in resp.text
         assert PAIRED_SUCCESS_TEXT in resp.text
 
-    async def test_setup_page_shows_unpair_button_when_relay_enabled(
+    async def test_setup_page_hides_unpair_button_from_unauthenticated_visitors(
         self,
         unauthed_client: AsyncClient,
     ) -> None:
-        """Unpair button is visible when relay credentials are configured."""
+        """Public setup visibility should not expose actions that require auth."""
         self._runtime.runtime_state.set_relay_credentials(
             relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
             relay_camera_id="cam-1",
@@ -220,7 +239,25 @@ class TestSetupPage:
         )
         resp = await unauthed_client.get("/setup")
         assert resp.status_code == 200
-        assert UNPAIR_FUNCTION_CALL in resp.text
+        assert UNPAIR_BUTTON_CALL not in resp.text
+        assert PAIRING_BACKEND_URL_TEXT in resp.text
+
+    async def test_setup_page_shows_unpair_button_to_browser_sessions(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        """Authenticated setup visitors should see the unpair action when relay credentials are configured."""
+        self._runtime.runtime_state.set_relay_credentials(
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
+            relay_camera_id="cam-1",
+            relay_auth_scheme="device_assertion",
+            relay_key_id="key-1",
+            relay_private_key_pem="pem",
+        )
+        client.cookies.set(settings.session_cookie_name, create_session())
+        resp = await client.get("/setup")
+        assert resp.status_code == 200
+        assert UNPAIR_BUTTON_CALL in resp.text
         assert PAIRING_BACKEND_URL_TEXT in resp.text
 
     async def test_setup_page_keeps_local_access_collapsed_by_default(
@@ -241,22 +278,35 @@ class TestSetupPage:
         self,
         unauthed_client: AsyncClient,
     ) -> None:
-        """Local access values should render in dedicated cards without raw line-break layout."""
-        self._runtime.runtime_state.set_local_api_key("test-local-api-key")
+        """Unauthenticated setup visitors should not see the local API key."""
+        self._runtime.runtime_state.set_local_api_key(SETUP_LOCAL_API_KEY_VALUE)
         resp = await unauthed_client.get("/setup")
         assert resp.status_code == 200
-        assert LOCAL_API_KEY_TEXT in resp.text
+        assert LOCAL_API_KEY_TEXT not in resp.text
+        assert SETUP_LOCAL_API_KEY_VALUE not in resp.text
+
+    async def test_setup_page_shows_local_api_key_to_browser_sessions(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        """The setup page should reveal the local API key only to an authenticated browser session."""
+        self._runtime.runtime_state.set_local_api_key(SETUP_LOCAL_API_KEY_VALUE)
+        client.cookies.set(settings.session_cookie_name, create_session())
+        resp = await client.get("/setup")
+        assert resp.status_code == 200
+        assert SETUP_LOCAL_API_KEY_VALUE in resp.text
         assert HLS_PREVIEW_TEXT in resp.text
         assert PREVIEW_HLS_URL in resp.text
         assert API_TEXT in resp.text
 
     async def test_setup_page_falls_back_to_this_ip_placeholder_when_no_mdns_name(
         self,
-        unauthed_client: AsyncClient,
+        client: AsyncClient,
     ) -> None:
         """The direct-connect instructions should not claim a bogus LAN IP."""
         self._runtime.runtime_state.set_local_api_key("test-local-api-key")
-        resp = await unauthed_client.get("/setup")
+        client.cookies.set(settings.session_cookie_name, create_session())
+        resp = await client.get("/setup")
         assert resp.status_code == 200
         assert THIS_IP_PLACEHOLDER in resp.text
         assert SETUP_LOCAL_DNS_SUFFIX not in resp.text
@@ -295,19 +345,24 @@ class TestPairingState:
 class TestUnpair:
     """Tests for DELETE /pairing."""
 
-    async def test_unpair_returns_204(self, unauthed_client: AsyncClient) -> None:
+    async def test_unpair_rejects_unauthenticated_requests(self, unauthed_client: AsyncClient) -> None:
+        """Local network access alone should not allow unpairing."""
+        resp = await unauthed_client.delete("/pairing")
+        assert resp.status_code == 401
+
+    async def test_unpair_returns_204(self, client: AsyncClient) -> None:
         """Endpoint returns 204 No Content immediately."""
         with (
             patch("app.pairing.routers.setup.delete_relay_credentials"),
             patch("app.pairing.routers.setup.clear_runtime_relay_credentials"),
             patch("app.pairing.routers.setup.asyncio.sleep"),
         ):
-            resp = await unauthed_client.delete("/pairing")
+            resp = await client.delete("/pairing")
         assert resp.status_code == 204
 
     async def test_unpair_deletes_credentials_and_clears_settings(
         self,
-        unauthed_client: AsyncClient,
+        client: AsyncClient,
     ) -> None:
         """Credentials file is deleted and runtime settings are cleared after the brief delay."""
         deleted: list[bool] = []
@@ -329,7 +384,7 @@ class TestUnpair:
                 return_value=runtime,
             ),
         ):
-            resp = await unauthed_client.delete("/pairing")
+            resp = await client.delete("/pairing")
             await asyncio.wait_for(runtime.created_tasks[0], timeout=1)
 
         assert resp.status_code == 204
@@ -340,15 +395,20 @@ class TestUnpair:
 class TestPairingCodeRefresh:
     """Tests for POST /pairing/code."""
 
-    async def test_refresh_returns_204(self, unauthed_client: AsyncClient) -> None:
+    async def test_refresh_rejects_unauthenticated_requests(self, unauthed_client: AsyncClient) -> None:
+        """Local network access alone should not allow pairing-code rotation."""
+        resp = await unauthed_client.post("/pairing/code")
+        assert resp.status_code == 401
+
+    async def test_refresh_returns_204(self, client: AsyncClient) -> None:
         """Endpoint returns 204 No Content immediately."""
         with patch("app.pairing.routers.setup.asyncio.sleep"):
-            resp = await unauthed_client.post("/pairing/code")
+            resp = await client.post("/pairing/code")
         assert resp.status_code == 204
 
     async def test_refresh_restarts_pairing_without_deleting_credentials(
         self,
-        unauthed_client: AsyncClient,
+        client: AsyncClient,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Refreshing the code should restart pairing without touching credentials."""
@@ -376,7 +436,7 @@ class TestPairingCodeRefresh:
                 return_value=runtime,
             ),
         ):
-            resp = await unauthed_client.post("/pairing/code")
+            resp = await client.post("/pairing/code")
             await asyncio.wait_for(runtime.created_tasks[0], timeout=1)
 
         assert resp.status_code == 204

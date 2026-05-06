@@ -6,9 +6,10 @@ import asyncio
 import logging
 
 import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+from app.auth.dependencies import has_valid_session, verify_request
 from app.backend.client import notify_self_unpair
 from app.core.bootstrap import clear_runtime_relay_credentials
 from app.core.runtime import get_request_runtime
@@ -59,6 +60,7 @@ async def setup_page(request: Request) -> HTMLResponse:
     lan_ips = [u.removeprefix("http://").removesuffix(":8018") for u in candidate_urls] or ["<this-ip>"]
     connection_host = lan_ips[0]
     pairing_backend_reachable = runtime.runtime_state.relay_enabled or await _pairing_backend_reachable()
+    operator_authenticated = has_valid_session(request.cookies.get(settings.session_cookie_name))
 
     return templates.TemplateResponse(
         request,
@@ -76,7 +78,8 @@ async def setup_page(request: Request) -> HTMLResponse:
             "status_error": _STATUS_ERROR,
             "pairing_code_ttl_seconds": PAIRING_CODE_TTL_SECONDS,
             "local_mode_enabled": settings.local_mode_enabled,
-            "local_api_key": runtime.runtime_state.local_api_key,
+            "local_api_key": runtime.runtime_state.local_api_key if operator_authenticated else "",
+            "operator_authenticated": operator_authenticated,
             "connection_host": connection_host,
             "lan_ips": lan_ips,
             "pairing_backend_reachable": pairing_backend_reachable,
@@ -97,7 +100,7 @@ async def pairing_state(request: Request) -> JSONResponse:
     )
 
 
-@router.delete("/pairing", status_code=204)
+@router.delete("/pairing", status_code=204, dependencies=[Depends(verify_request)])
 async def unpair(request: Request) -> Response:
     """Clear relay credentials and restart the pairing flow.
 
@@ -143,7 +146,7 @@ async def unpair(request: Request) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/pairing/code", status_code=204)
+@router.post("/pairing/code", status_code=204, dependencies=[Depends(verify_request)])
 async def refresh_pairing_code(request: Request) -> Response:
     """Rotate the active pairing code without deleting credentials.
 

@@ -313,7 +313,9 @@
           <span class="setup-debug__text">Relay is connected and the camera is ready for remote access.</span>
         </div>
         <div class="setup-actions">
+          {% if operator_authenticated %}
           <button class="btn btn--danger" onclick="unpair()">Unpair</button>
+          {% endif %}
         </div>
       </div>
       <div class="setup-inline-metrics">
@@ -350,6 +352,7 @@
             </svg>
             <span class="sr-only">Copy code</span>
           </button>
+          {% if operator_authenticated %}
           <button class="setup-refresh-code-btn" type="button" aria-label="Generate a new pairing code"
             title="Generate a new pairing code" onclick="refreshPairingCode(this)">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -360,6 +363,7 @@
             </svg>
             <span class="sr-only">New code</span>
           </button>
+          {% endif %}
         </div>
       </div>
       <div class="pairing-action-status" id="pairing-action-status" aria-live="polite"></div>
@@ -520,6 +524,7 @@
       </details>
     </div>
   </section>
+  {% if operator_authenticated %}
   <dialog id="unpair-dialog" class="setup-dialog">
     <h3>Unpair this camera?</h3>
     <p>It will disconnect from the backend and re-enter pairing mode. You can re-pair it at any time.</p>
@@ -528,5 +533,6 @@
       <button class="btn btn--danger" id="unpair-confirm-btn" onclick="confirmUnpair()">Unpair</button>
     </div>
   </dialog>
+  {% endif %}
 </main>
 {% endblock %}

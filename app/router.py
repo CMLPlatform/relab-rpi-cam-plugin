@@ -18,7 +18,7 @@ router = APIRouter()
 for r in [auth_router, landing_router]:
     router.include_router(r, include_in_schema=False)
 
-# Unauthenticated surfaces: HLS preview, setup UI, local key, metrics.
+# Unauthenticated surfaces: HLS preview, setup UI, metrics.
 router.include_router(camera.public_router)
 router.include_router(pairing.public_router)
 router.include_router(system.public_router)
