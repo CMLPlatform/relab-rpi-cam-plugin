@@ -46,6 +46,23 @@ _BINARY_OCTET = "octet-stream"
 _BINARY_VIDEO = "video"
 _RELAY_WS_MAX_SIZE = 1_048_576
 _RELAY_WS_MAX_QUEUE = 8
+_RELAY_COMMAND_FORBIDDEN_DETAIL = "Relay command is not allowed."
+_RELAY_ALLOWED_PATHS_BY_METHOD = {
+    "DELETE": frozenset({"/pairing", "/streams/youtube"}),
+    "GET": frozenset(
+        {
+            "/camera",
+            "/camera/controls",
+            "/streams/youtube",
+            "/system/local-access",
+            "/system/telemetry",
+        }
+    ),
+    "PATCH": frozenset({"/camera/controls"}),
+    "POST": frozenset({"/captures", "/preview/start", "/preview/stop", "/streams/youtube"}),
+    "PUT": frozenset({"/camera/focus"}),
+}
+_RELAY_ALLOWED_PATH_PREFIXES_BY_METHOD = {"GET": ("/preview/hls/",)}
 
 
 class _AsyncWebSocket(Protocol):
@@ -316,6 +333,10 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
 
     logger.debug("Relay command %s: %s %s", msg_id, method, path)
 
+    if not _relay_command_is_allowed(method, path):
+        await _send_error(ws, msg_id, 403, _RELAY_COMMAND_FORBIDDEN_DETAIL)
+        return
+
     try:
         response = await http.request(
             method,
@@ -365,6 +386,18 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
 async def _send_error(ws: _WebSocketConnection, msg_id: str, status: int, detail: str) -> None:
     response = RelayResponseEnvelope(id=msg_id, status=status, has_binary=False, data={"detail": detail})
     await ws.send(response.model_dump_json())
+
+
+def _relay_command_is_allowed(method: str, path: str) -> bool:
+    """Return whether a backend relay command may reach the local API."""
+    if not path.startswith("/"):
+        return False
+
+    normalized_path = path.rstrip("/") or "/"
+    if normalized_path in _RELAY_ALLOWED_PATHS_BY_METHOD.get(method, frozenset()):
+        return True
+
+    return any(path.startswith(prefix) for prefix in _RELAY_ALLOWED_PATH_PREFIXES_BY_METHOD.get(method, ()))
 
 
 def _extract_trace_headers(headers: object) -> dict[str, str]:

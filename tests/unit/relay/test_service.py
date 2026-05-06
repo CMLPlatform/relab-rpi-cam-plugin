@@ -42,6 +42,13 @@ HTTP_502_SUMMARY = "HTTP 502"
 NETWORK_DOWN = "network down"
 RELAY_RECONNECT_LOG = "Relay connection lost (HTTP 502). Reconnecting in 2s"
 TRACEBACK_MARKER = "Traceback"
+LOCAL_ACCESS_PATH = "/system/local-access"
+CAMERA_PATH = "/camera"
+PREVIEW_HLS_SEGMENT_PATH = "/preview/hls/cam-preview/seg.mp4"
+BLOCKED_RELAY_PATH = "/auth/login"
+BLOCKED_RELATIVE_RELAY_PATH = "auth/login"
+BLOCKED_RELAY_METHOD = "POST"
+BLOCKED_RELAY_DETAIL = "Relay command is not allowed."
 
 
 class TestRelayServiceConfig:
@@ -233,7 +240,7 @@ class TestHandleCommand:
                 {
                     "id": "msg-trace",
                     "method": "GET",
-                    "path": "/json",
+                    "path": LOCAL_ACCESS_PATH,
                     "headers": {
                         "TraceParent": TRACEPARENT,
                         "tracestate": TRACESTATE,
@@ -254,7 +261,7 @@ class TestHandleCommand:
         transport = httpx.MockTransport(_binary_handler)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
             ws = AsyncMock()
-            await _handle_command(ws, http, {"id": "msg-1", "method": "GET", "path": "/image"})
+            await _handle_command(ws, http, {"id": "msg-1", "method": "GET", "path": CAMERA_PATH})
             assert ws.send.await_count == 1
             ws.send_bytes.assert_awaited_once_with(b"abc")
 
@@ -270,7 +277,7 @@ class TestHandleCommand:
             await _handle_command(
                 ws,
                 http,
-                {"id": "msg-hls", "method": "GET", "path": "/preview/hls/cam-preview/seg.mp4"},
+                {"id": "msg-hls", "method": "GET", "path": PREVIEW_HLS_SEGMENT_PATH},
             )
 
         header = json.loads(ws.send.call_args.args[0])
@@ -287,7 +294,7 @@ class TestHandleCommand:
         transport = httpx.MockTransport(_text_handler)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
             ws = AsyncMock()
-            await _handle_command(ws, http, {"id": "msg-2", "method": "GET", "path": "/json"})
+            await _handle_command(ws, http, {"id": "msg-2", "method": "GET", "path": LOCAL_ACCESS_PATH})
             ws.send.assert_awaited_once()
             payload = json.loads(ws.send.call_args.args[0])
             assert payload["data"] == {"ok": True}
@@ -298,7 +305,7 @@ class TestHandleCommand:
         http.request = AsyncMock(side_effect=httpx.ConnectError(RELAY_COMMAND_ERROR))
         ws = AsyncMock()
 
-        await _handle_command(ws, http, {"id": "msg-3", "method": "GET", "path": "/broken"})
+        await _handle_command(ws, http, {"id": "msg-3", "method": "GET", "path": CAMERA_PATH})
 
         payload = json.loads(ws.send.call_args.args[0])
         assert payload["status"] == 503
@@ -314,8 +321,40 @@ class TestHandleCommand:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
             ws = AsyncMock()
             with caplog.at_level("WARNING"):
-                await _handle_command(ws, http, {"id": "msg-4", "method": "GET", "path": "/forbidden"})
+                await _handle_command(ws, http, {"id": "msg-4", "method": "GET", "path": CAMERA_PATH})
         assert RELAY_403_FRAGMENT in caplog.text
+
+    async def test_blocks_unexpected_relay_command_path(self) -> None:
+        """Relay commands should only reach known local API endpoints."""
+        http = AsyncMock()
+        ws = AsyncMock()
+
+        await _handle_command(
+            ws,
+            http,
+            {"id": "msg-blocked", "method": BLOCKED_RELAY_METHOD, "path": BLOCKED_RELAY_PATH},
+        )
+
+        http.request.assert_not_called()
+        payload = json.loads(ws.send.call_args.args[0])
+        assert payload["status"] == 403
+        assert payload["data"]["detail"] == BLOCKED_RELAY_DETAIL
+
+    async def test_blocks_relative_relay_command_path(self) -> None:
+        """Relay commands should not dispatch relative paths into the local client."""
+        http = AsyncMock()
+        ws = AsyncMock()
+
+        await _handle_command(
+            ws,
+            http,
+            {"id": "msg-relative", "method": BLOCKED_RELAY_METHOD, "path": BLOCKED_RELATIVE_RELAY_PATH},
+        )
+
+        http.request.assert_not_called()
+        payload = json.loads(ws.send.call_args.args[0])
+        assert payload["status"] == 403
+        assert payload["data"]["detail"] == BLOCKED_RELAY_DETAIL
 
 
 class TestExtractTraceHeaders:
