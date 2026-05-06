@@ -23,10 +23,25 @@ if TYPE_CHECKING:
 
 RATE_LIMIT_METHOD = "POST"
 RATE_LIMIT_PATH = "/auth/login"
+_HOMEPAGE_PATH = "/"
+_SETUP_PATH = "/setup"
+_DOCS_PATH_PREFIX = "/docs"
 
+_HOMEPAGE_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://cdn.jsdelivr.net; "
+    "worker-src 'self' blob:; "
+    "style-src 'self'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
 _SETUP_CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "script-src 'self'; "
     "worker-src 'self' blob:; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
@@ -48,12 +63,7 @@ _DOCS_CSP = (
     "base-uri 'self'; "
     "form-action 'self'"
 )
-_DEFAULT_CSP = (
-    "default-src 'none'; "
-    "frame-ancestors 'none'; "
-    "base-uri 'none'; "
-    "form-action 'none'"
-)
+_DEFAULT_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 _HTTPS_SCHEME = "https"
 _HTTP_SCOPE_TYPE = "http"
 _HTTP_RESPONSE_START = "http.response.start"
@@ -141,7 +151,9 @@ async def request_context_middleware(request: Request, call_next: Callable) -> R
 
 def _content_security_policy_for_path(path: str) -> str:
     """Return the appropriate CSP for the requested route."""
-    if path in {"/", "/setup"}:
+    if path == _HOMEPAGE_PATH:
+        return _HOMEPAGE_CSP
+    if path == _SETUP_PATH:
         return _SETUP_CSP
     if path.startswith("/docs"):
         return _DOCS_CSP
