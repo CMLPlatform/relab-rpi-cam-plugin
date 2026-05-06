@@ -1,221 +1,242 @@
-# Installation & Setup Guide
+# Installation And Setup Guide
 
-Complete setup instructions for the RPI Camera Plugin.
+This guide is for operators installing and running the RPI Camera Plugin on a Raspberry Pi.
 
 ## Requirements
 
 ### Hardware
 
-- Raspberry Pi 5 (recommended) or Pi 4
-- Raspberry Pi Camera Module 3 (recommended) or v2
-- MicroSD card (8GB or larger)
-- Power supply (wall adapter or power bank)
-- Network connection (Ethernet or WiFi)
-- Camera mount (tripod, clamp, or custom)
+- Raspberry Pi 5 or Raspberry Pi 4
+- Raspberry Pi Camera Module 3 or v2
+- MicroSD card, 8 GB or larger
+- Power supply
+- Ethernet or WiFi network
+- Camera mount
 
 ### Software
 
-- Raspberry Pi OS (64-bit recommended)
+- Raspberry Pi OS 64-bit
 - Python 3.13+
-- Network connectivity to RELab platform
+- Docker Compose for the recommended runtime
+- Network access to the RELab backend for paired mode
 
-## Step 1: Prepare Your Raspberry Pi
+## Prepare The Pi
 
-1. **Install Raspberry Pi OS**\
-   Follow the [official installation guide](https://www.raspberrypi.com/documentation/computers/getting-started.html#installing-the-operating-system).
+1. Install Raspberry Pi OS using the [official Raspberry Pi guide](https://www.raspberrypi.com/documentation/computers/getting-started.html#installing-the-operating-system).
 
-1. **Connect camera module**\
-   Attach the camera to the Pi's camera port. See the [camera module guide](https://www.raspberrypi.com/documentation/accessories/camera.html#connect-the-camera) for alignment.
+1. Connect the camera module using the [camera module guide](https://www.raspberrypi.com/documentation/accessories/camera.html#connect-the-camera).
 
-1. **Test camera**
+1. Confirm the camera is visible:
 
    ```sh
    rpicam-hello
    ```
 
-1. **Clone repository**
+1. Clone the plugin:
 
    ```sh
    git clone https://github.com/CMLPlatform/relab-rpi-cam-plugin.git
    cd relab-rpi-cam-plugin
-   ```
-
-## Step 2: Configure Connection
-
-The plugin connects to the RELab backend via **WebSocket relay**. The Pi initiates an outbound connection — no public IP or port forwarding is needed.
-
-Configuration precedence at startup:
-
-1. environment variables from `.env`
-1. credentials persisted at `~/.config/relab/relay_credentials.json`
-1. generated defaults for local-only secrets (e.g. `local_api_key`)
-
-### Option A: Automatic Pairing (recommended)
-
-The simplest approach. No credential exchange required.
-
-1. **Create `.env` file**
-
-   ```sh
    cp .env.example .env
    ```
 
-1. **Set the pairing backend URL**
+## Paired RELab Mode
 
-   ```sh
-   PAIRING_BACKEND_URL=https://api.cml-relab.org
-   ```
+Paired mode connects the Pi to RELab through an outbound WebSocket relay. The Pi does not need a public IP address or inbound port forwarding.
 
-1. **Start the plugin** (see [Step 3](#step-3-running-the-application)).
-
-1. **Read the pairing code**
-   Use either of these supported setup paths:
-
-   - Browser UI: visit `http://your-pi-ip:8018/setup`
-   - Headless over SSH/logs: watch for the `PAIRING READY` log line
-
-   If the code needs to be replaced, use the `Generate a new pairing code` button on `/setup`. It rotates the current code without removing relay credentials.
-
-1. **Pair in RELab app**\
-   Go to Cameras > Add Camera and enter the pairing code.
-
-1. **Done**\
-   The Pi automatically receives credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
-
-   This automatic pairing flow is for the native RELab app. If you open the setup page from the RELab web frontend over HTTPS, the browser will block any attempt to probe the Pi's HTTP API as mixed content, so the web UI cannot auto-switch to direct mode.
-
-When you run the plugin via Docker Compose, `compose.yml` persists this directory with a named
-volume at `/home/rpicam/.config/relab`, so paired relay credentials survive container restarts.
-
-## Step 3: Running the Application
-
-### Docker (recommended)
-
-1. **Generate device mapping**
-
-   ```sh
-   ./scripts/generate_compose_override.py > compose.override.yml
-   ```
-
-   The generated override targets the existing `app` service from `compose.yml`, so Compose can merge the device mappings into the plugin container.
-
-1. **Start the stack**
-
-   ```sh
-   docker compose build
-   docker compose up -d
-   ```
-
-   View logs with:
-
-   ```sh
-   docker compose logs -f app
-   ```
-
-   To ship logs from a Pi to an external Loki-compatible collector, add to `.env`:
-
-   ```sh
-   COMPOSE_PROFILES=observability-ship
-   OBSERVABILITY_INSTANCE=pi-01
-   LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
-   ```
-
-   If you do not enable `observability-ship`, the app still writes bounded Docker logs and structured 7-day rotating logs to the mounted `app_logs` volume. Local Loki/Grafana is not bundled with this plugin; use a central observability stack when you need fleet log browsing.
-
-### Direct on Pi
-
-1. **Prepare environment**
-
-   ```sh
-   ./scripts/local_setup.sh
-   ```
-
-1. **Start server**
-
-   ```sh
-   uv run fastapi run app/main.py --host 0.0.0.0 --port 8018
-   ```
-
-Useful local commands from the repo root:
+Set the pairing backend URL in `.env`:
 
 ```sh
-just dev
-just lint
-just typecheck
-just test
+PAIRING_BACKEND_URL=https://api.cml-relab.org
+```
+
+Start the plugin with Docker Compose:
+
+```sh
+./scripts/generate_compose_override.py > compose.override.yml
+docker compose build
+docker compose up -d
+```
+
+View logs:
+
+```sh
+docker compose logs -f app
+```
+
+### Pair The Camera
+
+When pairing mode is active, read the code from either surface:
+
+- browser UI: `http://your-pi-ip:8018/setup`
+- logs: the `PAIRING READY` banner
+
+Treat `/setup` and pairing logs as local/operator-only during pairing. The code is a short-lived bootstrap credential; anyone who can reach either surface during its 10-minute window can try to claim the camera.
+
+Enter the code in the native RELab app under Cameras > Add Camera. The Pi receives relay credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
+
+To rotate the code without deleting relay credentials, use **Generate a new pairing code** on `/setup`.
+
+Docker Compose stores runtime credentials in a named volume mounted at `/home/rpicam/.config/relab`, so paired credentials survive container restarts.
+
+The HTTPS-served RELab web frontend cannot auto-probe the Pi's plain-HTTP local API because browsers block mixed content. Use the native app for pairing and direct-mode setup.
+
+## Standalone Mode
+
+Standalone mode stores captures in an S3-compatible bucket instead of the RELab backend. The bundled standalone profile starts a local RustFS sidecar.
+
+Set these values in `.env`:
+
+```sh
+APP_BUILD_TARGET=runtime-standalone
+COMPOSE_PROFILES=standalone
+APP_ENV=development
+
+IMAGE_SINK=s3
+S3_ENDPOINT_URL=http://host.docker.internal:9000
+S3_BUCKET=rpi-cam
+S3_ACCESS_KEY_ID=rustfsadmin
+S3_SECRET_ACCESS_KEY=change-me-to-a-strong-password
+RUSTFS_SECRET_KEY=change-me-to-a-strong-password
+```
+
+Start the stack:
+
+```sh
+docker compose build
+docker compose up -d
+```
+
+Runtime surfaces:
+
+- Camera API: `http://<pi-lan-ip>:8018`
+- Setup UI: `http://<pi-lan-ip>:8018/setup`
+- RustFS console: `http://<pi-lan-ip>:9001`
+- Captures: `http://<pi-lan-ip>:9000/rpi-cam/`
+
+For an external S3-compatible service such as Backblaze B2, Cloudflare R2, Wasabi, or AWS S3, set `S3_ENDPOINT_URL`, credentials, and `S3_PUBLIC_URL_TEMPLATE`. Remote production S3 endpoints require HTTPS. Keep `APP_ENV=development` for local HTTP storage only.
+
+Set `COMPOSE_PROFILES=` to skip the RustFS sidecar when using a managed bucket.
+
+## Local Direct Mode
+
+Local direct mode is enabled by default. On first boot, the plugin generates and persists a local API key. Local clients call the Pi API with:
+
+```sh
+X-API-Key: <local-api-key>
+```
+
+Paired RELab apps can fetch the key through the relay and switch to LAN/Ethernet direct access for lower preview latency. Custom clients can use the key without pairing.
+
+Retrieve the key from an SSH session:
+
+```sh
 just show-key
 ```
 
-When pairing mode is active, the terminal prints a line like:
+Or read it directly from the credentials file:
 
-```text
-══════════════════════════════════════════════════════
-  PAIRING READY
-  PAIRING CODE: ABC123
-  Setup    : /setup
-  Backend  : https://api.cml-relab.org
-  Claim in : RELab app > Cameras > Add Camera
-══════════════════════════════════════════════════════
+```sh
+python3 -c "import json,pathlib; print(json.loads((pathlib.Path.home()/'.config/relab/relay_credentials.json').read_text()).get('local_api_key',''))"
 ```
 
-## Testing
+Disable direct local API access with:
 
-Once running, verify at:
+```sh
+LOCAL_MODE_ENABLED=false
+```
 
-- **Setup & Status:** `http://your-pi-ip:8018/setup`
-- **API Docs:** `http://your-pi-ip:8018/docs`
+Network notes:
 
-For headless operators, you can also read the pairing code from logs:
+- Ethernet link-local addressing (`169.254.x.x`) works when no DHCP server is present.
+- USB gadget mode applies to Raspberry Pi Zero 2W and some Raspberry Pi 4 revisions, not Raspberry Pi 5.
+- mDNS is optional. Install `avahi-daemon` and advertise `_relab-rpi-cam._tcp` on port 8018 to reach the Pi at `<hostname>.local`.
+
+## Direct Python Run
+
+For a non-Docker run on the Pi:
+
+```sh
+./scripts/local_setup.sh
+uv run fastapi run app/main.py --host 0.0.0.0 --port 8018
+```
+
+## Verify The Service
+
+Once running, check:
+
+- setup and status: `http://your-pi-ip:8018/setup`
+- API docs: `http://your-pi-ip:8018/docs`
+- HLS preview: `http://your-pi-ip:8018/preview/hls/cam-preview/index.m3u8`
+
+For headless operation, read pairing status from:
 
 - Docker Compose: `docker compose logs app`
-- Systemd/journald: `journalctl -u relab-rpi-cam -f`
-- Direct shell run: read the boxed `PAIRING READY` banner in the terminal output
+- systemd/journald: `journalctl -u relab-rpi-cam -f`
+- direct shell run: the `PAIRING READY` terminal banner
 
 ## Observability
 
-- structured JSON logs always exist
-- OTLP tracing is opt-in via `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT`
-- the repo does not bundle a full OTLP collector/pipeline configuration
+Structured JSON logs are always written. Docker logs are bounded by Compose config, and rotating file logs are written to the mounted `app_logs` volume.
+
+To ship logs to a Loki-compatible collector, add:
+
+```sh
+COMPOSE_PROFILES=observability-ship
+OBSERVABILITY_INSTANCE=pi-01
+LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
+```
+
+Tracing is opt-in:
+
+```sh
+OTEL_ENABLED=true
+OTEL_EXPORTER_OTLP_ENDPOINT=https://your-observability-host:4318/v1/traces
+```
+
+Remote production OTLP endpoints require HTTPS. Plaintext HTTP is accepted only for loopback collectors or when `APP_ENV=development`.
+
+Local Loki/Grafana and OTLP collectors are not bundled with this plugin.
+
+Profiles can be combined:
+
+```sh
+COMPOSE_PROFILES=standalone,observability-ship
+```
 
 ## Troubleshooting
 
-### Camera not detected
+### Camera Not Detected
 
 ```sh
 rpicam-hello --list-cameras
 ```
 
-Verify camera is properly connected to the CSI port.
+Check the CSI cable orientation, camera seating, and camera module compatibility.
 
-### API won't start
+### API Does Not Start
 
 - Check port 8018 availability: `sudo netstat -tlnp | grep :8018`
-- Try dev mode: `just dev`
-- Check logs for Python errors
+- Check logs: `docker compose logs app`
+- For direct runs, start with `uv run fastapi run app/main.py --host 0.0.0.0 --port 8018`
 
-### WebSocket relay won't connect
+### Relay Does Not Connect
 
-- Verify `~/.config/relab/relay_credentials.json` exists (created automatically after pairing)
-- Check Pi has outbound internet access
-- Check plugin logs: `docker compose logs app`
-- If `observability-ship` is enabled, inspect the external Loki/Grafana collector configured by `LOKI_PUSH_URL`.
+- Confirm `PAIRING_BACKEND_URL` points at the backend API origin.
+- Confirm the Pi has outbound internet access.
+- Confirm `~/.config/relab/relay_credentials.json` exists after pairing.
+- Check logs: `docker compose logs app`
+- If the backend sits behind Cloudflare, add a WAF bypass for `/v1/plugins/rpi-cam/pairing/*`, `/v1/plugins/rpi-cam/device/*`, and `/v1/plugins/rpi-cam/ws/connect`.
 
-### Pairing code not showing
+### Pairing Code Not Showing
 
-- Ensure `PAIRING_BACKEND_URL` is set in `.env`
+- Confirm `PAIRING_BACKEND_URL` is set in `.env`.
+- Remove `~/.config/relab/relay_credentials.json` if pairing should restart.
+- Check `/setup` and the `PAIRING MODE` / `PAIRING READY` log lines.
+- In Docker, avoid `http://localhost:8011` for host services from inside the container. Use `http://host.docker.internal:8011`, the host LAN IP, or the real HTTPS API URL.
 
-- If you're using the RELab web frontend in a browser over HTTPS, direct-mode auto-detection will not work because the browser blocks HTTP requests to the Pi as mixed content. Use the native RELab app or read the pairing code from `/setup` or logs.
+### Poor Image Quality
 
-- If the plugin runs in Docker, `http://localhost:8011` points at the plugin container itself, not your host machine. Use `http://host.docker.internal:8011`, your host's LAN IP, or the real HTTPS API URL instead.
-
-- **403 on pairing or WebSocket connect?** If the backend sits behind Cloudflare, the machine-facing paths may be challenged. Add a WAF bypass rule for `/v1/plugins/rpi-cam/pairing/*`, `/v1/plugins/rpi-cam/device/*`, and `/v1/plugins/rpi-cam/ws/connect` on the relevant hosts.
-
-- Remove `~/.config/relab/relay_credentials.json` if it exists (pairing is skipped when credentials present)
-
-- Check `/setup` or look for the `PAIRING MODE` and `PAIRING READY` log lines
-
-### Poor image quality
-
-- Clean camera lens gently
-- Improve lighting at capture location
-- Check camera module connection
+- Clean the camera lens gently.
+- Improve lighting at the capture location.
+- Check the camera module connection.

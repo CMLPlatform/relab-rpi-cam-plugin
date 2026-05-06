@@ -1,286 +1,193 @@
 # Contributing
 
-Development guide for the RPI Camera Plugin.
+This document is for developers changing the plugin. For operator setup, see [INSTALL.md](INSTALL.md). For internal design, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Setup
+## Local Development
 
-### Local Development
-
-Prepare your development environment:
+Prepare the development environment:
 
 ```sh
 ./scripts/local_setup.sh --dev
 ```
 
-This installs dependencies, configures your venv, and sets up pre-commit hooks.
-
-### Running the Dev Server
-
-Start with hot reload:
+Start the API with reload:
 
 ```sh
 just dev
 ```
 
-The API will be available at `http://localhost:8018/docs`.
+The local API docs are available at `http://localhost:8018/docs`, and the setup UI is available at `http://localhost:8018/setup`.
 
-## Project Structure
+## Common Commands
 
-The app uses a **feature-first** layout: each domain is a self-contained package
-with its HTTP router, schemas, dependencies, exceptions, and services colocated.
-Cross-cutting infrastructure (relay, backend client, upload queue, image sinks,
-media pipeline) lives as peer packages at `app/` root.
-
-```
-app/
-  main.py                # FastAPI app creation + wiring
-  router.py              # Top-level HTTP router aggregator (public vs authed)
-  device_jwt.py          # Shared device-assertion primitive
-
-  core/                  # Runtime + config + lifespan/middleware wiring
-    runtime.py, runtime_state.py, runtime_context.py
-    config.py, settings.py, bootstrap.py
-    lifespan.py, middleware.py, templates_config.py
-
-  # Features (own a router.py that exports `public_router` and `router`)
-  camera/                # Camera controls, captures, HLS preview, streaming
-    router.py, routers/{controls,captures,hls,stream}.py
-    schemas.py, dependencies.py, exceptions.py
-    services/{manager,backend,picamera2_backend,hardware_protocols,hardware_stubs}.py
-  pairing/               # Device pairing flow + setup UI + local-access + local-key
-    router.py, routers/{setup,local_access,local_key}.py
-    services/{service,client}.py
-  auth/                  # Session auth + request-auth dependency
-    router.py, dependencies.py
-  system/                # /metrics + /telemetry HTTP surfaces
-    router.py, routers/{metrics,telemetry}.py
-  frontend/              # Landing HTML page
-    router.py
-
-  # Infrastructure (cross-cutting — no HTTP routers)
-  backend/               # Backend HTTP client + factory + contract adapters
-  relay/                 # Outbound WebSocket relay service + observable state
-  media/                 # MediaMTX client, preview pipeline, stream helpers
-  upload/                # Persistent upload queue
-  image_sinks/           # Backend / S3 image sink implementations
-
-  observability/         # Logging, tracing (OTel), telemetry collector
-  utils/                 # Generic helpers (files, network, task orchestration)
-  workers/               # Process-wide background tasks (preview sleeper, thermal, etc.)
-  static/, templates/    # Web assets
-
-relab_rpi_cam_models/
-  src/                   # Shared device-seam DTOs (separately published PyPI package)
-
-tests/
-  unit/                  # Mirrors app/ domain layout (camera/, pairing/, …, core/)
-  integration/           # ASGI app, routes, and lifespan behavior (flat)
-  support/               # Shared fakes and fixtures
-
-scripts/
-  local_setup.sh                  # Local development setup
-  generate_compose_override.py    # Docker device mapping for the compose `app` service
-```
-
-## Testing
-
-### Run Tests
-
-```sh
-uv run pytest tests
-```
-
-Or via `just`:
-
-```sh
-just test
-just test-unit
-just test-integration
-just test-slowest
-```
-
-### Coverage
-
-Check test coverage:
-
-```sh
-uv run pytest --cov=app tests
-```
-
-The project aims for >80% coverage. CI will fail if coverage drops.
-
-## Code Quality
-
-Pre-commit hooks automatically run:
-
-- **Linting** — `ruff check` and `ruff format`
-- **Type checking** — `ty`
-
-Hooks run before every commit. To manually check:
-
-```sh
-pre-commit run --all-files
-```
-
-Recommended local commands:
+Prefer the `justfile` targets for local work:
 
 ```sh
 just lint
 just typecheck
 just test
+just test-unit
+just test-integration
 just test-slowest
 just check
 ```
 
-### Test suite policy
+Useful raw equivalents:
 
-The suite is intentionally split into two main layers:
+```sh
+uv run pytest tests
+uv run pytest tests/unit
+uv run pytest tests/integration
+uv run pytest --cov=app tests
+```
 
-- `tests/unit/`: pure function/service tests and small collaborators
-- `tests/integration/`: ASGI app, route, and lifespan behavior
+## Code Quality
 
-Custom pytest markers mirror that split:
+The repository uses:
+
+- Ruff for linting and formatting
+- `ty` for type checking
+- pytest for unit and integration tests
+- coverage threshold enforcement in the test gate
+
+Before opening a PR, run:
+
+```sh
+just check
+```
+
+Use `pre-commit run --all-files` when changing hooks or repository policy files.
+
+## Test Suite Policy
+
+The suite has two primary layers:
+
+- `tests/unit/`: pure functions, services, small collaborators, and focused worker behavior
+- `tests/integration/`: ASGI app, route, auth, middleware, and lifespan behavior
+
+Custom markers mirror that split:
 
 - `@pytest.mark.unit`
 - `@pytest.mark.integration`
-- `@pytest.mark.slow` for intentionally longer worker/lifecycle tests
+- `@pytest.mark.slow`
 
-Prefer these patterns when adding tests:
+Prefer these patterns:
 
-- use the shared runtime/app fixtures from `tests/conftest.py`
-- use typed helpers from `tests/support/` for recurring fakes
-- assert behavior and public contracts before asserting internal call choreography
-- patch private module internals only when there is no stable seam to target
+- use shared runtime/app fixtures from `tests/conftest.py`
+- use typed helpers from `tests/support/`
+- test externally meaningful behavior before internal call choreography
+- patch private module internals only when there is no stable seam
+- keep integration tests focused on route behavior and app wiring
 
-When cleaning up old tests:
+When removing or refactoring tests, keep coverage for public behavior and delete tests that only pin removed implementation details.
 
-- delete tests whose only purpose was covering removed implementation details
-- keep or replace tests that still protect externally meaningful behavior
-- avoid snapshot-style broad response dumps when explicit assertions are clearer
+## Project Layout
 
-## Common Tasks
+The app is feature-first. Each feature package owns its HTTP layer and local services. Shared infrastructure lives as peer packages at `app/` root.
 
-### Add a New Endpoint
+Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing runtime ownership, relay flow, pairing, auth, image sinks, upload queue behavior, or shared DTOs.
 
-1. Find or create the owning feature folder (e.g. `app/camera/`, `app/pairing/`)
-1. Add a sub-router under its `routers/` dir and register it in the feature's `router.py`
-1. Keep HTTP translation in the router; put orchestration in the feature's `services/`
-1. Attach schemas to `schemas.py` and feature-specific errors to `exceptions.py`
-1. Wire dependencies via runtime-aware helpers rather than importing process globals
-1. Mirror the test placement under `tests/unit/<feature>/`
+Key directories:
 
-### Update Camera Logic
+- `app/camera/` - controls, captures, HLS preview, streaming, and camera backends
+- `app/pairing/` - pairing flow, setup UI, local-access, and local-key routes
+- `app/auth/` - API-key/session auth and browser login/logout
+- `app/core/` - settings, runtime, lifespan, middleware, bootstrap, and templates config
+- `app/relay/` - outbound WebSocket relay service and state
+- `app/image_sinks/` - backend and S3 capture persistence
+- `relab_rpi_cam_models/` - shared backend-to-plugin DTO package
 
-- Camera backend contract: `app/camera/services/backend.py`
-- Camera orchestration: `app/camera/services/manager.py`
-- Picamera2 implementation: `app/camera/services/picamera2_backend.py`
-- Runtime-owned service wiring: `app/core/runtime.py`
-- Shared DTOs: `relab_rpi_cam_models/src/relab_rpi_cam_models/`
-- Tests: `tests/unit/camera/` and `tests/integration/`
+## Common Changes
 
-### Update Models
+### Add Or Change An Endpoint
 
-Shared cross-repo contract DTOs live in the `relab_rpi_cam_models` package. Keep runtime logic in the plugin repo. After contract changes:
+1. Find the owning feature package.
+1. Add or update a router under the feature's `routers/` directory.
+1. Register the router in the feature's `router.py`.
+1. Keep HTTP translation in the router and orchestration in services.
+1. Put request/response models in the feature's `schemas.py`.
+1. Mirror test placement under `tests/unit/<feature>/` or `tests/integration/`.
 
-1. Update version in `relab_rpi_cam_models/pyproject.toml`
-1. Rebuild the main project's lock file: `uv lock --upgrade relab-rpi-cam-models`
+### Change Camera Behavior
 
-The workspace source override is for local co-development only. Treat the
-published `relab-rpi-cam-models` package version as the actual cross-repo
-contract baseline.
+Start with the camera manager and backend contract:
 
-## Before Submitting a PR
+- `app/camera/services/manager.py`
+- `app/camera/services/backend.py`
+- `app/camera/services/picamera2_backend.py`
+- `tests/unit/camera/`
+- `tests/integration/test_camera.py`
 
-1. **Run tests**: `uv run pytest tests`
-1. **Check coverage**: Aim for >80%
-1. **Run pre-commit**: `pre-commit run --all-files`
-1. **Update docs**: If adding features, update relevant docs
-1. **Test on hardware**: If you modified camera logic, test on an actual Pi
+Hardware-sensitive changes should be tested on an actual Pi when possible.
 
-## Architecture Notes
+### Change Runtime Services
 
-**Runtime container** (`app/core/runtime.py::AppRuntime`) owns all long-lived services: camera manager, relay service + state, pairing service + state, preview pipeline + sleeper + thumbnail worker, thermal governor, upload queue worker, observability handle, and managed background tasks. Attach new long-lived services here instead of adding module-level singletons.
+Long-lived services belong on `AppRuntime`. Avoid module-level singletons for runtime-owned state. See [ARCHITECTURE.md#runtime-container](ARCHITECTURE.md#runtime-container).
 
-**Config vs runtime state.** `Settings` (env-backed, static) holds operator config; `RuntimeState` holds live mutable relay/local-auth/derived-auth state. If a value changes while the app is running, it lives on the runtime side.
+### Change Shared DTOs
 
-**Orchestration entrypoints.** `PairingService` and `RelayService` are the only production entrypoints for pairing and relay flows.
+Cross-repo device payloads live in `relab_rpi_cam_models`.
 
-**Contracts.** Backend OpenAPI is the public frontend contract. `relab_rpi_cam_models` is the private backend↔plugin device seam — frontend code never imports from it, and new cross-repo payloads go into the shared package first.
-
-**Connection.** The plugin opens an outbound WebSocket relay ([app/relay/service.py](app/relay/service.py)) to the backend. No public IP or port forwarding.
-
-**Camera capture.** Real hardware: `libcamera` via `picamera2`. Tests: synthetic image generation.
-
-**Streaming.** YouTube RTMP only. The Pi publishes into MediaMTX locally; MediaMTX handles the egress to YouTube.
+1. Update the DTO package.
+1. Update `relab_rpi_cam_models/pyproject.toml`.
+1. Refresh the lock file with `uv lock --upgrade relab-rpi-cam-models`.
+1. Add focused contract tests.
 
 ## Debugging
 
-### Logs
-
-View Docker logs:
+Docker logs:
 
 ```sh
 docker compose logs -f app
 ```
 
-If you start the optional `observability-ship` profile, Alloy ships the app's structured file logs to the external Loki-compatible endpoint configured by `LOKI_PUSH_URL`. Local Loki/Grafana is not bundled with this plugin.
-
-View direct server logs:
+Direct dev logs:
 
 ```sh
 just dev
 ```
 
-### Interactive Testing
+Helpful local surfaces:
 
-- **Swagger UI**: `http://localhost:8018/docs`
-- **Setup page**: `http://localhost:8018/setup`
+- Swagger UI: `http://localhost:8018/docs`
+- setup page: `http://localhost:8018/setup`
 
-### Environment Variables
+Common debugging settings:
 
-Configuration precedence is:
+- `DEBUG=true`
+- `CAMERA_DEVICE_NUM=0`
+- `OTEL_ENABLED=true`
+- `OTEL_EXPORTER_OTLP_ENDPOINT=...`
 
-1. environment variables
-1. relay credentials file (`~/.config/relab/relay_credentials.json`) for generated/runtime secrets
-1. generated defaults on first boot where applicable
+## PR Checklist
 
-Key debugging settings:
+Before submitting:
 
-- `DEBUG=true` — Enable debug logging
-- `CAMERA_DEVICE_NUM=0` — Switch camera device (if multi-camera setup)
-- `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT=...` — enable trace export
+1. Run `just check`.
+1. Add or update tests for behavior changes.
+1. Update the owning doc when behavior, setup, architecture, or developer workflow changes.
+1. Test camera hardware changes on a Pi when practical.
+1. Keep commits scoped and easy to review.
 
 ## Release Process
 
-Plugin application releases and `relab_rpi_cam_models` releases are versioned independently.
+Plugin app releases and `relab_rpi_cam_models` releases are versioned independently.
 
 ### Plugin App
 
-The plugin app release remains fully automated via `commitizen` and GitHub Actions.
+The plugin app release uses `commitizen` and GitHub Actions.
 
-1. Write commits following [Conventional Commits](https://www.conventionalcommits.org/) — `fix:` bumps patch, `feat:` bumps minor, `feat!:` / `BREAKING CHANGE:` bumps major
-1. Merge to `main` — CI runs lint, tests, and dependency audit
-1. On CI success, the release workflow automatically:
-   - Bumps the version in `pyproject.toml` and `app/__version__.py`
-   - Updates `CHANGELOG.md`
-   - Pushes a `vX.Y.Z` tag
-   - Creates a GitHub release with auto-generated notes
-
-If no commits since the last tag warrant a bump, the plugin release step skips silently.
+1. Use [Conventional Commits](https://www.conventionalcommits.org/).
+1. Merge to `main` after checks pass.
+1. The release workflow updates `pyproject.toml`, `app/__version__.py`, `CHANGELOG.md`, the Git tag, and the GitHub release.
 
 ### `relab_rpi_cam_models`
 
 The contract package publishes independently to PyPI.
 
-1. Update `relab_rpi_cam_models/pyproject.toml` to the package version you want to publish
-1. Rebuild the workspace lock file: `uv lock --upgrade relab-rpi-cam-models`
-1. Merge the package changes to `main`
-1. Create and push a tag named `relab-rpi-cam-models-vX.Y.Z`
+1. Update `relab_rpi_cam_models/pyproject.toml`.
+1. Run `uv lock --upgrade relab-rpi-cam-models`.
+1. Merge the package changes.
+1. Create and push `relab-rpi-cam-models-vX.Y.Z`.
 
-The publish workflow verifies that the tag version matches `relab_rpi_cam_models/pyproject.toml`, reruns package-focused checks, builds the distributions, and publishes them to PyPI via GitHub trusted publishing.
-
-## Questions?
-
-- Check [INSTALL.md](INSTALL.md) for setup issues
-- See [README.md](README.md) for project overview
-- Review existing code and tests for patterns
+The publish workflow verifies the tag version, runs package-focused checks, builds distributions, and publishes via GitHub trusted publishing.
