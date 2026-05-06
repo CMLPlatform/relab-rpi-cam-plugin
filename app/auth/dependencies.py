@@ -5,17 +5,26 @@ import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request, Security, status
-from fastapi.security import APIKeyHeader
+from fastapi.security import APIKeyCookie, APIKeyHeader
 
 from app.core.runtime import get_active_runtime, get_request_runtime
 from app.core.runtime_state import RuntimeState
 from app.core.settings import settings
 
 SESSION_TTL_HOURS = 12
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+HTTP_SCHEME = "http"
+HTTPS_SCHEME = "https"
 
 api_key_header = APIKeyHeader(name=settings.auth_key_name, auto_error=False, description="API Key for API access.")
+session_cookie = APIKeyCookie(
+    name=settings.session_cookie_name,
+    auto_error=False,
+    description="Browser session cookie for operator UI access.",
+)
 
 _active_sessions: dict[str, datetime] = {}
 
@@ -74,9 +83,49 @@ def has_valid_session(token: str | None) -> bool:
     return token in _active_sessions
 
 
+def _default_port(scheme: str) -> int | None:
+    if scheme == HTTP_SCHEME:
+        return 80
+    if scheme == HTTPS_SCHEME:
+        return 443
+    return None
+
+
+def _same_origin(left: str, right: str) -> bool:
+    """Return whether two absolute URLs share scheme, host, and port."""
+    left_parsed = urlsplit(left)
+    right_parsed = urlsplit(right)
+    if not left_parsed.scheme or not left_parsed.hostname:
+        return False
+    if not right_parsed.scheme or not right_parsed.hostname:
+        return False
+    left_port = left_parsed.port or _default_port(left_parsed.scheme)
+    right_port = right_parsed.port or _default_port(right_parsed.scheme)
+    return (
+        left_parsed.scheme == right_parsed.scheme
+        and left_parsed.hostname == right_parsed.hostname
+        and left_port == right_port
+    )
+
+
+def verify_cookie_write_csrf(request: Request) -> None:
+    """Require same-origin browser signals for cookie-authenticated unsafe writes."""
+    if request.method.upper() in SAFE_METHODS:
+        return
+
+    expected_origin = f"{request.url.scheme}://{request.url.netloc}"
+    if origin := request.headers.get("Origin"):
+        if _same_origin(origin, expected_origin):
+            return
+    elif (referer := request.headers.get("Referer")) and _same_origin(referer, expected_origin):
+        return
+    raise HTTPException(status_code=403, detail="Same-origin browser request required")
+
+
 async def verify_request(
     request: Request,
     x_api_key_header: Annotated[str | None, Security(api_key_header)] = None,
+    session_token: Annotated[str | None, Security(session_cookie)] = None,
 ) -> str:
     """Verify API access using a valid API key header or browser session."""
     authorized_api_keys = reload_authorized_hashes(get_request_runtime(request).runtime_state)
@@ -85,16 +134,18 @@ async def verify_request(
             raise HTTPException(status_code=403, detail="Invalid API Key")
         return x_api_key_header
 
-    session_token = request.cookies.get(settings.session_cookie_name)
     if has_valid_session(session_token):
+        verify_cookie_write_csrf(request)
         return "browser-session"
 
     raise HTTPException(status_code=401, detail="API Key header or browser session is missing")
 
 
-async def require_cookie_auth(request: Request) -> bool:
+async def require_cookie_auth(
+    request: Request,
+    session_token: Annotated[str | None, Security(session_cookie)] = None,
+) -> bool:
     """Check if user has a valid browser session cookie, redirect to login if not."""
-    session_token = request.cookies.get(settings.session_cookie_name)
     if not has_valid_session(session_token):
         current_path = str(request.url.path)
         login_url = f"/login?redirect_url={current_path}"
@@ -102,6 +153,6 @@ async def require_cookie_auth(request: Request) -> bool:
     return True
 
 
-async def get_auth_status(request: Request) -> bool:
+async def get_auth_status(session_token: Annotated[str | None, Security(session_cookie)] = None) -> bool:
     """Return whether the request carries a valid browser session."""
-    return has_valid_session(request.cookies.get(settings.session_cookie_name))
+    return has_valid_session(session_token)

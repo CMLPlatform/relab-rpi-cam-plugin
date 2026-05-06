@@ -13,6 +13,8 @@ SECURE_ATTR = "Secure"
 REQUEST_ID_HEADER = "x-request-id"
 ROOT_REDIRECT = "/"
 LIVE_TAB_REDIRECT = "/camera?tab=live"
+SAME_ORIGIN = "http://test"
+CROSS_SITE_ORIGIN = "https://evil.example"
 
 
 @pytest.fixture(autouse=True)
@@ -44,6 +46,40 @@ class TestAuthMiddleware:
         """A valid browser session should be accepted for local UI requests."""
         unauthed_client.cookies.set(settings.session_cookie_name, create_session())
         resp = await unauthed_client.get("/camera")
+        assert resp.status_code == 200
+
+    async def test_cookie_authenticated_cross_site_write_is_rejected(self, unauthed_client: AsyncClient) -> None:
+        """Browser-session writes from another site should fail CSRF checks."""
+        unauthed_client.cookies.set(settings.session_cookie_name, create_session())
+
+        resp = await unauthed_client.put(
+            "/camera/focus",
+            json={"mode": "manual", "lens_position": 1.5},
+            headers={"Origin": CROSS_SITE_ORIGIN},
+        )
+
+        assert resp.status_code == 403
+
+    async def test_cookie_authenticated_same_origin_write_passes(self, unauthed_client: AsyncClient) -> None:
+        """Same-origin browser-session writes should keep working."""
+        unauthed_client.cookies.set(settings.session_cookie_name, create_session())
+
+        resp = await unauthed_client.put(
+            "/camera/focus",
+            json={"mode": "manual", "lens_position": 1.5},
+            headers={"Origin": SAME_ORIGIN},
+        )
+
+        assert resp.status_code == 200
+
+    async def test_api_key_cross_site_write_bypasses_csrf(self, unauthed_client: AsyncClient) -> None:
+        """Explicit API-key writes are not ambient browser auth and should bypass CSRF."""
+        resp = await unauthed_client.put(
+            "/camera/focus",
+            json={"mode": "manual", "lens_position": 1.5},
+            headers={"X-API-Key": VALID_API_KEY, "Origin": CROSS_SITE_ORIGIN},
+        )
+
         assert resp.status_code == 200
 
 
@@ -117,10 +153,26 @@ class TestLogoutEndpoint:
     async def test_logout_clears_cookie(self, unauthed_client: AsyncClient) -> None:
         """Test that logging out clears the authentication cookie and redirects to the login page."""
         unauthed_client.cookies.set(settings.session_cookie_name, create_session())
-        resp = await unauthed_client.post("/auth/logout", follow_redirects=False)
+        resp = await unauthed_client.post(
+            "/auth/logout",
+            headers={"Origin": SAME_ORIGIN},
+            follow_redirects=False,
+        )
         assert resp.status_code == 303
         # Cookie should be cleared (set with max-age=0 or deleted)
         assert AUTH_COOKIE_NAME in resp.headers.get("set-cookie", "")
+
+    async def test_logout_rejects_cross_site_cookie_write(self, unauthed_client: AsyncClient) -> None:
+        """Logout is cookie-authenticated and should enforce the same CSRF policy."""
+        unauthed_client.cookies.set(settings.session_cookie_name, create_session())
+
+        resp = await unauthed_client.post(
+            "/auth/logout",
+            headers={"Origin": CROSS_SITE_ORIGIN},
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 403
 
 
 class TestCorsConfig:

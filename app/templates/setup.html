@@ -125,7 +125,7 @@
     setPairingActionStatus("Generating new code…", "pending");
 
     try {
-      const resp = await fetch("/pairing/code", { method: "POST" });
+      const resp = await fetch("/pairing/code", { method: "POST", credentials: "same-origin" });
       if (!resp.ok) {
         if (button) {
           setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
@@ -186,7 +186,7 @@
     btn.disabled = true;
     btn.textContent = "Unpairing…";
     try {
-      const resp = await fetch("/pairing", { method: "DELETE" });
+      const resp = await fetch("/pairing", { method: "DELETE", credentials: "same-origin" });
       dialog.close();
       if (resp.ok) {
         setPairingActionStatus("Unpaired. Reloading page…", "success");

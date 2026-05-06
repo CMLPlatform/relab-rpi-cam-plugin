@@ -3,10 +3,18 @@
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Form, HTTPException, Request, Response
+from fastapi import APIRouter, Form, HTTPException, Request, Response, Security
 from fastapi.responses import RedirectResponse
 
-from app.auth.dependencies import _is_authorized, create_session, delete_session, reload_authorized_hashes
+from app.auth.dependencies import (
+    _is_authorized,
+    create_session,
+    delete_session,
+    has_valid_session,
+    reload_authorized_hashes,
+    session_cookie,
+    verify_cookie_write_csrf,
+)
 from app.core.runtime import get_request_runtime
 from app.core.settings import settings
 
@@ -53,9 +61,15 @@ async def login(
 
 
 @router.post("/logout")
-async def logout(request: Request, response: Response) -> RedirectResponse:
+async def logout(
+    request: Request,
+    response: Response,
+    session_token: Annotated[str | None, Security(session_cookie)] = None,
+) -> RedirectResponse:
     """Invalidate the current browser session."""
-    delete_session(request.cookies.get(settings.session_cookie_name))
+    if has_valid_session(session_token):
+        verify_cookie_write_csrf(request)
+    delete_session(session_token)
     response = RedirectResponse(url="/", status_code=303)
     response.delete_cookie(key=settings.session_cookie_name, path="/")
     return response
