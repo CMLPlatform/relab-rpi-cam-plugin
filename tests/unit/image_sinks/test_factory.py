@@ -23,7 +23,8 @@ def _clear_s3_config(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _set_s3_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Populate settings with a plausible S3 credential bundle."""
-    monkeypatch.setattr(settings, "s3_endpoint_url", "http://minio.local:9000")
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "s3_endpoint_url", "https://s3.example")
     monkeypatch.setattr(settings, "s3_bucket", "rpi-cam")
     monkeypatch.setattr(settings, "s3_access_key_id", "ak")
     monkeypatch.setattr(settings, "s3_secret_access_key", "sk")
@@ -68,6 +69,15 @@ class TestExplicitS3:
         monkeypatch.setattr(settings, "s3_access_key_id", "")
 
         with pytest.raises(ImageSinkConfigError, match="S3_ACCESS_KEY_ID"):
+            get_image_sink(settings)
+
+    def test_explicit_s3_rejects_remote_http_endpoint_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Factory validation should catch monkeypatched remote plaintext S3 endpoints."""
+        monkeypatch.setattr(settings, "image_sink", "s3")
+        _set_s3_config(monkeypatch)
+        monkeypatch.setattr(settings, "s3_endpoint_url", "http://s3.example")
+
+        with pytest.raises(ImageSinkConfigError, match="S3_ENDPOINT_URL must use https"):
             get_image_sink(settings)
 
 

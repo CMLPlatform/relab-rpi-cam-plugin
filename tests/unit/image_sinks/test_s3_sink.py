@@ -47,7 +47,7 @@ class _FakeS3Client:
 
 def _make_sink(**overrides: str) -> S3CompatibleSink:
     return S3CompatibleSink(
-        endpoint_url=overrides.get("endpoint_url", "http://minio.local:9000"),
+        endpoint_url=overrides.get("endpoint_url", "https://s3.example"),
         bucket=overrides.get("bucket", "rpi-cam"),
         access_key_id=overrides.get("access_key_id", "ak"),
         secret_access_key=overrides.get("secret_access_key", "sk"),

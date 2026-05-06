@@ -17,6 +17,8 @@ from tests.constants import (
 )
 
 OTEL_SERVICE_NAME = "relab-rpi-cam-plugin"
+APP_ENV_DEVELOPMENT = "development"
+APP_ENV_PRODUCTION = "production"
 EXPLICIT_S3 = "s3"
 EXPLICIT_BACKEND = "backend"
 UNCONFIGURED = "unconfigured"
@@ -28,6 +30,11 @@ PAIRING_LOOPBACK_WARNING = "PAIRING_BACKEND_URL uses loopback inside a container
 TEST_S3_VALUE = "s3-test-value"
 HTTPS_PAIRING_BACKEND_URL = "https://api.example"
 LOOPBACK_HTTP_PAIRING_BACKEND_URL = "http://127.0.0.1:8000"
+HTTPS_S3_ENDPOINT_URL = "https://s3.example"
+REMOTE_HTTP_S3_ENDPOINT_URL = "http://s3.example"
+HTTPS_OTLP_ENDPOINT_URL = "https://otel.example/v1/traces"
+REMOTE_HTTP_OTLP_ENDPOINT_URL = "http://otel.example/v1/traces"
+LOOPBACK_HTTP_OTLP_ENDPOINT_URL = "http://localhost:4318/v1/traces"
 
 
 class TestRelayUrlValidation:
@@ -173,6 +180,7 @@ class TestSettingsDefaults:
     def test_observability_disabled_by_default(self) -> None:
         """Tracing should stay opt-in by default."""
         s = Settings()
+        assert s.app_env == APP_ENV_PRODUCTION
         assert s.otel_enabled is False
         assert s.otel_service_name == OTEL_SERVICE_NAME
         assert s.otel_exporter_otlp_endpoint == ""
@@ -243,6 +251,64 @@ class TestImageSinkValidation:
             Settings(image_sink="s3")
 
 
+class TestEndpointTransportValidation:
+    """Tests for S3 and OTLP endpoint transport validation."""
+
+    @pytest.mark.parametrize(
+        "settings_kwargs",
+        [
+            {"s3_endpoint_url": HTTPS_S3_ENDPOINT_URL},
+            {"s3_endpoint_url": "http://localhost:9000"},
+            {"s3_endpoint_url": "http://127.0.0.1:9000"},
+            {"s3_endpoint_url": "http://[::1]:9000"},
+            {"app_env": APP_ENV_DEVELOPMENT, "s3_endpoint_url": REMOTE_HTTP_S3_ENDPOINT_URL},
+            {"otel_enabled": True, "otel_exporter_otlp_endpoint": HTTPS_OTLP_ENDPOINT_URL},
+            {"otel_enabled": True, "otel_exporter_otlp_endpoint": LOOPBACK_HTTP_OTLP_ENDPOINT_URL},
+            (
+                {
+                    "app_env": APP_ENV_DEVELOPMENT,
+                    "otel_enabled": True,
+                    "otel_exporter_otlp_endpoint": REMOTE_HTTP_OTLP_ENDPOINT_URL,
+                }
+            ),
+        ],
+    )
+    def test_remote_https_loopback_http_and_development_http_are_accepted(
+        self, settings_kwargs: dict[str, object]
+    ) -> None:
+        """Endpoint policy should allow HTTPS, loopback HTTP, and development HTTP."""
+        Settings.model_validate(settings_kwargs)
+
+    @pytest.mark.parametrize(
+        ("settings_kwargs", "error_match"),
+        [
+            ({"s3_endpoint_url": REMOTE_HTTP_S3_ENDPOINT_URL}, "S3_ENDPOINT_URL must use https"),
+            (
+                {"app_env": APP_ENV_DEVELOPMENT, "s3_endpoint_url": "ftp://s3.example"},
+                "S3_ENDPOINT_URL must use http or https",
+            ),
+            (
+                {"otel_enabled": True, "otel_exporter_otlp_endpoint": REMOTE_HTTP_OTLP_ENDPOINT_URL},
+                "OTEL_EXPORTER_OTLP_ENDPOINT must use https",
+            ),
+            (
+                {
+                    "app_env": APP_ENV_DEVELOPMENT,
+                    "otel_enabled": True,
+                    "otel_exporter_otlp_endpoint": "grpc://otel.example",
+                },
+                "OTEL_EXPORTER_OTLP_ENDPOINT must use http or https",
+            ),
+        ],
+    )
+    def test_remote_http_in_production_and_unsupported_schemes_are_rejected(
+        self, settings_kwargs: dict[str, object], error_match: str
+    ) -> None:
+        """Endpoint policy should reject remote production HTTP and non-HTTP schemes."""
+        with pytest.raises(ValueError, match=error_match):
+            Settings.model_validate(settings_kwargs)
+
+
 class TestConfigBootstrapHelpers:
     """Tests for runtime bootstrap helpers in config."""
 
@@ -257,6 +323,7 @@ class TestConfigBootstrapHelpers:
         assert is_loopback_url("") is False
         assert is_loopback_url("http://localhost:8000") is True
         assert is_loopback_url("http://127.0.0.1:8000") is True
+        assert is_loopback_url("http://[::1]:8000") is True
         assert is_loopback_url("https://camera.example") is False
 
     def test_resolve_image_sink_choice_prefers_explicit_and_inferred_modes(self) -> None:
