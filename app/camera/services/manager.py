@@ -28,7 +28,7 @@ from app.media.stream_service import StreamService
 from app.media.stream_state import ActiveStreamState
 from app.observability.logging import build_log_extra
 from app.upload.queue import UploadQueue
-from app.utils.files import clear_directory
+from app.utils.files import cleanup_images
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
@@ -370,7 +370,7 @@ class CameraManager:
         if self.stream.is_active:
             await self.stop_streaming()
 
-        await clear_directory(settings.image_path, time_to_live_s=settings.image_ttl_s)
+        await cleanup_images()
 
         async with self._locked():
             await self.backend.cleanup()

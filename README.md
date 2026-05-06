@@ -46,6 +46,8 @@ The HTTPS-served RELab web frontend cannot auto-probe the Pi's plain-HTTP local 
 
 The plugin can run without a RELab backend by writing captures to an S3-compatible bucket. The default standalone stack uses a local RustFS sidecar and `APP_ENV=development` for local HTTP storage. Remote production S3 endpoints require HTTPS.
 
+Captured images, queued retries, dead letters, and preview thumbnails are sensitive local device data. In standalone S3 mode, generated public URLs are reachable wherever the configured bucket, endpoint, or proxy is reachable, so keep image storage private or LAN-only when captures are sensitive.
+
 See [INSTALL.md#standalone-mode](INSTALL.md#standalone-mode) for the complete `.env` example and runtime checks.
 
 ## Local Direct Mode

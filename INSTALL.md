@@ -116,6 +116,8 @@ Runtime surfaces:
 
 For an external S3-compatible service such as Backblaze B2, Cloudflare R2, Wasabi, or AWS S3, set `S3_ENDPOINT_URL`, credentials, and `S3_PUBLIC_URL_TEMPLATE`. Remote production S3 endpoints require HTTPS. Keep `APP_ENV=development` for local HTTP storage only.
 
+Treat captures as sensitive device data. Failed uploads may remain in the local retry queue or dead-letter directory until the configured queue limits prune them, and preview thumbnails are cached locally for the setup UI. `S3_PUBLIC_URL_TEMPLATE` returns object URLs that are reachable wherever your bucket, endpoint, CDN, or reverse proxy is reachable; use private buckets, authenticated proxies, or LAN-only exposure when images should not be public.
+
 Set `COMPOSE_PROFILES=` to skip the RustFS sidecar when using a managed bucket.
 
 ## Local Direct Mode

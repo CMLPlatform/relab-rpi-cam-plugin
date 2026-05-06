@@ -270,17 +270,15 @@ class TestCameraManagerCleanup:
     """Tests for CameraManager.cleanup method."""
 
     async def test_cleanup_uses_correct_ttl(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Should call clear_directory with image_ttl_s."""
-        mock_clear_directory = AsyncMock()
-        monkeypatch.setattr("app.camera.services.manager.clear_directory", mock_clear_directory)
+        """Should delegate image retention cleanup to the shared helper."""
+        mock_cleanup_images = AsyncMock()
+        monkeypatch.setattr("app.camera.services.manager.cleanup_images", mock_cleanup_images)
 
         manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
 
         await manager.cleanup()
 
-        mock_clear_directory.assert_awaited_once()
-        call_args = mock_clear_directory.call_args
-        assert call_args[1]["time_to_live_s"] == settings.image_ttl_s
+        mock_cleanup_images.assert_awaited_once_with()
 
 
 class TestCameraManagerStartStreaming:

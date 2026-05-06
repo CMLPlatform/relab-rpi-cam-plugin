@@ -37,3 +37,4 @@ async def clear_directory(path: Path, *, time_to_live_s: int | None = None) -> N
 async def cleanup_images() -> None:
     """Clean up expired images."""
     await clear_directory(settings.image_path, time_to_live_s=settings.image_ttl_s)
+    await clear_directory(settings.image_path / "preview-thumbnail", time_to_live_s=settings.image_ttl_s)

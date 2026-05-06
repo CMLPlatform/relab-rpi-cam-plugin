@@ -117,7 +117,9 @@ Capture requests produce image bytes and metadata, then pass them to the configu
 - backend sink uploads to the paired RELab backend
 - S3 sink uploads to an S3-compatible bucket
 
-`IMAGE_SINK=auto` infers the sink from config. Explicit sink configuration fails loudly when required fields are missing. The upload queue is sink-agnostic: failed synchronous uploads are persisted to disk, retried with exponential backoff, and dead-lettered after exhaustion.
+`IMAGE_SINK=auto` infers the sink from config. Explicit sink configuration fails loudly when required fields are missing. The upload queue is sink-agnostic: failed synchronous uploads are persisted to disk, retried with exponential backoff, and dead-lettered after exhaustion. Queue capacity and dead-letter retention settings are the single retention policy for failed local captures.
+
+Captured images, queue entries, dead letters, and cached preview thumbnails are sensitive device data. Successful captures remove their temporary local JPEG after upload; runtime cleanup also covers cached preview thumbnails. Standalone S3 public URL generation depends on operator-controlled bucket and proxy policy, so public object URLs are an explicit standalone storage choice rather than a backend-paired privacy boundary.
 
 ## Observability
 

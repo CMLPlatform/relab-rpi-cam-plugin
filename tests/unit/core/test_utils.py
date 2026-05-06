@@ -81,12 +81,15 @@ class TestClearDirectory:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """cleanup_images should call clear_directory with the configured image_path."""
+        """cleanup_images should clean captured images and cached preview thumbnails."""
         monkeypatch.setattr(settings, "image_path", tmp_path)
         clear_mock = AsyncMock()
         monkeypatch.setattr("app.utils.files.clear_directory", clear_mock)
         await cleanup_images()
-        clear_mock.assert_awaited_once_with(tmp_path, time_to_live_s=settings.image_ttl_s)
+        assert clear_mock.await_args_list == [
+            ((tmp_path,), {"time_to_live_s": settings.image_ttl_s}),
+            ((tmp_path / "preview-thumbnail",), {"time_to_live_s": settings.image_ttl_s}),
+        ]
 
 
 class TestPairingState:
