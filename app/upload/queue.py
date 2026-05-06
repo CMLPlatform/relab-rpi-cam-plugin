@@ -19,6 +19,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -38,6 +39,11 @@ logger = logging.getLogger(__name__)
 _BACKOFF_SCHEDULE: tuple[int, ...] = (5, 30, 5 * 60, 30 * 60, 2 * 60 * 60)
 _MAX_ATTEMPTS = len(_BACKOFF_SCHEDULE)
 _WORKER_POLL_INTERVAL_SECONDS = 5.0
+_IMAGE_ID_PATTERN = re.compile(r"[0-9a-f]{32}\Z")
+
+
+class UploadQueueFullError(RuntimeError):
+    """Raised when the persistent retry queue cannot accept another capture."""
 
 
 @dataclass(frozen=True)

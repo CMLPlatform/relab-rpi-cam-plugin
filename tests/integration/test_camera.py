@@ -9,6 +9,7 @@ from app.camera.services.manager import CameraControlsNotSupportedError, CameraM
 
 CURRENT_MODE_KEY = "current_mode"
 STREAM_KEY = "stream"
+MAX_CONTROL_COUNT = 32
 
 
 class TestCameraStatus:
@@ -52,6 +53,14 @@ class TestCameraControls:
 
         assert resp.status_code == 200
         assert resp.json()["supported"] is True
+
+    async def test_set_controls_rejects_too_many_controls(self, client: AsyncClient) -> None:
+        """Control patches should be bounded before reaching the camera backend."""
+        controls = {f"Control{i}": i for i in range(MAX_CONTROL_COUNT + 1)}
+
+        resp = await client.patch("/camera/controls", json={"controls": controls})
+
+        assert resp.status_code == 422
 
     async def test_set_focus_returns_200(self, client: AsyncClient) -> None:
         """Test that friendly focus controls can be applied."""

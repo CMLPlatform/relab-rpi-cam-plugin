@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal, cast
 from urllib.parse import urlparse
 
-from pydantic import HttpUrl, field_validator, model_validator
+from pydantic import Field, HttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = ["Settings", "is_loopback_url", "settings"]
@@ -198,7 +198,13 @@ class Settings(BaseSettings):
     # links; operators on flaky networks may want a higher ceiling.
     relay_reconnect_min_s: float = 2.0
     relay_reconnect_max_s: float = 60.0
-    relay_max_concurrent_commands: int = 8
+    relay_max_concurrent_commands: int = Field(default=8, ge=1)
+    relay_max_pending_commands: int = Field(default=32, ge=1)
+
+    # Persistent capture retry queue capacity and dead-letter retention.
+    upload_queue_max_pending_entries: int = Field(default=500, ge=0)
+    upload_queue_max_pending_bytes: int = Field(default=2 * 1024 * 1024 * 1024, ge=0)
+    upload_queue_dead_max_entries: int = Field(default=500, ge=0)
 
     @property
     def relay_enabled(self) -> bool:
@@ -217,6 +223,11 @@ class Settings(BaseSettings):
         if self.auth_cookie_secure is not None:
             return self.auth_cookie_secure
         return self.base_url.scheme == HTTPS_SCHEME
+
+    @property
+    def api_docs_enabled(self) -> bool:
+        """Return whether local Swagger/OpenAPI routes should be exposed."""
+        return self.app_env == APP_ENV_DEVELOPMENT
 
     # Pairing: set this to the backend's HTTP(S) API URL to enable zero-config pairing.
     # When set and relay credentials are absent, the RPi enters pairing mode on boot.

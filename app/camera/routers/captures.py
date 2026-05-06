@@ -7,14 +7,16 @@ capture endpoint only; bytes live in exactly one place.
 """
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Body, HTTPException
 from relab_rpi_cam_models.images import ImageCaptureResponse
 
 from app.camera.dependencies import CameraManagerDependency
 from app.camera.exceptions import ActiveStreamError
+from app.camera.schemas import CaptureUploadMetadata
 from app.observability.logging import build_log_extra
+from app.upload.queue import UploadQueueFullError
 
 router = APIRouter(prefix="/captures", tags=["captures"])
 logger = logging.getLogger(__name__)
@@ -24,7 +26,7 @@ logger = logging.getLogger(__name__)
 async def capture_image(
     camera_manager: CameraManagerDependency,
     upload_metadata: Annotated[
-        dict[str, Any] | None,
+        CaptureUploadMetadata | None,
         Body(
             description=(
                 "Opaque metadata forwarded to the backend upload endpoint. Typically includes "
@@ -36,7 +38,9 @@ async def capture_image(
 ) -> ImageCaptureResponse:
     """Capture a full-resolution image, push it to the backend, and return the result."""
     try:
-        return await camera_manager.capture_jpeg(upload_metadata=upload_metadata)
+        return await camera_manager.capture_jpeg(upload_metadata=upload_metadata.root if upload_metadata else None)
+    except UploadQueueFullError as e:
+        raise HTTPException(status_code=507, detail=str(e)) from e
     except ActiveStreamError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     except RuntimeError as e:
