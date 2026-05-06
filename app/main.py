@@ -29,6 +29,9 @@ app = FastAPI(
         "It is used as a plugin for the RELab platform."
         '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank"> RELab GitHub</a>.'
     ),
+    docs_url="/docs" if settings.api_docs_enabled else None,
+    openapi_url="/openapi.json" if settings.api_docs_enabled else None,
+    redoc_url=None,
 )
 
 runtime = ensure_app_runtime(app)

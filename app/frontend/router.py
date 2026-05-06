@@ -23,7 +23,7 @@ async def homepage(request: Request, camera_manager: CameraManagerDependency) ->
     return templates.TemplateResponse(
         request,
         "homepage.html",
-        {"youtube_url": youtube_url},
+        {"api_docs_enabled": settings.api_docs_enabled, "youtube_url": youtube_url},
     )
 
 

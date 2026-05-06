@@ -10,6 +10,7 @@ from relab_rpi_cam_models.stream import StreamMode
 from app.camera.exceptions import ActiveStreamError, YoutubeConfigRequiredError
 from app.camera.schemas import YoutubeStreamConfig
 from app.camera.services.manager import CameraManager
+from app.main import app
 from app.media.stream_state import ActiveStreamState
 from tests.constants import YOUTUBE_WATCH_URL_PREFIX
 
@@ -58,11 +59,9 @@ class TestStreamStart:
         resp = await client.post("/streams/youtube")
         assert resp.status_code == 422
 
-    async def test_openapi_includes_youtube_example(self, client: AsyncClient) -> None:
+    def test_openapi_includes_youtube_example(self) -> None:
         """OpenAPI should include the YouTube request example."""
-        resp = await client.get("/openapi.json")
-        assert resp.status_code == 200
-        request_body = resp.json()["paths"]["/streams/youtube"]["post"]["requestBody"]["content"]["application/json"][
+        request_body = app.openapi()["paths"]["/streams/youtube"]["post"]["requestBody"]["content"]["application/json"][
             "schema"
         ]
         assert request_body["$ref"].endswith("YoutubeStreamConfig")

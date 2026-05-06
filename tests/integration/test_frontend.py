@@ -17,9 +17,7 @@ from tests.constants import HTML_CONTENT_TYPE, JPEG_CONTENT_TYPE, NO_STORE_CACHE
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
 HLS_ROUTE_PATH = "/preview/hls/{hls_path:path}"
-DEFAULT_CSP = (
-    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
-)
+DEFAULT_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 SETUP_CSP_INLINE = "'unsafe-inline'"
 SETUP_CSP_CDN = "https://cdn.jsdelivr.net"
 SETUP_CSP_CONNECT_SELF = "connect-src 'self'"
@@ -28,6 +26,12 @@ DOCS_FAVICON_HOST = "https://fastapi.tiangolo.com"
 THEME_TOGGLE_MARKER = "data-theme-toggle"
 LOGO_SRC = "/static/logo.png"
 SITE_JS_SRC = "/static/site.js"
+THEME_INIT_JS_SRC = "/static/theme-init.js"
+HOMEPAGE_PREVIEW_JS_SRC = "/static/homepage-preview.js"
+HLS_CDN_JS_SRC = "https://cdn.jsdelivr.net/npm/hls.js@1.6.16/dist/hls.min.js"
+HLS_JS_SRI = "sha384-5E8B0pTlZZJMabWpC0fyYf6OUpe15jJij34BqBAh4NXoHAlLNOjCPRrwtOXOQFAn"
+HLS_CROSSORIGIN_ATTR = 'crossorigin="anonymous"'
+HLS_VENDOR_JS_SRC = "/static/vendor/hls-1.6.16.min.js"
 SETUP_LINK_TEXT = ">Setup</a>"
 API_DOCS_LINK_TEXT = ">API Docs</a>"
 HOMEPAGE_SECONDARY_COPY = "Start a live preview to check framing"
@@ -44,11 +48,11 @@ class TestHomepage:
         assert resp.status_code == 200
         assert HTML_CONTENT_TYPE in resp.headers["content-type"]
 
-    async def test_homepage_sets_relaxed_csp_for_embedded_preview_assets(self, unauthed_client: AsyncClient) -> None:
-        """The landing page CSP should allow its inline script and hls.js dependency."""
+    async def test_homepage_sets_strict_csp_for_pinned_preview_assets(self, unauthed_client: AsyncClient) -> None:
+        """The landing page CSP should allow local scripts and the pinned HLS CDN without inline scripts."""
         resp = await unauthed_client.get("/")
         assert SETUP_CSP_CDN in resp.headers["content-security-policy"]
-        assert SETUP_CSP_INLINE in resp.headers["content-security-policy"]
+        assert SETUP_CSP_INLINE not in resp.headers["content-security-policy"]
         assert SETUP_CSP_CONNECT_SELF in resp.headers["content-security-policy"]
         assert SETUP_CSP_BROAD_CONNECT not in resp.headers["content-security-policy"]
 
@@ -60,13 +64,19 @@ class TestHomepage:
         assert THEME_AUTO_LABEL in resp.text
         assert LOGO_SRC in resp.text
         assert SITE_JS_SRC in resp.text
+        assert THEME_INIT_JS_SRC in resp.text
+        assert HOMEPAGE_PREVIEW_JS_SRC in resp.text
+        assert HLS_CDN_JS_SRC in resp.text
+        assert HLS_JS_SRI in resp.text
+        assert HLS_CROSSORIGIN_ATTR in resp.text
+        assert HLS_VENDOR_JS_SRC not in resp.text
 
     async def test_homepage_keeps_primary_actions_in_header_only(self, unauthed_client: AsyncClient) -> None:
-        """The homepage should avoid duplicating setup and docs navigation in the hero."""
+        """The homepage should avoid duplicating setup navigation or linking production docs."""
         resp = await unauthed_client.get("/")
         assert resp.status_code == 200
         assert resp.text.count(SETUP_LINK_TEXT) == 1
-        assert resp.text.count(API_DOCS_LINK_TEXT) == 1
+        assert API_DOCS_LINK_TEXT not in resp.text
         assert HOMEPAGE_SECONDARY_COPY in resp.text
 
     async def test_favicon_returns_ico(self, unauthed_client: AsyncClient) -> None:
@@ -173,10 +183,12 @@ class TestHomepage:
 
         assert resp.headers["content-security-policy"] == DEFAULT_CSP
 
-    async def test_docs_route_allows_swagger_assets_in_csp(self, unauthed_client: AsyncClient) -> None:
-        """Swagger docs should receive a CSP that permits the bundled FastAPI assets."""
+    async def test_docs_route_is_not_exposed_in_production_mode(self, unauthed_client: AsyncClient) -> None:
+        """Production-style runs should not expose unauthenticated local Swagger docs."""
         resp = await unauthed_client.get("/docs")
-        assert resp.status_code == 200
-        assert SETUP_CSP_CDN in resp.headers["content-security-policy"]
-        assert DOCS_FAVICON_HOST in resp.headers["content-security-policy"]
-        assert SETUP_CSP_INLINE in resp.headers["content-security-policy"]
+        assert resp.status_code == 404
+
+    async def test_openapi_route_is_not_exposed_in_production_mode(self, unauthed_client: AsyncClient) -> None:
+        """Production-style runs should not expose unauthenticated local OpenAPI JSON."""
+        resp = await unauthed_client.get("/openapi.json")
+        assert resp.status_code == 404
