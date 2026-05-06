@@ -69,7 +69,7 @@ LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
 OBSERVABILITY_INSTANCE=pi-01
 ```
 
-Tracing is opt-in via `OTEL_ENABLED=true` + `OTEL_EXPORTER_OTLP_ENDPOINT`. Neither Loki/Grafana nor an OTLP collector is bundled — point at your central stack.
+Tracing is opt-in via `OTEL_ENABLED=true` + `OTEL_EXPORTER_OTLP_ENDPOINT`. Production remote OTLP endpoints must use HTTPS; plaintext HTTP is accepted only for loopback or when `APP_ENV=development`. Neither Loki/Grafana nor an OTLP collector is bundled — point at your central stack.
 
 For platform-side operation, see the [RELab camera guide](https://docs.cml-relab.org/user-guides/rpi-cam/).
 
@@ -87,6 +87,7 @@ does not. Set the following in `.env` and rebuild:
 # Select the standalone build target and start the RustFS sidecar
 APP_BUILD_TARGET=runtime-standalone
 COMPOSE_PROFILES=standalone
+APP_ENV=development
 
 # S3 sink and RustFS credentials — see .env.example for the full list
 IMAGE_SINK=s3
@@ -112,7 +113,9 @@ Once up:
 
 To point the plugin at an external S3-compatible service (Backblaze B2,
 Cloudflare R2, Wasabi, AWS S3, …), update `S3_ENDPOINT_URL`, credentials, and
-`S3_PUBLIC_URL_TEMPLATE` in `.env` and rebuild. No code changes required.
+`S3_PUBLIC_URL_TEMPLATE` in `.env` and rebuild. Remote production S3 endpoints
+must use HTTPS; keep `APP_ENV=development` only for local standalone HTTP
+storage. No code changes required.
 Set `COMPOSE_PROFILES=` (empty) to skip the RustFS sidecar when using a managed
 bucket.
 
