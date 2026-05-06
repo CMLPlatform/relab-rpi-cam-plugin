@@ -8,10 +8,16 @@ import tempfile
 from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
-from urllib.parse import urlparse
 
 from app.core.runtime_state import RuntimeState
-from app.core.settings import IMAGE_SINK_AUTO, IMAGE_SINK_BACKEND, IMAGE_SINK_S3, Settings, settings
+from app.core.settings import (
+    IMAGE_SINK_AUTO,
+    IMAGE_SINK_BACKEND,
+    IMAGE_SINK_S3,
+    Settings,
+    is_loopback_url,
+    settings,
+)
 from app.pairing.services.credentials import _CREDENTIALS_FILE, load_relay_credentials
 
 logger = logging.getLogger(__name__)
@@ -19,13 +25,6 @@ logger = logging.getLogger(__name__)
 
 def _is_running_in_container() -> bool:
     return Path("/.dockerenv").exists()
-
-
-def _uses_loopback_host(url: str) -> bool:
-    if not url:
-        return False
-    parsed = urlparse(url)
-    return parsed.hostname in {"127.0.0.1", "localhost"}
 
 
 def _set_authorized_api_keys(runtime_state: RuntimeState, keys: Iterable[str]) -> None:
@@ -181,7 +180,7 @@ def bootstrap_runtime_state(runtime_state: RuntimeState, app_settings: Settings 
         )
     if (
         app_settings.pairing_backend_url
-        and _uses_loopback_host(app_settings.pairing_backend_url)
+        and is_loopback_url(app_settings.pairing_backend_url)
         and _is_running_in_container()
     ):
         logger.warning(

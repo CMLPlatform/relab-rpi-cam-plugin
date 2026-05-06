@@ -2,17 +2,20 @@
 
 import json
 from collections.abc import Iterable
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal, cast
+from urllib.parse import urlparse
 
 from pydantic import HttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-__all__ = ["Settings", "settings"]
+__all__ = ["Settings", "is_loopback_url", "settings"]
 
 # Set the project base directory and .env file
 BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
 HTTPS_SCHEME = "https"
+LOCALHOST_HOSTNAME = "localhost"
 RELAY_AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
 IMAGE_SINK_AUTO = "auto"
 IMAGE_SINK_BACKEND = "backend"
@@ -39,6 +42,19 @@ def _parse_list_env(v: object) -> list[str]:
     except json.JSONDecodeError:
         return [k.strip().strip("\"'") for k in stripped.strip("[]").split(",") if k.strip()]
     return cast("list[str]", [parsed] if not isinstance(parsed, list) else parsed)
+
+
+def is_loopback_url(value: str) -> bool:
+    """Return whether a URL points at a loopback development host."""
+    hostname = urlparse(value).hostname
+    if not hostname:
+        return False
+    if hostname.lower() == LOCALHOST_HOSTNAME:
+        return True
+    try:
+        return ip_address(hostname).is_loopback
+    except ValueError:
+        return False
 
 
 class Settings(BaseSettings):
@@ -222,6 +238,9 @@ class Settings(BaseSettings):
                 "relay_backend_url uses unencrypted ws://. "
                 "Set ALLOW_PLAINTEXT_RELAY=true for local development, or switch to wss://."
             )
+            raise ValueError(msg)
+        if self.pairing_backend_url.startswith("http://") and not is_loopback_url(self.pairing_backend_url):
+            msg = "PAIRING_BACKEND_URL must use https unless it points at a loopback development host."
             raise ValueError(msg)
         if self.image_sink == IMAGE_SINK_BACKEND and not self.pairing_backend_url:
             msg = "IMAGE_SINK=backend requires PAIRING_BACKEND_URL."

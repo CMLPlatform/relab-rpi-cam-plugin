@@ -8,7 +8,7 @@ from pydantic import HttpUrl
 
 import app.core.bootstrap as config_mod
 from app.core.runtime_state import RuntimeState
-from app.core.settings import Settings
+from app.core.settings import Settings, is_loopback_url
 from tests.constants import (
     EXAMPLE_RELAY_BACKEND_URL,
     EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
@@ -26,6 +26,8 @@ GENERATED_LOCAL_KEY = "local_generated-token"
 LOCAL_MODE_DISABLED_WARNING = "LOCAL_MODE_ENABLED=false but a local API key exists"
 PAIRING_LOOPBACK_WARNING = "PAIRING_BACKEND_URL uses loopback inside a container"
 TEST_S3_VALUE = "s3-test-value"
+HTTPS_PAIRING_BACKEND_URL = "https://api.example"
+LOOPBACK_HTTP_PAIRING_BACKEND_URL = "http://127.0.0.1:8000"
 
 
 class TestRelayUrlValidation:
@@ -211,6 +213,21 @@ class TestPairingSettings:
         assert s.pairing_register_timeout_retry_s == 1
         assert s.pairing_poll_interval_s == 3
 
+    def test_https_pairing_backend_url_is_accepted(self) -> None:
+        """Production pairing should use HTTPS by default."""
+        s = Settings(pairing_backend_url=HTTPS_PAIRING_BACKEND_URL)
+        assert s.pairing_backend_url == HTTPS_PAIRING_BACKEND_URL
+
+    def test_loopback_http_pairing_backend_url_is_accepted(self) -> None:
+        """Loopback HTTP stays available for local development."""
+        s = Settings(pairing_backend_url=LOOPBACK_HTTP_PAIRING_BACKEND_URL)
+        assert s.pairing_backend_url == LOOPBACK_HTTP_PAIRING_BACKEND_URL
+
+    def test_non_loopback_http_pairing_backend_url_is_rejected(self) -> None:
+        """Non-loopback pairing backends must not use plaintext HTTP."""
+        with pytest.raises(ValueError, match="PAIRING_BACKEND_URL must use https"):
+            Settings(pairing_backend_url="http://api.example")
+
 
 class TestImageSinkValidation:
     """Tests for image sink validation rules."""
@@ -235,11 +252,12 @@ class TestConfigBootstrapHelpers:
 
         assert config_mod._is_running_in_container() is True
 
-    def test_uses_loopback_host_detects_loopback_and_empty(self) -> None:
+    def test_is_loopback_url_detects_loopback_and_empty(self) -> None:
         """Loopback detection should stay narrow and predictable."""
-        assert config_mod._uses_loopback_host("") is False
-        assert config_mod._uses_loopback_host("http://localhost:8000") is True
-        assert config_mod._uses_loopback_host("https://camera.example") is False
+        assert is_loopback_url("") is False
+        assert is_loopback_url("http://localhost:8000") is True
+        assert is_loopback_url("http://127.0.0.1:8000") is True
+        assert is_loopback_url("https://camera.example") is False
 
     def test_resolve_image_sink_choice_prefers_explicit_and_inferred_modes(self) -> None:
         """Image-sink resolution should cover explicit and auto-inferred cases."""
