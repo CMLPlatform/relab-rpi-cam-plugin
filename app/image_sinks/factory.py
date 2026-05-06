@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.core.settings import validate_endpoint_transport
 from app.image_sinks.backend_sink import BackendPushSink
 from app.image_sinks.base import ImageSink
 
@@ -74,7 +75,14 @@ def _build_s3_sink(settings: Settings) -> S3CompatibleSink:
     if missing:
         msg = f"IMAGE_SINK=s3 requires {', '.join(missing)} — refusing to start without them."
         raise ImageSinkConfigError(msg)
-
+    try:
+        validate_endpoint_transport(
+            settings.s3_endpoint_url,
+            setting_name="S3_ENDPOINT_URL",
+            app_env=settings.app_env,
+        )
+    except ValueError as exc:
+        raise ImageSinkConfigError(str(exc)) from exc
     return S3CompatibleSink(
         endpoint_url=settings.s3_endpoint_url,
         bucket=settings.s3_bucket,

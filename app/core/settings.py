@@ -15,12 +15,17 @@ __all__ = ["Settings", "is_loopback_url", "settings"]
 # Set the project base directory and .env file
 BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
 HTTPS_SCHEME = "https"
+HTTP_SCHEME = "http"
+RELAY_WSS_SCHEME = "wss"
+RELAY_WS_SCHEME = "ws"
 LOCALHOST_HOSTNAME = "localhost"
 RELAY_AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
 IMAGE_SINK_AUTO = "auto"
 IMAGE_SINK_BACKEND = "backend"
 IMAGE_SINK_S3 = "s3"
 DEFAULT_PAIRING_BACKEND_URL = "https://api.cml-relab.org"
+APP_ENV_DEVELOPMENT = "development"
+APP_ENV_PRODUCTION = "production"
 
 
 def _parse_list_env(v: object) -> list[str]:
@@ -44,17 +49,55 @@ def _parse_list_env(v: object) -> list[str]:
     return cast("list[str]", [parsed] if not isinstance(parsed, list) else parsed)
 
 
+def _is_loopback_host(hostname: str) -> bool:
+    normalized_hostname = hostname.strip("[]").lower()
+    if normalized_hostname == LOCALHOST_HOSTNAME:
+        return True
+    try:
+        return ip_address(normalized_hostname).is_loopback
+    except ValueError:
+        return False
+
+
 def is_loopback_url(value: str) -> bool:
     """Return whether a URL points at a loopback development host."""
     hostname = urlparse(value).hostname
-    if not hostname:
-        return False
-    if hostname.lower() == LOCALHOST_HOSTNAME:
-        return True
-    try:
-        return ip_address(hostname).is_loopback
-    except ValueError:
-        return False
+    return bool(hostname and _is_loopback_host(hostname))
+
+
+def validate_endpoint_transport(value: str, *, setting_name: str, app_env: str) -> None:
+    """Enforce HTTPS for remote service endpoints outside development."""
+    if not value:
+        return
+    parsed = urlparse(value)
+    if parsed.scheme not in {HTTP_SCHEME, HTTPS_SCHEME} or not parsed.hostname:
+        msg = f"{setting_name} must use http or https."
+        raise ValueError(msg)
+    if parsed.scheme == HTTPS_SCHEME:
+        return
+    if _is_loopback_host(parsed.hostname):
+        return
+    if app_env == APP_ENV_DEVELOPMENT:
+        return
+    msg = f"{setting_name} must use https unless it points at loopback or APP_ENV=development."
+    raise ValueError(msg)
+
+
+def validate_relay_backend_url(value: str, *, app_env: str) -> str:
+    """Validate the relay WebSocket URL transport policy."""
+    if not value:
+        return value
+    scheme = urlparse(value).scheme
+    if scheme not in {RELAY_WSS_SCHEME, RELAY_WS_SCHEME}:
+        msg = "relay_backend_url must use the wss:// (or ws://) scheme, not http/https"
+        raise ValueError(msg)
+    if scheme == RELAY_WS_SCHEME and app_env != APP_ENV_DEVELOPMENT:
+        msg = (
+            "relay_backend_url uses unencrypted ws://. "
+            "Set APP_ENV=development for local development, or switch to wss://."
+        )
+        raise ValueError(msg)
+    return value
 
 
 class Settings(BaseSettings):
@@ -115,6 +158,10 @@ class Settings(BaseSettings):
     auth_key_name: str = "X-API-Key"
     auth_cookie_secure: bool | None = None
     session_cookie_name: str = "relab_session"
+
+    # Runtime mode. Production is the safe default; development permits
+    # plaintext endpoints for local-network test services.
+    app_env: Literal["development", "production"] = APP_ENV_PRODUCTION
 
     # Debug mode
     debug: bool = False
@@ -242,6 +289,17 @@ class Settings(BaseSettings):
         if self.pairing_backend_url.startswith("http://") and not is_loopback_url(self.pairing_backend_url):
             msg = "PAIRING_BACKEND_URL must use https unless it points at a loopback development host."
             raise ValueError(msg)
+        validate_endpoint_transport(
+            self.s3_endpoint_url,
+            setting_name="S3_ENDPOINT_URL",
+            app_env=self.app_env,
+        )
+        if self.otel_enabled:
+            validate_endpoint_transport(
+                self.otel_exporter_otlp_endpoint,
+                setting_name="OTEL_EXPORTER_OTLP_ENDPOINT",
+                app_env=self.app_env,
+            )
         if self.image_sink == IMAGE_SINK_BACKEND and not self.pairing_backend_url:
             msg = "IMAGE_SINK=backend requires PAIRING_BACKEND_URL."
             raise ValueError(msg)
