@@ -7,7 +7,9 @@
 {% block site_header_nav %}
   <nav class="site-header__nav" aria-label="Primary">
     <a href="{{ url_for('homepage') }}" class="btn btn--ghost">Home</a>
+    {% if api_docs_enabled %}
     <a href="{{ url_for('swagger_ui_html') }}" class="btn btn--ghost">API Docs</a>
+    {% endif %}
   </nav>
 {% endblock %}
 
@@ -19,7 +21,12 @@
 {% endblock %}
 
 {% block body %}
-<main class="setup-shell">
+<main
+  class="setup-shell"
+  data-pairing-state
+  data-initial-relay-enabled="{{ 'true' if relay_enabled else 'false' }}"
+  data-initial-pairing-status="{{ pairing.status }}"
+>
   <section class="setup-hero">
     <div class="setup-eyebrow">Raspberry Pi Camera</div>
     <h1>Setup</h1>
@@ -48,10 +55,11 @@
         </div>
         <div class="setup-actions">
           {% if operator_authenticated %}
-          <button class="btn btn--danger" onclick="unpair()">Unpair</button>
+          <button class="btn btn--danger" data-unpair-open type="button">Unpair</button>
           {% endif %}
         </div>
       </div>
+      {% if operator_authenticated %}
       <div class="setup-inline-metrics">
         <div class="setup-inline-metric">
           <span class="setup-debug__label">Relay backend</span>
@@ -62,6 +70,7 @@
           {% if relay_camera_id %}<code>{{ relay_camera_id }}</code>{% else %}<em>not set</em>{% endif %}
         </div>
       </div>
+      {% endif %}
       {% elif pairing.status == status_paired %}
       <div class="setup-state-banner setup-state-banner--success">
         <div class="setup-state-banner__copy">
@@ -77,7 +86,7 @@
         <div class="pairing-code-shell">
           <div class="pairing-code" id="pairing-code">{{ pairing.code }}</div>
           <button class="setup-copy-code-btn" type="button" aria-label="Copy pairing code" title="Copy pairing code"
-            onclick="copyText(document.getElementById('pairing-code').textContent, this)">
+            data-copy-source="pairing-code">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M9 4.5h8.25A2.25 2.25 0 0 1 19.5 6.75V15" fill="none" stroke="currentColor" stroke-width="1.7"
                 stroke-linecap="round" stroke-linejoin="round" />
@@ -88,7 +97,7 @@
           </button>
           {% if operator_authenticated %}
           <button class="setup-refresh-code-btn" type="button" aria-label="Generate a new pairing code"
-            title="Generate a new pairing code" onclick="refreshPairingCode(this)">
+            title="Generate a new pairing code" data-refresh-pairing>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M20.25 12a8.25 8.25 0 0 1-13.95 5.95M3.75 12A8.25 8.25 0 0 1 17.7 6.05" fill="none"
                 stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
@@ -126,6 +135,7 @@
       </div>
       {% endif %}
 
+      {% if operator_authenticated %}
       <details class="setup-debug">
         <summary>
           <span>Pairing details</span>
@@ -136,8 +146,7 @@
             <span class="setup-debug__label">URL</span>
             <div class="setup-debug__value">
               <code id="pairing-backend-url">{{ pairing_backend_url }}</code>
-              <button class="btn setup-copy-btn" type="button"
-                onclick="copyText(document.getElementById('pairing-backend-url').textContent, this)">
+              <button class="btn setup-copy-btn" type="button" data-copy-source="pairing-backend-url">
                 Copy
               </button>
             </div>
@@ -175,9 +184,11 @@
           </div>
         </div>
       </details>
+      {% endif %}
     </div>
   </section>
 
+  {% if operator_authenticated %}
   <section class="setup-status setup-status--advanced">
     <div class="setup-status-grid">
       <details class="setup-advanced">
@@ -225,8 +236,7 @@
             <div class="setup-value-card setup-value-card--key">
               <div class="setup-value-card__header">
                 <span class="setup-debug__label">Local API key</span>
-                <button class="btn setup-copy-btn" type="button"
-                  onclick="copyText(document.getElementById('local-api-key').textContent, this)">
+                <button class="btn setup-copy-btn" type="button" data-copy-source="local-api-key">
                   Copy
                 </button>
               </div>
@@ -258,13 +268,14 @@
       </details>
     </div>
   </section>
+  {% endif %}
   {% if operator_authenticated %}
   <dialog id="unpair-dialog" class="setup-dialog">
     <h3>Unpair this camera?</h3>
     <p>It will disconnect from the backend and re-enter pairing mode. You can re-pair it at any time.</p>
     <div class="setup-dialog__actions">
-      <button class="btn setup-dialog__cancel" onclick="document.getElementById('unpair-dialog').close()">Cancel</button>
-      <button class="btn btn--danger" id="unpair-confirm-btn" onclick="confirmUnpair()">Unpair</button>
+      <button class="btn setup-dialog__cancel" data-dialog-close type="button">Cancel</button>
+      <button class="btn btn--danger" id="unpair-confirm-btn" data-unpair-confirm type="button">Unpair</button>
     </div>
   </dialog>
   {% endif %}

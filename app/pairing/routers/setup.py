@@ -54,13 +54,17 @@ async def setup_page(request: Request) -> HTMLResponse:
     base_url = str(settings.base_url).rstrip("/")
     pairing = runtime.pairing_service.get_state()
     pairing_expires_at_iso = pairing.expires_at.isoformat() if pairing.expires_at else ""
-
-    candidate_urls = _get_candidate_urls()
-    # Strip scheme and port so the template can compose its own URLs.
-    lan_ips = [u.removeprefix("http://").removesuffix(":8018") for u in candidate_urls] or ["<this-ip>"]
-    connection_host = lan_ips[0]
-    pairing_backend_reachable = runtime.runtime_state.relay_enabled or await _pairing_backend_reachable()
     operator_authenticated = has_valid_session(request.cookies.get(settings.session_cookie_name))
+
+    lan_ips: list[str] = []
+    connection_host = ""
+    pairing_backend_reachable = False
+    if operator_authenticated:
+        candidate_urls = _get_candidate_urls()
+        # Strip scheme and port so the template can compose its own URLs.
+        lan_ips = [u.removeprefix("http://").removesuffix(":8018") for u in candidate_urls] or ["<this-ip>"]
+        connection_host = lan_ips[0]
+        pairing_backend_reachable = runtime.runtime_state.relay_enabled or await _pairing_backend_reachable()
 
     return templates.TemplateResponse(
         request,
@@ -69,10 +73,10 @@ async def setup_page(request: Request) -> HTMLResponse:
             "pairing": pairing,
             "pairing_expires_at_iso": pairing_expires_at_iso,
             "relay_enabled": runtime.runtime_state.relay_enabled,
-            "relay_backend_url": runtime.runtime_state.relay_backend_url,
-            "relay_camera_id": runtime.runtime_state.relay_camera_id,
-            "pairing_backend_url": settings.pairing_backend_url,
-            "default_pairing_backend_url": DEFAULT_PAIRING_BACKEND_URL,
+            "relay_backend_url": runtime.runtime_state.relay_backend_url if operator_authenticated else "",
+            "relay_camera_id": runtime.runtime_state.relay_camera_id if operator_authenticated else "",
+            "pairing_backend_url": settings.pairing_backend_url if operator_authenticated else "",
+            "default_pairing_backend_url": DEFAULT_PAIRING_BACKEND_URL if operator_authenticated else "",
             "base_url": base_url,
             "status_paired": STATUS_PAIRED,
             "status_error": _STATUS_ERROR,
@@ -83,6 +87,7 @@ async def setup_page(request: Request) -> HTMLResponse:
             "connection_host": connection_host,
             "lan_ips": lan_ips,
             "pairing_backend_reachable": pairing_backend_reachable,
+            "api_docs_enabled": settings.api_docs_enabled,
         },
     )
 
