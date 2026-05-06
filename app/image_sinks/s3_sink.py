@@ -14,6 +14,7 @@ CloudFront, etc.) and have the Pi return the fronted URL to the frontend.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import AnyUrl
@@ -43,6 +44,10 @@ logger = logging.getLogger(__name__)
 _DEFAULT_KEY_PREFIX = "rpi-cam"
 _DEFAULT_REGION = "us-east-1"
 _BUCKET_ALREADY_CODES = {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}
+_FALLBACK_PRODUCT_SEGMENT = "unsorted"
+_MAX_OBJECT_KEY_SEGMENT_LENGTH = 64
+_UNSAFE_SEGMENT_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
+_REPEATED_DASHES = re.compile(r"-+")
 
 
 class S3CompatibleSink:
@@ -139,7 +144,7 @@ class S3CompatibleSink:
     ) -> str:
         """Build the S3 object key for this capture."""
         product_id = upload_metadata.get("product_id")
-        product_segment = str(product_id) if product_id is not None else "unsorted"
+        product_segment = _safe_object_key_segment(product_id)
         return f"{self._key_prefix}/{product_segment}/{image_id}.jpg"
 
     def _build_public_url(self, key: str) -> str:
@@ -155,3 +160,14 @@ class S3CompatibleSink:
             bucket=self._bucket,
             key=key,
         )
+
+
+def _safe_object_key_segment(value: object) -> str:
+    """Return one bounded S3 object-key segment from untrusted metadata."""
+    if value is None:
+        return _FALLBACK_PRODUCT_SEGMENT
+    parts = [part for part in str(value).replace("\\", "/").split("/") if part not in {"", ".", ".."}]
+    joined = "-".join(parts)
+    segment = _UNSAFE_SEGMENT_CHARS.sub("-", joined)
+    segment = _REPEATED_DASHES.sub("-", segment).strip("-.")[:_MAX_OBJECT_KEY_SEGMENT_LENGTH].strip("-.")
+    return segment or _FALLBACK_PRODUCT_SEGMENT

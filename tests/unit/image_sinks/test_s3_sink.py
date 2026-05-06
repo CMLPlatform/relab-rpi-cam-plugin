@@ -81,7 +81,7 @@ class TestS3CompatibleSink:
         result = await sink.put(
             image_id=S3_IMAGE_ID,
             image_bytes=S3_IMAGE_BYTES,
-            filename="abc123.jpg",
+            filename=f"{S3_IMAGE_ID}.jpg",
             capture_metadata={},
             upload_metadata={"product_id": 42},
         )
@@ -110,6 +110,34 @@ class TestS3CompatibleSink:
         kwargs = fake_s3_client.put_object.await_args_list[0].kwargs
         assert kwargs["Key"] == S3_OBJECT_KEY_UNSORTED
 
+    @pytest.mark.parametrize(
+        ("product_id", "expected_segment"),
+        [
+            ("../../secret", "secret"),
+            ("floor/bench\x00cam", "floor-bench-cam"),
+            ("///", "unsorted"),
+            ("a" * 80, "a" * 64),
+        ],
+    )
+    async def test_metadata_product_id_is_sanitized_for_object_key(
+        self,
+        fake_s3_client: _FakeS3Client,
+        product_id: str,
+        expected_segment: str,
+    ) -> None:
+        """Metadata-derived key segments should not create raw S3 path components."""
+        sink = _make_sink()
+        await sink.put(
+            image_id=S3_IMAGE_ID,
+            image_bytes=b"jpeg",
+            filename=f"{S3_IMAGE_ID}.jpg",
+            capture_metadata={},
+            upload_metadata={"product_id": product_id},
+        )
+
+        kwargs = fake_s3_client.put_object.await_args_list[0].kwargs
+        assert kwargs["Key"] == f"rpi-cam/{expected_segment}/{S3_IMAGE_ID}.jpg"
+
     async def test_custom_public_url_template_for_cdn_fronted_bucket(self) -> None:
         """A custom template (e.g. for R2 custom domains) should be honoured."""
         sink = _make_sink(public_url_template="https://cdn.example.com/{key}")
@@ -130,7 +158,7 @@ class TestS3CompatibleSink:
         sink = _make_sink()
         with pytest.raises(ImageSinkError, match="S3 upload failed"):
             await sink.put(
-                image_id="doomed",
+                image_id="d1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8",
                 image_bytes=b"jpeg",
                 filename="doomed.jpg",
                 capture_metadata={},
@@ -141,14 +169,14 @@ class TestS3CompatibleSink:
         """``create_bucket`` should be called exactly once across multiple puts."""
         sink = _make_sink()
         await sink.put(
-            image_id="first",
+            image_id="f1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8",
             image_bytes=b"jpeg",
             filename="first.jpg",
             capture_metadata={},
             upload_metadata={},
         )
         await sink.put(
-            image_id="second",
+            image_id="e1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8",
             image_bytes=b"jpeg",
             filename="second.jpg",
             capture_metadata={},
@@ -166,7 +194,7 @@ class TestS3CompatibleSink:
             sink = _make_sink()
             # Should not raise.
             await sink.put(
-                image_id="img",
+                image_id="f2b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8",
                 image_bytes=b"jpeg",
                 filename="img.jpg",
                 capture_metadata={},
