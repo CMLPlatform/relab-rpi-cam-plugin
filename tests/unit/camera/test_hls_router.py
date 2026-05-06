@@ -17,6 +17,8 @@ from tests.constants import HLS_M3U8_CONTENT_TYPE, HLS_MP4_CONTENT_TYPE, HLS_PRE
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
 
+    from httpx import AsyncClient
+
 
 class _Response:
     """Minimal stand-in for an httpx response returned by the proxy client."""
@@ -327,3 +329,18 @@ class TestLocalClientDetection:
     def test_public_or_missing_addresses_are_rejected(self, host: str | None) -> None:
         """Public and missing client addresses may not use local preview."""
         assert _is_local_client(host) is False
+
+
+class TestPreviewControlAuth:
+    """Route-level auth checks for direct preview control endpoints."""
+
+    @pytest.mark.parametrize("path", ["/preview/start", "/preview/stop"])
+    async def test_preview_control_routes_reject_unauthenticated_clients(
+        self,
+        unauthed_client: AsyncClient,
+        path: str,
+    ) -> None:
+        """Direct preview control should require normal API authentication."""
+        resp = await unauthed_client.post(path)
+
+        assert resp.status_code == 401

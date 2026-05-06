@@ -41,6 +41,7 @@ from app.workers.preview_thumbnail import PreviewThumbnailWorker
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/preview", tags=["preview"])
+public_router = APIRouter(prefix="/preview", tags=["preview"])
 
 
 def _no_traversal(v: str) -> str:
@@ -158,7 +159,7 @@ async def stop_preview(
     return Response(status_code=204)
 
 
-@router.get(
+@public_router.get(
     "/hls/{hls_path:path}",
     summary="Proxy an LL-HLS playlist or segment from MediaMTX",
     responses={
