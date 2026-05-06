@@ -199,10 +199,6 @@ class Settings(BaseSettings):
     relay_reconnect_min_s: float = 2.0
     relay_reconnect_max_s: float = 60.0
     relay_max_concurrent_commands: int = 8
-    # Opt-in escape hatch for local development against a non-TLS backend.
-    # Production must leave this False so the device-assertion JWT is never
-    # sent over an unencrypted WebSocket.
-    allow_plaintext_relay: bool = False
 
     @property
     def relay_enabled(self) -> bool:
@@ -227,17 +223,6 @@ class Settings(BaseSettings):
     pairing_backend_url: str = DEFAULT_PAIRING_BACKEND_URL
     pairing_register_timeout_retry_s: int = 1  # Delay before retrying a timed-out pairing register request
     pairing_poll_interval_s: int = 3  # Delay between pairing poll requests and after poll timeouts
-
-    @field_validator("relay_backend_url")
-    @classmethod
-    def _validate_relay_url_scheme(cls, v: str) -> str:
-        """Require a WebSocket scheme; warn loudly if not encrypted."""
-        if not v:
-            return v
-        if not v.startswith(("wss://", "ws://")):
-            msg = "relay_backend_url must use the wss:// (or ws://) scheme, not http/https"
-            raise ValueError(msg)
-        return v
 
     @field_validator("authorized_api_keys", mode="before")
     @classmethod
@@ -265,6 +250,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_runtime_bootstrap_config(self) -> "Settings":
+        validate_relay_backend_url(self.relay_backend_url, app_env=self.app_env)
         relay_fields = (
             self.relay_backend_url,
             self.relay_camera_id,
@@ -279,12 +265,6 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         if self.relay_backend_url and self.relay_auth_scheme != RELAY_AUTH_SCHEME_DEVICE_ASSERTION:
             msg = "RELAY_AUTH_SCHEME must be device_assertion when relay bootstrap credentials are configured."
-            raise ValueError(msg)
-        if self.relay_backend_url.startswith("ws://") and not self.allow_plaintext_relay:
-            msg = (
-                "relay_backend_url uses unencrypted ws://. "
-                "Set ALLOW_PLAINTEXT_RELAY=true for local development, or switch to wss://."
-            )
             raise ValueError(msg)
         if self.pairing_backend_url.startswith("http://") and not is_loopback_url(self.pairing_backend_url):
             msg = "PAIRING_BACKEND_URL must use https unless it points at a loopback development host."

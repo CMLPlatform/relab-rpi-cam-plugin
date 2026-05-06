@@ -6,7 +6,7 @@ import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -19,6 +19,7 @@ from app.pairing.services import service as pairing_mod
 from tests.constants import (
     EXAMPLE_BACKEND_URL,
     EXAMPLE_RELAY_BACKEND_URL,
+    EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
     PAIRING_POLL_TIMEOUT_LOG,
     PAIRING_REGISTER_TIMEOUT_LOG,
     TRACEBACK_TEXT,
@@ -305,6 +306,32 @@ class TestPairingHelpers:
         http_client.get.assert_awaited_once()
         assert http_client.post.await_args.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register"
         assert http_client.get.await_args.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/poll"
+
+    async def test_complete_pairing_rejects_plaintext_relay_url_before_persisting(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Pairing payloads must not persist ws:// relay credentials outside development."""
+        state = pairing_mod.PairingState()
+        on_paired = AsyncMock()
+        save_credentials = Mock()
+        monkeypatch.setattr(pairing_mod, "save_relay_credentials", save_credentials)
+
+        with pytest.raises(ValueError, match="unencrypted ws://"):
+            await pairing_mod._complete_pairing_state(
+                state,
+                pairing_mod.PairingClaimedBootstrap(
+                    camera_id=RELAY_CAMERA_ID,
+                    ws_url=EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
+                    auth_scheme=pairing_mod.RelayAuthScheme.DEVICE_ASSERTION,
+                    key_id=RELAY_KEY_ID,
+                ),
+                pairing_mod._generate_private_key(),
+                on_paired,
+            )
+
+        save_credentials.assert_not_called()
+        on_paired.assert_not_awaited()
 
 
 class TestRunPairing:

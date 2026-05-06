@@ -17,6 +17,7 @@ from app.core.settings import (
     Settings,
     is_loopback_url,
     settings,
+    validate_relay_backend_url,
 )
 from app.pairing.services.credentials import _CREDENTIALS_FILE, load_relay_credentials
 
@@ -60,8 +61,6 @@ def apply_relay_credentials(runtime_state: RuntimeState) -> None:
             relay_key_id=str(creds.get("relay_key_id", "")),
             relay_private_key_pem=str(creds.get("relay_private_key_pem", "")),
         )
-        if runtime_state.relay_backend_url.startswith("ws://"):
-            logger.warning("Relay runtime is using unencrypted ws:// transport. Switch to wss:// in production.")
 
 
 def resolve_image_sink_choice(app_settings: Settings = settings) -> str:
@@ -157,8 +156,10 @@ def set_runtime_relay_credentials(
     relay_auth_scheme: str,
     relay_key_id: str,
     relay_private_key_pem: str,
+    app_settings: Settings = settings,
 ) -> None:
     """Apply relay credentials at runtime and refresh dependent auth state."""
+    validate_relay_backend_url(relay_backend_url, app_env=app_settings.app_env)
     runtime_state.set_relay_credentials(
         relay_backend_url=relay_backend_url,
         relay_camera_id=relay_camera_id,

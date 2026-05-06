@@ -55,8 +55,8 @@ class TestRelayUrlValidation:
         )
         assert s.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL
 
-    def test_ws_scheme_is_rejected_without_opt_in(self) -> None:
-        """Should reject ws:// URLs unless ALLOW_PLAINTEXT_RELAY is explicitly set."""
+    def test_ws_scheme_is_rejected_in_production(self) -> None:
+        """Should reject ws:// URLs unless APP_ENV=development."""
         with pytest.raises(ValueError, match="unencrypted ws://"):
             Settings(
                 relay_backend_url=EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
@@ -65,14 +65,14 @@ class TestRelayUrlValidation:
                 relay_private_key_pem="pem",
             )
 
-    def test_ws_scheme_is_accepted_with_opt_in(self) -> None:
-        """Should accept ws:// URLs only when ALLOW_PLAINTEXT_RELAY is True."""
+    def test_ws_scheme_is_accepted_in_development(self) -> None:
+        """Should accept ws:// URLs only when APP_ENV=development."""
         s = Settings(
+            app_env=APP_ENV_DEVELOPMENT,
             relay_backend_url=EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
             relay_camera_id="cam-1",
             relay_key_id="key-1",
             relay_private_key_pem="pem",
-            allow_plaintext_relay=True,
         )
         assert s.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL_UNSECURE
 
@@ -420,6 +420,40 @@ class TestConfigBootstrapHelpers:
 
         config_mod.clear_runtime_relay_credentials(runtime_state)
         assert runtime_state.relay_enabled is False
+
+    def test_set_runtime_relay_credentials_rejects_plaintext_in_production(self) -> None:
+        """Persisted runtime credentials must follow the same TLS policy as env config."""
+        runtime_state = RuntimeState(local_relay_api_key="relay-local-key")
+
+        with pytest.raises(ValueError, match="unencrypted ws://"):
+            config_mod.set_runtime_relay_credentials(
+                runtime_state,
+                relay_backend_url=EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
+                relay_camera_id="cam-1",
+                relay_auth_scheme="device_assertion",
+                relay_key_id="key-1",
+                relay_private_key_pem="pem",
+            )
+
+        assert runtime_state.relay_enabled is False
+
+    def test_set_runtime_relay_credentials_allows_plaintext_in_development(self) -> None:
+        """The local-development APP_ENV setting should also apply to persisted credentials."""
+        runtime_state = RuntimeState(local_relay_api_key="relay-local-key")
+        app_settings = Settings(app_env=APP_ENV_DEVELOPMENT)
+
+        config_mod.set_runtime_relay_credentials(
+            runtime_state,
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
+            relay_camera_id="cam-1",
+            relay_auth_scheme="device_assertion",
+            relay_key_id="key-1",
+            relay_private_key_pem="pem",
+            app_settings=app_settings,
+        )
+
+        assert runtime_state.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL_UNSECURE
+        assert runtime_state.relay_enabled is True
 
     def test_bootstrap_runtime_state_logs_warnings_for_disabled_local_mode_and_loopback_pairing_backend(
         self,

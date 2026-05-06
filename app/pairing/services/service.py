@@ -29,6 +29,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from app.core.bootstrap import set_runtime_relay_credentials
 from app.core.runtime_context import get_active_runtime
 from app.core.settings import settings as app_settings
+from app.core.settings import validate_relay_backend_url
 from app.observability.logging import build_log_extra
 from app.pairing.services.client import PairingClient
 from app.pairing.services.credentials import (
@@ -446,6 +447,10 @@ async def _complete_pairing_state(
     relay_auth_scheme = payload.auth_scheme.value
     key_id = payload.key_id
     private_key_pem = _private_key_pem(private_key)
+    validate_relay_backend_url(
+        relay_backend_url,
+        app_env=app_settings.app_env,
+    )
 
     logger.info("PAIRING COMPLETE | camera_id=%s relay_starting=true", camera_id)
     state.status = STATUS_PAIRED
