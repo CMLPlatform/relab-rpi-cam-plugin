@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 import httpx
 import websockets
+from pydantic import ValidationError
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from app.core.runtime_state import RuntimeState
@@ -43,6 +44,8 @@ _MSG_TYPE_REQUEST = RelayMessageType.REQUEST
 _BINARY_IMAGE = "image"
 _BINARY_OCTET = "octet-stream"
 _BINARY_VIDEO = "video"
+_RELAY_WS_MAX_SIZE = 1_048_576
+_RELAY_WS_MAX_QUEUE = 8
 
 
 class _AsyncWebSocket(Protocol):
@@ -164,7 +167,9 @@ async def _websocket_connect(url: str) -> AsyncGenerator[_WebSocketConnection]:
         "_AsyncWebSocket",
         await websockets.connect(
             url,
-            max_size=1_048_576,  # 1 MiB limit
+            max_size=_RELAY_WS_MAX_SIZE,
+            max_queue=_RELAY_WS_MAX_QUEUE,
+            compression=None,
             additional_headers={"Authorization": f"Bearer {build_device_assertion()}"},
         ),
     )
@@ -248,6 +253,10 @@ async def _handle_relay_message(
         logger.warning("Received invalid JSON from backend; ignoring.", extra=build_log_extra())
         return
 
+    if not isinstance(msg, dict):
+        logger.warning("Received non-object JSON from backend; ignoring.", extra=build_log_extra())
+        return
+
     msg_type = msg.get("type")
 
     if msg_type == _MSG_TYPE_PING:
@@ -288,7 +297,16 @@ async def _drain_pending_tasks(pending_tasks: set[asyncio.Task[None]], *, cancel
 
 async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg: dict) -> None:
     """Dispatch a single command to the local API and send the response."""
-    envelope = RelayCommandEnvelope.model_validate(msg)
+    try:
+        envelope = RelayCommandEnvelope.model_validate(msg)
+    except ValidationError:
+        msg_id = msg.get("id")
+        if isinstance(msg_id, str) and msg_id:
+            await _send_error(ws, msg_id, 400, "Malformed relay command.")
+        else:
+            logger.warning("Received malformed relay command without a response id.", extra=build_log_extra())
+        return
+
     msg_id = envelope.id
     method = envelope.method.upper()
     path = envelope.path

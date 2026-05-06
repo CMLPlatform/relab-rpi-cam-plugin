@@ -28,6 +28,7 @@ RELAY_AUTH_SCHEME = "device_assertion"
 RELAY_KEY_ID = "key-1"
 RELAY_PRIVATE_KEY_PEM = "private-key"
 MESSAGE_ID = "msg-1"
+MALFORMED_MESSAGE_ID = "msg-bad"
 DETAIL = "oops"
 PONG_TYPE = "pong"
 RELAY_403_FRAGMENT = "Relay received 403"
@@ -117,12 +118,20 @@ class TestWebsocketConnect:
         """The wrapper should close the underlying websocket when the context exits."""
         raw_ws = AsyncMock()
         raw_ws.close = AsyncMock()
-        monkeypatch.setattr(relay_mod.websockets, "connect", AsyncMock(return_value=raw_ws))
+        connect = AsyncMock(return_value=raw_ws)
+        monkeypatch.setattr(relay_mod.websockets, "connect", connect)
         monkeypatch.setattr(relay_mod, "build_device_assertion", lambda: "jwt")
 
         async with relay_mod._websocket_connect(EXAMPLE_RELAY_BACKEND_URL) as ws:
             assert ws is not None
 
+        connect.assert_awaited_once_with(
+            EXAMPLE_RELAY_BACKEND_URL,
+            max_size=1_048_576,
+            max_queue=8,
+            compression=None,
+            additional_headers={"Authorization": "Bearer jwt"},
+        )
         raw_ws.close.assert_awaited_once()
 
 
@@ -158,6 +167,17 @@ class TestReceiveLoop:
         ws.recv = AsyncMock(side_effect=[json.dumps({"type": "unknown"}), OSError("closed")])
         await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
 
+    async def test_ignores_non_object_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Valid JSON frames that are not objects should not dispatch commands."""
+        ws = AsyncMock()
+        ws.recv = AsyncMock(side_effect=[json.dumps(["request"]), OSError("closed")])
+        handler = AsyncMock()
+        monkeypatch.setattr(relay_mod, "_handle_command", handler)
+
+        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+
+        handler.assert_not_awaited()
+
     async def test_dispatches_request_messages(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should dispatch messages of type "request" to the command handler."""
         ws = AsyncMock()
@@ -172,6 +192,28 @@ class TestReceiveLoop:
 
 class TestHandleCommand:
     """Tests for relay command dispatch."""
+
+    async def test_malformed_request_does_not_reach_local_http_client(self) -> None:
+        """Malformed relay requests should be rejected before local API dispatch."""
+        ws = AsyncMock()
+        http = AsyncMock()
+
+        await _handle_command(ws, http, {"type": "request", "id": MALFORMED_MESSAGE_ID})
+
+        http.request.assert_not_called()
+        payload = json.loads(ws.send.call_args.args[0])
+        assert payload["id"] == MALFORMED_MESSAGE_ID
+        assert payload["status"] == 400
+
+    async def test_malformed_request_without_id_is_ignored(self) -> None:
+        """Malformed relay requests without a usable id cannot receive an error response."""
+        ws = AsyncMock()
+        http = AsyncMock()
+
+        await _handle_command(ws, http, {"type": "request"})
+
+        http.request.assert_not_called()
+        ws.send.assert_not_called()
 
     async def test_forwards_trace_headers_to_local_request(self) -> None:
         """Trace propagation headers should survive the relay hop."""
