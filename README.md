@@ -40,6 +40,8 @@ Supported hardware is Raspberry Pi 5/4 with Camera Module 3/v2 on Raspberry Pi O
 1. Enter the pairing code in the native RELab app.
 1. Visit `http://your-pi-ip:8018/setup` to check pairing, status, and diagnostics.
 
+Use the generated [RPi camera API reference](https://docs.cml-relab.org/api/rpi-cam/) for endpoint-level documentation. The Pi-hosted Swagger/OpenAPI routes are development-only.
+
 The HTTPS-served RELab web frontend cannot auto-probe the Pi's plain-HTTP local API because browsers block mixed content. Use the native app for pairing and direct-mode setup.
 
 ## Standalone Mode

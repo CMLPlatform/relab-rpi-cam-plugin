@@ -73,6 +73,8 @@ When pairing mode is active, read the code from either surface:
 
 Treat `/setup` and pairing logs as local/operator-only during pairing. The code is a short-lived bootstrap credential; anyone who can reach either surface during its 10-minute window can try to claim the camera.
 
+The setup page polls `GET /pairing/state` so it can reload when pairing or unpairing completes. That endpoint is intentionally public and returns only low-detail state (`status` and `relay_enabled`); it does not expose the pairing code, relay credentials, local API key, backend URLs, or camera IDs.
+
 Enter the code in the native RELab app under Cameras > Add Camera. The Pi receives relay credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
 
 To rotate the code without deleting relay credentials, use **Generate a new pairing code** on `/setup`.
@@ -168,7 +170,7 @@ uv run fastapi run app/main.py --host 0.0.0.0 --port 8018
 Once running, check:
 
 - setup and status: `http://your-pi-ip:8018/setup`
-- API docs: `http://your-pi-ip:8018/docs`
+- API reference: <https://docs.cml-relab.org/api/rpi-cam/>
 - HLS preview: `http://your-pi-ip:8018/preview/hls/cam-preview/index.m3u8`
 
 For headless operation, read pairing status from:
