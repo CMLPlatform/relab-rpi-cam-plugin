@@ -100,6 +100,7 @@ services:
     environment:
       LOKI_PUSH_URL: ${LOKI_PUSH_URL:-}
       PROMETHEUS_REMOTE_WRITE_URL: ${PROMETHEUS_REMOTE_WRITE_URL:-}
+      PROMETHEUS_SCRAPE_API_KEY: ${PROMETHEUS_SCRAPE_API_KEY:-}
       OBSERVABILITY_INSTANCE: ${OBSERVABILITY_INSTANCE:-rpi-cam-plugin}
     command:
       - run
@@ -116,8 +117,8 @@ services:
     image: rustfs/rustfs:1.0.0-beta.1@sha256:3c2d55977829620284ece8593901bf776bcfc0fc9972784352de4dcffdb92416
     restart: unless-stopped
     ports:
-      - "9000:9000" # S3 API
-      - "9001:9001" # Web console
+      - "${RUSTFS_API_BIND:-127.0.0.1}:9000:9000" # S3 API
+      - "${RUSTFS_CONSOLE_BIND:-127.0.0.1}:9001:9001" # Web console
     volumes:
       - rustfs_data:/data
     environment:

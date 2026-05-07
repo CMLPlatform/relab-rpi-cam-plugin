@@ -12,16 +12,17 @@ srt: no
 playback: no
 metrics: no
 
-# RTSP ingest
+# RTSP ingest. The app and MediaMTX share host networking, so localhost is
+# enough for camera ingest while avoiding direct LAN exposure.
 rtsp: yes
-rtspAddress: :8554
+rtspAddress: 127.0.0.1:8554
 rtspTransports: [tcp]
 
 # Browser/native preview HLS. Standard HLS is a little less aggressive than
 # LL-HLS, but it avoids MediaMTX's variable part-duration warnings that break
 # playback on iOS clients when the preview stream cadence jitters slightly.
 hls: yes
-hlsAddress: :8888
+hlsAddress: 127.0.0.1:8888
 hlsAlwaysRemux: yes
 hlsVariant: mpegts
 hlsSegmentCount: 7
