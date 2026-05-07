@@ -113,7 +113,7 @@ services:
     # S3-compatible object storage for standalone mode. The sidecar publishes
     # loopback-only ports by default; set RUSTFS_*_BIND only when exposing it.
     # See the ``standalone`` section of ``.env.example`` for the required vars.
-    image: rustfs/rustfs:latest
+    image: rustfs/rustfs:1.0.0-beta.1@sha256:3c2d55977829620284ece8593901bf776bcfc0fc9972784352de4dcffdb92416
     restart: unless-stopped
     ports:
       - "9000:9000" # S3 API
