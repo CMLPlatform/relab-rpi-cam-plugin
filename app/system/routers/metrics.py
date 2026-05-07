@@ -1,10 +1,8 @@
 """Prometheus metrics exposition for optional Alloy/Prometheus scraping.
 
-Unlike the authenticated `/system/telemetry` JSON endpoint, `/metrics` is deliberately
-unauthenticated: it's designed to be scraped by a colocated Alloy or Prometheus
-instance on a trusted network (the compose-internal docker network). The values
-it exposes are benign system stats (CPU%, memory%, disk%, SoC temperature,
-preview session count) — nothing sensitive.
+Like the `/system/telemetry` JSON endpoint, `/metrics` requires the normal API
+key or browser-session authentication. Alloy can scrape it by sending an
+operator-provisioned API key in the `X-API-Key` header.
 """
 
 from fastapi import APIRouter

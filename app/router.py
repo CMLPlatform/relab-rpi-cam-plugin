@@ -18,13 +18,13 @@ router = APIRouter()
 for r in [auth_router, landing_router]:
     router.include_router(r, include_in_schema=False)
 
-# Unauthenticated surfaces: HLS preview, setup UI, metrics.
+# Unauthenticated surfaces: HLS preview and setup UI.
 router.include_router(camera.public_router)
 router.include_router(pairing.public_router)
 router.include_router(system.public_router)
 
 # Authenticated surfaces: camera controls/captures/stream, local-access
-# bootstrap, system telemetry.
+# bootstrap, system telemetry, and metrics.
 router.include_router(camera.router, dependencies=[Depends(verify_request)])
 router.include_router(pairing.router, dependencies=[Depends(verify_request)])
 router.include_router(system.router, dependencies=[Depends(verify_request)])
