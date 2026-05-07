@@ -58,6 +58,8 @@ docker compose build
 docker compose up -d
 ```
 
+Review `compose.override.yml` before startup. It should contain only current camera device nodes such as `/dev/media*`, `/dev/video*`, `/dev/v4l-subdev*`, and `/dev/dma_heap`. Regenerate it after kernel, camera, or hardware changes; do not use `privileged: true`.
+
 View logs:
 
 ```sh
@@ -95,7 +97,7 @@ COMPOSE_PROFILES=standalone
 APP_ENV=development
 
 IMAGE_SINK=s3
-S3_ENDPOINT_URL=http://host.docker.internal:9000
+S3_ENDPOINT_URL=http://127.0.0.1:9000
 S3_BUCKET=rpi-cam
 S3_ACCESS_KEY_ID=rustfsadmin
 S3_SECRET_ACCESS_KEY=change-me-to-a-strong-password
@@ -113,8 +115,10 @@ Runtime surfaces:
 
 - Camera API: `http://<pi-lan-ip>:8018`
 - Setup UI: `http://<pi-lan-ip>:8018/setup`
-- RustFS console: `http://<pi-lan-ip>:9001`
-- Captures: `http://<pi-lan-ip>:9000/rpi-cam/`
+- RustFS console: `http://127.0.0.1:9001`
+- Captures: `http://127.0.0.1:9000/rpi-cam/`
+
+RustFS is loopback-only by default. To expose it on the operator LAN, set `RUSTFS_API_BIND` and `RUSTFS_CONSOLE_BIND` to the Pi's LAN IP, then restrict ports `9000` and `9001` to trusted clients.
 
 For an external S3-compatible service such as Backblaze B2, Cloudflare R2, Wasabi, or AWS S3, set `S3_ENDPOINT_URL`, credentials, and `S3_PUBLIC_URL_TEMPLATE`. Remote production S3 endpoints require HTTPS. Keep `APP_ENV=development` for local HTTP storage only.
 
@@ -152,6 +156,8 @@ LOCAL_MODE_ENABLED=false
 
 Network notes:
 
+- Keep app port `8018` reachable only on trusted operator networks.
+- MediaMTX RTSP `8554` and HLS `8888` bind to `127.0.0.1`; preview traffic goes through the app.
 - Ethernet link-local addressing (`169.254.x.x`) works when no DHCP server is present.
 - USB gadget mode applies to Raspberry Pi Zero 2W and some Raspberry Pi 4 revisions, not Raspberry Pi 5.
 - mDNS is optional. Install `avahi-daemon` and advertise `_relab-rpi-cam._tcp` on port 8018 to reach the Pi at `<hostname>.local`.

@@ -17,7 +17,7 @@ Device-side software for automated image capture on Raspberry Pi, integrated wit
 The plugin runs a lightweight FastAPI server on a Raspberry Pi that:
 
 - captures still images from the connected camera module
-- publishes a low-latency LL-HLS preview through the local MediaMTX sidecar
+- publishes an HLS preview through the local MediaMTX sidecar
 - connects to RELab through an outbound WebSocket relay
 - exposes local REST endpoints for setup, diagnostics, and direct integrations
 
@@ -34,7 +34,7 @@ Supported hardware is Raspberry Pi 5/4 with Camera Module 3/v2 on Raspberry Pi O
 
 ## Getting Started
 
-1. Follow [INSTALL.md](INSTALL.md) to prepare the Pi and start the service.
+1. Follow [INSTALL.md](INSTALL.md) to prepare the Pi, generate `compose.override.yml`, and start the service.
 1. Set `PAIRING_BACKEND_URL` in `.env`.
 1. Read the 6-character pairing code from `/setup` or the `PAIRING READY` log banner.
 1. Enter the pairing code in the native RELab app.
@@ -46,7 +46,7 @@ The HTTPS-served RELab web frontend cannot auto-probe the Pi's plain-HTTP local 
 
 ## Standalone Mode
 
-The plugin can run without a RELab backend by writing captures to an S3-compatible bucket. The default standalone stack uses a local RustFS sidecar and `APP_ENV=development` for local HTTP storage. Remote production S3 endpoints require HTTPS.
+The plugin can run without a RELab backend by writing captures to an S3-compatible bucket. The default standalone stack uses a loopback-only RustFS sidecar and `APP_ENV=development` for local HTTP storage. Remote production S3 endpoints require HTTPS.
 
 Captured images, queued retries, dead letters, and preview thumbnails are sensitive local device data. In standalone S3 mode, generated public URLs are reachable wherever the configured bucket, endpoint, or proxy is reachable, so keep image storage private or LAN-only when captures are sensitive.
 
