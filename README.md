@@ -60,7 +60,7 @@ The local key is an auth gate for the direct interface. It does not register a c
 
 ## Observability
 
-The plugin writes structured logs and can ship logs/traces to an external observability stack. OTLP tracing is opt-in with `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT`; remote production OTLP endpoints require HTTPS.
+The plugin writes redacted structured logs and can ship logs, metrics, and traces to an external observability stack. OTLP tracing is opt-in with `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT`; remote production OTLP endpoints require HTTPS.
 
 See [INSTALL.md#observability](INSTALL.md#observability) for operator configuration and [ARCHITECTURE.md#observability](ARCHITECTURE.md#observability) for the internal pipeline.
 

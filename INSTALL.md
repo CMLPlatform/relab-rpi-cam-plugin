@@ -194,8 +194,24 @@ To ship logs to a Loki-compatible collector, add:
 ```sh
 COMPOSE_PROFILES=observability-ship
 OBSERVABILITY_INSTANCE=pi-01
-LOKI_PUSH_URL=http://your-observability-host:3100/loki/api/v1/push
+LOKI_PUSH_URL=https://your-observability-host/loki/api/v1/push
 ```
+
+Use an authenticated collector with explicit log retention. Structured file logs
+redact runtime secrets and omit local-only pairing banners, but collectors
+remain operator-visible infrastructure.
+
+To ship metrics, configure a remote-write endpoint and an API key for Alloy's
+local scrape:
+
+```sh
+PROMETHEUS_REMOTE_WRITE_URL=https://your-observability-host/api/v1/write
+PROMETHEUS_SCRAPE_API_KEY=change-me
+AUTHORIZED_API_KEYS='["change-me"]'
+```
+
+The scrape key is sent only to the local plugin `/metrics` endpoint. Use scoped
+collector credentials for remote-write when supported.
 
 Tracing is opt-in:
 
@@ -204,7 +220,9 @@ OTEL_ENABLED=true
 OTEL_EXPORTER_OTLP_ENDPOINT=https://your-observability-host:4318/v1/traces
 ```
 
-Remote production OTLP endpoints require HTTPS. Plaintext HTTP is accepted only for loopback collectors or when `APP_ENV=development`.
+Remote production OTLP endpoints require HTTPS. Plaintext HTTP is accepted only
+for loopback collectors or when `APP_ENV=development`. Treat traces as
+operational metadata with authenticated collectors and explicit retention.
 
 Local Loki/Grafana and OTLP collectors are not bundled with this plugin.
 
