@@ -10,46 +10,32 @@
   "semanticCommits": "enabled",
   "semanticCommitType": "chore",
   "semanticCommitScope": "deps",
-  "platformAutomerge": true,
+  "automerge": false,
   "pep621": {
     "enabled": true
   },
   "lockFileMaintenance": {
     "enabled": true,
-    "automerge": true
+    "automerge": false,
+    "labels": [
+      "manual-review",
+      "security-sensitive"
+    ]
   },
   "ignorePaths": [
     ".python-version"
   ],
   "packageRules": [
     {
-      "matchUpdateTypes": [
-        "minor",
-        "patch"
-      ],
-      "automerge": true,
-      "labels": [
-        "automerge"
-      ],
-      "matchPackageNames": [
-        "*"
-      ]
-    },
-    {
       "groupName": "github-actions",
       "matchManagers": [
         "github-actions"
       ],
-      "matchUpdateTypes": [
-        "digest",
-        "minor",
-        "patch"
-      ],
       "pinDigests": true,
-      "automerge": true,
       "labels": [
-        "automerge",
-        "github-actions"
+        "github-actions",
+        "manual-review",
+        "security-sensitive"
       ]
     },
     {
@@ -58,16 +44,11 @@
         "dockerfile",
         "docker-compose"
       ],
-      "pinDigests": true
-    },
-    {
-      "groupName": "pre-commit",
-      "matchManagers": [
-        "pre-commit"
-      ],
-      "automerge": true,
+      "pinDigests": true,
       "labels": [
-        "automerge"
+        "docker",
+        "manual-review",
+        "security-sensitive"
       ]
     }
   ],
