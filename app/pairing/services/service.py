@@ -279,7 +279,11 @@ def _format_pairing_ready_message(code: str) -> str:
 
 def _log_pairing_ready(code: str) -> None:
     """Emit the currently active pairing code for operators over SSH/logs."""
-    logger.info("%s", _format_pairing_ready_message(code), extra=build_log_extra())
+    logger.info(
+        "%s",
+        _format_pairing_ready_message(code),
+        extra={**build_log_extra(), "local_operator_only": True},
+    )
 
 
 def _log_pairing_connect_error(exc: httpx.ConnectError, base_url: str) -> None:

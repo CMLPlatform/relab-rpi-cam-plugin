@@ -4,6 +4,7 @@ import contextvars
 import importlib
 import json
 import logging
+import re
 import sys
 from datetime import UTC, datetime
 from logging.config import dictConfig
@@ -17,6 +18,39 @@ if TYPE_CHECKING:
     from app.core.settings import Settings
 
 _request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
+_REDACTED = "[REDACTED]"
+_LOCAL_OPERATOR_ONLY_MESSAGE = "[local operator message omitted]"
+_SENSITIVE_FIELD_NAMES = (
+    "api_key",
+    "apikey",
+    "authorization",
+    "broadcast_key",
+    "fingerprint",
+    "local_api_key",
+    "local_relay_api_key",
+    "pairing_fingerprint",
+    "private_key",
+    "relay_private_key_pem",
+    "refresh_token",
+    "s3_secret_access_key",
+    "secret_access_key",
+    "stream_key",
+    "token",
+    "x-api-key",
+)
+_SENSITIVE_FIELD_ALTERNATION = "|".join(re.escape(name) for name in _SENSITIVE_FIELD_NAMES)
+_SENSITIVE_FIELD_RE = re.compile(
+    rf"([\"']?(?:{_SENSITIVE_FIELD_ALTERNATION})[\"']?\s*[:=]\s*[\"']?)([^\"'\s,}}]+)",
+    re.IGNORECASE,
+)
+_BEARER_RE = re.compile(
+    r"(\bauthorization\s*[:=]\s*bearer\s+)[^\s,;)}\]]+",
+    re.IGNORECASE,
+)
+_PRIVATE_KEY_RE = re.compile(
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+    re.DOTALL,
+)
 
 
 def _get_settings() -> "Settings":
@@ -44,6 +78,14 @@ def reset_request_id(token: contextvars.Token[str | None]) -> None:
     _request_id_var.reset(token)
 
 
+def redact_log_text(value: object) -> str:
+    """Redact known secret fields and bearer material from log text."""
+    text = str(value)
+    text = _PRIVATE_KEY_RE.sub(_REDACTED, text)
+    text = _BEARER_RE.sub(rf"\1{_REDACTED}", text)
+    return _SENSITIVE_FIELD_RE.sub(rf"\1{_REDACTED}", text)
+
+
 def build_log_extra(
     *,
     camera_id: str | None = None,
@@ -69,11 +111,12 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Serialize a log record into a JSON string."""
+        message = _LOCAL_OPERATOR_ONLY_MESSAGE if getattr(record, "local_operator_only", False) else record.getMessage()
         log_entry: dict[str, object] = {
             "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact_log_text(message),
         }
         if request_id := getattr(record, "request_id", None) or get_request_id():
             log_entry["request_id"] = request_id
@@ -82,10 +125,18 @@ class JsonFormatter(logging.Formatter):
         if stream_mode := getattr(record, "stream_mode", None):
             log_entry["stream_mode"] = str(stream_mode)
         if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
+            log_entry["exception"] = redact_log_text(self.formatException(record.exc_info))
         if record.stack_info:
-            log_entry["stack_info"] = self.formatStack(record.stack_info)
+            log_entry["stack_info"] = redact_log_text(self.formatStack(record.stack_info))
         return json.dumps(log_entry, ensure_ascii=False)
+
+
+class RedactingFormatter(logging.Formatter):
+    """Human-readable formatter that applies the shared redaction policy."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format a record and redact sensitive material in the rendered text."""
+        return redact_log_text(super().format(record))
 
 
 def configure_library_loggers() -> None:
@@ -126,7 +177,8 @@ def setup_logging(log_level: str = "INFO", log_file: Path | str | None = None) -
         "disable_existing_loggers": False,
         "formatters": {
             "console_format": {
-                "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                "()": RedactingFormatter,
+                "fmt": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
             "json_format": {

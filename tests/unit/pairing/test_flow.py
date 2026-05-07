@@ -186,6 +186,29 @@ class TestPairingHelpers:
         assert service.state.status == PAIRING_STATUS_REGISTERING
         assert f"PAIRING CODE: {PAIRING_CODE_1}" in pairing_mod._format_pairing_ready_message(PAIRING_CODE_1)
 
+    def test_log_pairing_ready_marks_banner_as_local_operator_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Pairing codes should be visible locally but marked out of shipped JSON logs."""
+        records: list[logging.LogRecord] = []
+
+        class _CaptureHandler(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _CaptureHandler()
+        monkeypatch.setattr(pairing_mod, "build_log_extra", dict)
+        pairing_mod.logger.addHandler(handler)
+        try:
+            pairing_mod._log_pairing_ready(PAIRING_CODE_1)
+        finally:
+            pairing_mod.logger.removeHandler(handler)
+
+        assert records
+        assert PAIRING_CODE_1 in records[0].getMessage()
+        assert cast("Any", records[0]).local_operator_only is True
+
     def test_log_pairing_connect_error_for_loopback_container_backend(
         self,
         monkeypatch: pytest.MonkeyPatch,
