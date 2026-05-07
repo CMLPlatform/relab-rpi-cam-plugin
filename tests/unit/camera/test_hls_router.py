@@ -14,6 +14,9 @@ from app.camera.routers.hls import _is_local_client, proxy_hls, start_preview, s
 from app.relay.state import RelayRuntimeState
 from tests.constants import HLS_M3U8_CONTENT_TYPE, HLS_MP4_CONTENT_TYPE, HLS_PREVIEW_ENCODER_FRAGMENT
 
+MEDIAMTX_UNAVAILABLE_DETAIL = "MediaMTX HLS is temporarily unavailable"
+PREVIEW_START_FAILED_DETAIL = "Preview encoder failed to start"
+
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
 
@@ -221,6 +224,7 @@ class TestProxyHLS:
                 relay_state=relay_state,
             )
         assert excinfo.value.status_code == 503
+        assert excinfo.value.detail == MEDIAMTX_UNAVAILABLE_DETAIL
 
 
 def _thumbnail_worker() -> MagicMock:
@@ -271,6 +275,22 @@ class TestPreviewStart:
                 pipeline=_pipeline(running=False),
             )
         assert excinfo.value.status_code == 503
+
+    async def test_start_runtime_error_returns_generic_503_detail(self) -> None:
+        """Preview startup failures should not expose raw encoder exception text."""
+        camera = MagicMock(name="camera")
+        pipeline = _pipeline(running=False)
+        pipeline.start = AsyncMock(side_effect=RuntimeError("ffmpeg path /secret/bin failed"))
+
+        with pytest.raises(HTTPException) as excinfo:
+            await start_preview(
+                request=_request(),
+                camera_manager=_camera_manager(camera),
+                pipeline=pipeline,
+            )
+
+        assert excinfo.value.status_code == 503
+        assert excinfo.value.detail == PREVIEW_START_FAILED_DETAIL
 
 
 class TestPreviewStop:

@@ -31,6 +31,7 @@ from pydantic import AfterValidator
 
 from app.camera.dependencies import CameraManagerDependency
 from app.camera.services.manager import CameraManager
+from app.core.http_errors import client_error_detail
 from app.core.runtime import get_request_runtime
 from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.logging import build_log_extra
@@ -130,7 +131,7 @@ async def start_preview(
         await pipeline.start(camera)
     except RuntimeError as exc:
         logger.warning("Failed to start preview encoder: %s", exc, extra=build_log_extra())
-        raise HTTPException(status_code=503, detail=f"Failed to start preview encoder: {exc}") from exc
+        raise HTTPException(status_code=503, detail=client_error_detail("Preview encoder failed to start")) from exc
     return Response(status_code=204)
 
 
@@ -199,7 +200,10 @@ async def proxy_hls(
             response = await client.get(target_url)
     except httpx.HTTPError as exc:
         logger.warning("MediaMTX HLS unreachable: %s", exc, extra=build_log_extra())
-        raise HTTPException(status_code=503, detail=f"MediaMTX HLS unreachable: {exc}") from exc
+        raise HTTPException(
+            status_code=503,
+            detail=client_error_detail("MediaMTX HLS is temporarily unavailable"),
+        ) from exc
 
     if response.status_code == 404:
         raise HTTPException(

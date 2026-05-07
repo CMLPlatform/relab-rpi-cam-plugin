@@ -15,6 +15,7 @@ from relab_rpi_cam_models.images import ImageCaptureResponse
 from app.camera.dependencies import CameraManagerDependency
 from app.camera.exceptions import ActiveStreamError
 from app.camera.schemas import CaptureUploadMetadata
+from app.core.http_errors import client_error_detail
 from app.observability.logging import build_log_extra
 from app.upload.queue import UploadQueueFullError
 
@@ -45,4 +46,4 @@ async def capture_image(
         raise HTTPException(status_code=409, detail=str(e)) from e
     except RuntimeError as e:
         logger.exception("Image capture failed", extra=build_log_extra(stream_mode=camera_manager.stream.mode))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=client_error_detail("Image capture failed")) from e

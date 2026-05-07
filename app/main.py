@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.__version__ import version
 from app.camera.exceptions import CameraInitializationError
+from app.core.http_errors import client_error_detail
 from app.core.lifespan import lifespan
 from app.core.middleware import register_middleware
 from app.core.runtime import ensure_app_runtime
@@ -50,9 +51,10 @@ async def camera_initialization_exception_handler(
     exc: Exception,
 ) -> JSONResponse:
     """Handle camera initialization errors."""
+    logger.exception("Camera initialization failed", exc_info=(type(exc), exc, exc.__traceback__))
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc)},
+        content={"detail": client_error_detail("Camera initialization failed")},
     )
 
 

@@ -10,6 +10,7 @@ from app.camera.services.manager import CameraControlsNotSupportedError, CameraM
 CURRENT_MODE_KEY = "current_mode"
 STREAM_KEY = "stream"
 MAX_CONTROL_COUNT = 32
+REQUEST_ID = "test-request-id"
 
 
 class TestCameraStatus:
@@ -147,3 +148,30 @@ class TestCameraControlsNotSupported:
         )
         resp = await client.put("/camera/focus", json={"mode": "manual", "lens_position": 99.0})
         assert resp.status_code == 422
+
+
+class TestCameraErrorDisclosure:
+    """5xx camera responses should be stable and request-correlatable."""
+
+    async def test_capture_runtime_error_hides_raw_exception_and_returns_request_id(
+        self,
+        client: AsyncClient,
+        camera_manager: CameraManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Unexpected capture failures should not expose local implementation details."""
+        monkeypatch.setattr(
+            camera_manager,
+            "capture_jpeg",
+            AsyncMock(side_effect=RuntimeError("backend http://secret-sidecar.local failed")),
+        )
+
+        resp = await client.post("/captures", headers={"X-Request-ID": REQUEST_ID})
+
+        assert resp.status_code == 500
+        assert resp.json() == {
+            "detail": {
+                "message": "Image capture failed",
+                "request_id": REQUEST_ID,
+            }
+        }
