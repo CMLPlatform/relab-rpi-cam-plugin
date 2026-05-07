@@ -58,7 +58,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg python3-picamera2 && \
-    useradd --create-home --uid 1000 --groups video rpicam
+    useradd --create-home --uid 1000 --gid video rpicam
 
 ENV PYTHONPATH="/app:/usr/lib/python3/dist-packages" \
     PYTHONUNBUFFERED=1 \
@@ -66,7 +66,6 @@ ENV PYTHONPATH="/app:/usr/lib/python3/dist-packages" \
 
 COPY --link --chown=1000:44 --from=builder /app/.venv .venv
 COPY --link --chown=1000:44 --from=builder /app/app app
-COPY --link --chown=1000:44 scripts/docker_entrypoint.sh scripts/docker_entrypoint.sh
 
 RUN mkdir -p /app/data/images /app/logs /home/rpicam/.config/relab && \
     chown -R 1000:44 /app/data /app/logs /home/rpicam/.config
@@ -76,7 +75,9 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 EXPOSE 8018
 
-ENTRYPOINT ["scripts/docker_entrypoint.sh"]
+USER 1000:44
+
+CMD ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8018"]
 
 # Standalone runtime: identical to the paired runtime but with S3 dependencies.
 # Only the venv differs; all other layers are inherited from the runtime stage.

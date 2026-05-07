@@ -6,3 +6,5 @@ USER root
 
 RUN --mount=type=cache,target=/var/cache/apk \
     apk add --no-cache wget
+
+USER 1000:1000
