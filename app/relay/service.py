@@ -149,7 +149,8 @@ class RelayService:
 
     def build_url(self) -> str:
         """Return the active relay URL including camera identifier."""
-        return f"{self._runtime_state.relay_backend_url.rstrip('/')}?camera_id={self._runtime_state.relay_camera_id}"
+        url = httpx.URL(self._runtime_state.relay_backend_url.rstrip("/"))
+        return str(url.copy_add_param("camera_id", self._runtime_state.relay_camera_id))
 
 
 def _format_relay_connection_error(exc: Exception) -> str:

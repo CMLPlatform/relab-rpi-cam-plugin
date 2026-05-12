@@ -90,6 +90,16 @@ class TestRelayServiceUrl:
         service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
         assert service.build_url() == EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
+    def test_encodes_camera_id_query_value(self) -> None:
+        """Camera IDs must not be able to alter the relay query string."""
+        runtime_state = RuntimeState(
+            relay_backend_url=f"{EXAMPLE_RELAY_BACKEND_URL}/",
+            relay_camera_id="cam-42&role=admin",
+        )
+        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+
+        assert service.build_url() == f"{EXAMPLE_RELAY_BACKEND_URL}?camera_id=cam-42%26role%3Dadmin"
+
 
 class TestRelayConnectionErrorFormatting:
     """Tests for concise formatting of expected reconnect errors."""

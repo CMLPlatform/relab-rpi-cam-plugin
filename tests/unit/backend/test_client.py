@@ -32,6 +32,8 @@ UNEXPECTED_STATUS_LOG = "backend returned HTTP 500"
 NETWORK_WARNING_LOG = "network error reaching backend"
 DEVICE_UPLOAD_PATH = "/v1/plugins/rpi-cam/device/cameras/"
 PREVIEW_THUMBNAIL_URL = "https://backend.example/uploads/rpi-cam/previews/cam.jpg"
+UNSAFE_CAMERA_ID = "cam/../42?admin=true"
+ENCODED_UNSAFE_CAMERA_ID = "cam%2F..%2F42%3Fadmin%3Dtrue"
 
 
 @pytest.fixture(autouse=True)
@@ -105,6 +107,26 @@ class TestUploadImage:
         assert kwargs["data"]["upload_metadata"] == UPLOAD_METADATA_JSON
         assert kwargs["headers"]["Authorization"] == AUTHORIZATION_HEADER
 
+    async def test_upload_image_encodes_camera_id_path_segment(self) -> None:
+        """Camera IDs must not be able to alter backend callback paths."""
+        runtime = backend_client_mod.get_active_runtime()
+        runtime.runtime_state.relay_camera_id = UNSAFE_CAMERA_ID
+        response = _fake_response(
+            200,
+            {"image_id": SAMPLE_SERVER_IMAGE_ID, "image_url": BACKEND_IMAGE_URL},
+        )
+
+        with _patch_async_client(response) as patched_client:
+            await upload_image(
+                image_bytes=b"\xff\xd8fake-jpg",
+                filename="test.jpg",
+                capture_metadata={"width": 1920},
+                upload_metadata={"product_id": 1},
+            )
+
+        args, _kwargs = patched_client.return_value.post.await_args
+        assert str(args[0]) == (f"https://backend.example{DEVICE_UPLOAD_PATH}{ENCODED_UNSAFE_CAMERA_ID}/image-upload")
+
     async def test_preview_thumbnail_uses_device_callback_route(self) -> None:
         """Preview thumbnails should use the backend's canonical device callback route."""
         response = _fake_response(200, {"preview_thumbnail_url": "/uploads/rpi-cam/previews/cam.jpg"})
@@ -118,6 +140,20 @@ class TestUploadImage:
         assert str(args[0]).endswith("/preview-thumbnail-upload")
         assert kwargs["files"]["file"] == ("preview-thumbnail.jpg", b"\xff\xd8preview", "image/jpeg")
         assert kwargs["headers"]["Authorization"] == AUTHORIZATION_HEADER
+
+    async def test_preview_thumbnail_encodes_camera_id_path_segment(self) -> None:
+        """Preview thumbnail callbacks should encode the camera ID path segment."""
+        runtime = backend_client_mod.get_active_runtime()
+        runtime.runtime_state.relay_camera_id = UNSAFE_CAMERA_ID
+        response = _fake_response(200, {"preview_thumbnail_url": "/uploads/rpi-cam/previews/cam.jpg"})
+
+        with _patch_async_client(response) as patched_client:
+            await upload_preview_thumbnail(image_bytes=b"\xff\xd8preview")
+
+        args, _kwargs = patched_client.return_value.post.await_args
+        assert str(args[0]) == (
+            f"https://backend.example{DEVICE_UPLOAD_PATH}{ENCODED_UNSAFE_CAMERA_ID}/preview-thumbnail-upload"
+        )
 
     async def test_relative_image_url_is_prefixed_with_base_url(self) -> None:
         """A relative image_url from the backend should be resolved against the pairing base URL."""
@@ -260,6 +296,18 @@ class TestNotifySelfUnpair:
             await backend_client_mod.notify_self_unpair()
 
         assert NO_RELAY_LOG in caplog.text
+
+    async def test_encodes_camera_id_path_segment(self) -> None:
+        """Self-unpair callbacks should encode the camera ID path segment."""
+        runtime = backend_client_mod.get_active_runtime()
+        runtime.runtime_state.relay_camera_id = UNSAFE_CAMERA_ID
+        response = _fake_response(204, {})
+
+        with _patch_async_client(response) as patched_client:
+            await backend_client_mod.notify_self_unpair()
+
+        args, _kwargs = patched_client.return_value.delete.await_args
+        assert str(args[0]) == f"https://backend.example{DEVICE_UPLOAD_PATH}{ENCODED_UNSAFE_CAMERA_ID}/self"
 
     async def test_skips_when_device_assertion_cannot_be_built(
         self,

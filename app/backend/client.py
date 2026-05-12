@@ -13,6 +13,7 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 import httpx
 from pydantic import AnyUrl
@@ -33,6 +34,10 @@ _UPLOAD_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/imag
 _PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/preview-thumbnail-upload"
 _SELF_UNPAIR_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/self"
 _SELF_UNPAIR_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
+
+
+def _camera_endpoint(template: str, camera_id: str) -> str:
+    return template.format(camera_id=quote(camera_id, safe=""))
 
 
 class BackendUploadError(RuntimeError):
@@ -71,7 +76,7 @@ class BackendUploadClient:
         upload_metadata: Mapping[str, object],
     ) -> UploadedImageInfo:
         """Push a captured JPEG to the backend and validate the ack envelope."""
-        url = f"{self.base_url}{_UPLOAD_ENDPOINT_TEMPLATE.format(camera_id=camera_id)}"
+        url = f"{self.base_url}{_camera_endpoint(_UPLOAD_ENDPOINT_TEMPLATE, camera_id)}"
         files = {"file": (filename, image_bytes, "image/jpeg")}
         data = {
             "capture_metadata": json.dumps(dict(capture_metadata)),
@@ -117,7 +122,7 @@ class BackendUploadClient:
         filename: str = "preview-thumbnail.jpg",
     ) -> UploadedPreviewThumbnailInfo:
         """Push a cached preview thumbnail to the backend and validate the ack."""
-        url = f"{self.base_url}{_PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE.format(camera_id=camera_id)}"
+        url = f"{self.base_url}{_camera_endpoint(_PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE, camera_id)}"
         files = {"file": (filename, image_bytes, "image/jpeg")}
         headers = {"Authorization": f"Bearer {assertion}"}
 
@@ -234,7 +239,7 @@ async def notify_self_unpair() -> None:
         return
 
     base_url = settings.pairing_backend_url.rstrip("/")
-    endpoint = _SELF_UNPAIR_ENDPOINT_TEMPLATE.format(camera_id=runtime_state.relay_camera_id)
+    endpoint = _camera_endpoint(_SELF_UNPAIR_ENDPOINT_TEMPLATE, runtime_state.relay_camera_id)
     url = f"{base_url}{endpoint}"
 
     try:
