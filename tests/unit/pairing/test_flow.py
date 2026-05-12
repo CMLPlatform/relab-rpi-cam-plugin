@@ -343,11 +343,13 @@ class TestPairingHelpers:
         with pytest.raises(ValueError, match="unencrypted ws://"):
             await pairing_mod._complete_pairing_state(
                 state,
-                pairing_mod.PairingClaimedBootstrap(
-                    camera_id=RELAY_CAMERA_ID,
-                    ws_url=EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
-                    auth_scheme=pairing_mod.RelayAuthScheme.DEVICE_ASSERTION,
-                    key_id=RELAY_KEY_ID,
+                pairing_mod.PairingClaimedBootstrap.model_validate(
+                    {
+                        "camera_id": RELAY_CAMERA_ID,
+                        "ws_url": EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
+                        "auth_scheme": RELAY_AUTH_SCHEME,
+                        "key_id": RELAY_KEY_ID,
+                    }
                 ),
                 pairing_mod._generate_private_key(),
                 on_paired,

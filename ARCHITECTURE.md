@@ -73,6 +73,8 @@ The plugin has two request-auth modes:
 
 Protected feature routers are included with the shared `verify_request` dependency. Unsafe cookie-authenticated writes require same-origin browser proof through `Origin` or `Referer`; explicit API-key writes do not use that browser CSRF path.
 
+Local login attempts are rate-limited at the auth boundary. Request schemas own edge validation for camera controls, focus mode consistency, stream keys, upload metadata, and other bounded user-controlled payloads before work reaches services.
+
 The setup page is intentionally public during pairing so headless operators can read the pairing code. The pairing code is a short-lived bootstrap credential, so `/setup` and pairing logs are local/operator-only surfaces during the pairing window.
 
 ## Pairing
@@ -97,7 +99,7 @@ Pairing rotation replaces the active code without deleting existing relay creden
 - relative path rejection
 - filtered inbound headers
 - local relay API-key injection before dispatch to FastAPI
-- bounded frame size, queue depth, and command concurrency
+- structural command envelope validation plus bounded frame size, queue depth, and command concurrency
 - exponential reconnect
 
 New relay-reachable routes should be intentionally added to the allowlist and covered by tests.
@@ -108,7 +110,7 @@ New relay-reachable routes should be intentionally added to the allowlist and co
 
 Preview uses a local MediaMTX sidecar and LL-HLS. Worker-owned hibernation stops the low-resolution encoder after relay idleness and restarts it on demand. The thumbnail worker keeps the setup UI preview current while preview is active.
 
-Capture requests produce image bytes and metadata, then pass them to the configured `ImageSink`.
+Capture requests produce image bytes and bounded metadata, then pass them to the configured `ImageSink`.
 
 ## Image Sinks And Upload Queue
 
@@ -133,4 +135,4 @@ Tracing setup lives in `app/observability/tracing.py`; logging and request-id co
 
 ## Shared Contract Package
 
-`relab_rpi_cam_models` contains the backend-to-plugin device DTOs. Keep cross-repo payload shapes there. Plugin runtime logic stays in `app/`; frontend code consumes backend OpenAPI rather than importing device DTOs directly.
+`relab_rpi_cam_models` contains the backend-to-plugin device DTOs. It validates pairing bootstrap payloads, local access bootstrap data, upload acknowledgements, and relay command wire shape. Command authorization policy and Pi receiver allowlists live in the main platform backend. Plugin runtime logic stays in `app/`; frontend code consumes backend OpenAPI rather than importing device DTOs directly.

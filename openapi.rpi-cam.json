@@ -669,18 +669,27 @@
         "properties": {
           "candidate_urls": {
             "items": {
+              "format": "uri",
+              "maxLength": 2083,
+              "minLength": 1,
               "type": "string"
             },
+            "maxItems": 16,
+            "minItems": 1,
             "title": "Candidate Urls",
             "type": "array"
           },
           "local_api_key": {
+            "maxLength": 256,
+            "minLength": 8,
             "title": "Local Api Key",
             "type": "string"
           },
           "mdns_name": {
             "anyOf": [
               {
+                "maxLength": 253,
+                "pattern": "^[A-Za-z0-9.-]+$",
                 "type": "string"
               },
               {
@@ -692,8 +701,7 @@
         },
         "required": [
           "local_api_key",
-          "candidate_urls",
-          "mdns_name"
+          "candidate_urls"
         ],
         "title": "LocalAccessInfo",
         "type": "object"

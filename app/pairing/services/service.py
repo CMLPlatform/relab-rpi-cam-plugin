@@ -38,7 +38,7 @@ from app.pairing.services.credentials import (
     load_relay_credentials,
     save_relay_credentials,
 )
-from relab_rpi_cam_models import PairingClaimedBootstrap, PairingStatus, RelayAuthScheme
+from relab_rpi_cam_models import PairingClaimedBootstrap, PairingStatus
 
 __all__ = [
     "_CREDENTIALS_FILE",
@@ -426,11 +426,13 @@ async def _poll_pairing_status(
         data = client.parse_poll_response(resp.json())
         if data.status == PairingStatus.WAITING:
             continue
-        return PairingClaimedBootstrap(
-            camera_id=str(data.camera_id),
-            ws_url=str(data.ws_url),
-            auth_scheme=RelayAuthScheme(str(data.auth_scheme)),
-            key_id=str(data.key_id),
+        return PairingClaimedBootstrap.model_validate(
+            {
+                "camera_id": data.camera_id,
+                "ws_url": data.ws_url,
+                "auth_scheme": data.auth_scheme,
+                "key_id": data.key_id,
+            }
         )
 
 
@@ -447,7 +449,7 @@ async def _complete_pairing_state(
     on_paired: Callable[[], Coroutine[Any, Any, None]],
 ) -> None:
     camera_id = payload.camera_id
-    relay_backend_url = payload.ws_url
+    relay_backend_url = str(payload.ws_url)
     relay_auth_scheme = payload.auth_scheme.value
     key_id = payload.key_id
     private_key_pem = _private_key_pem(private_key)

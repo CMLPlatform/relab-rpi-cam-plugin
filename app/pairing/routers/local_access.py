@@ -81,8 +81,10 @@ async def get_local_access_info(request: Request) -> LocalAccessInfo:
     user so the app can auto-configure local mode without manual key copying.
     """
     runtime = get_request_runtime(request)
-    return LocalAccessInfo(
-        local_api_key=runtime.runtime_state.local_api_key,
-        candidate_urls=_get_candidate_urls(),
-        mdns_name=_get_mdns_name(),
+    return LocalAccessInfo.model_validate(
+        {
+            "local_api_key": runtime.runtime_state.local_api_key,
+            "candidate_urls": _get_candidate_urls(),
+            "mdns_name": _get_mdns_name(),
+        }
     )
