@@ -7,9 +7,9 @@ import math
 import re
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Annotated, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, Self, cast
 
-from pydantic import BaseModel, Field, RootModel, SecretStr, field_validator
+from pydantic import BaseModel, Field, RootModel, SecretStr, field_validator, model_validator
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -248,6 +248,16 @@ class FocusControlRequest(BaseModel):
         default=False,
         description="When mode=auto, run a one-shot autofocus cycle.",
     )
+
+    @model_validator(mode="after")
+    def _validate_mode_fields(self) -> Self:
+        if self.lens_position is not None and self.mode != FocusMode.MANUAL:
+            msg = "lens_position is only valid when mode is manual"
+            raise ValueError(msg)
+        if self.trigger_cycle and self.mode != FocusMode.AUTO:
+            msg = "trigger_cycle is only valid when mode is auto"
+            raise ValueError(msg)
+        return self
 
 
 class YoutubeStreamConfig(BaseModel):
