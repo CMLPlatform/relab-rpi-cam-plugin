@@ -25,6 +25,7 @@ from app.device_jwt import build_device_assertion
 from app.observability.logging import build_log_extra
 from app.relay.state import RelayRuntimeState
 from relab_rpi_cam_models import (
+    RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
     SAFE_RELAY_TRACE_HEADERS,
     RelayCommandEnvelope,
     RelayMessageType,
@@ -44,7 +45,6 @@ _MSG_TYPE_REQUEST = RelayMessageType.REQUEST
 _BINARY_IMAGE = "image"
 _BINARY_OCTET = "octet-stream"
 _BINARY_VIDEO = "video"
-_RELAY_WS_MAX_SIZE = 1_048_576
 _RELAY_WS_MAX_QUEUE = 8
 _RELAY_COMMAND_FORBIDDEN_DETAIL = "Relay command is not allowed."
 _RELAY_ALLOWED_PATHS_BY_METHOD = {
@@ -185,7 +185,7 @@ async def _websocket_connect(url: str) -> AsyncGenerator[_WebSocketConnection]:
         "_AsyncWebSocket",
         await websockets.connect(
             url,
-            max_size=_RELAY_WS_MAX_SIZE,
+            max_size=RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
             max_queue=_RELAY_WS_MAX_QUEUE,
             compression=None,
             additional_headers={"Authorization": f"Bearer {build_device_assertion()}"},

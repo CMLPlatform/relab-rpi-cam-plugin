@@ -149,6 +149,9 @@ class RelayMessageType(StrEnum):
 SAFE_RELAY_TRACE_HEADERS: frozenset[str] = frozenset({"traceparent", "tracestate", "baggage"})
 """Header names allowed to cross the relay boundary."""
 
+RELAY_WS_TEXT_FRAME_LIMIT_BYTES = 64 * 1024
+"""Maximum JSON/text relay frame size shared by the backend and Pi."""
+
 
 class RelayCommandEnvelope(BaseModel):
     """Backend -> Pi HTTP-like relay command."""

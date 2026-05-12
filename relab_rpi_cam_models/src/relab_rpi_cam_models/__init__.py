@@ -2,6 +2,7 @@
 
 from .camera import CameraMode, CameraStatusView
 from .device_seam import (
+    RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
     SAFE_RELAY_TRACE_HEADERS,
     DeviceImageUploadAck,
     DevicePreviewThumbnailAck,
@@ -32,6 +33,7 @@ from .stream import StreamMetadata, StreamMode, StreamView
 from .telemetry import TelemetrySnapshot, ThermalState
 
 __all__ = [
+    "RELAY_WS_TEXT_FRAME_LIMIT_BYTES",
     "SAFE_RELAY_TRACE_HEADERS",
     "BaseMetadata",
     "CameraMode",

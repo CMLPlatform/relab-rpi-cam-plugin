@@ -23,6 +23,7 @@ from app.relay.service import (
     _send_error,
 )
 from app.relay.state import RelayRuntimeState
+from relab_rpi_cam_models import RELAY_WS_TEXT_FRAME_LIMIT_BYTES
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
 RELAY_AUTH_SCHEME = "device_assertion"
@@ -146,7 +147,7 @@ class TestWebsocketConnect:
 
         connect.assert_awaited_once_with(
             EXAMPLE_RELAY_BACKEND_URL,
-            max_size=1_048_576,
+            max_size=RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
             max_queue=8,
             compression=None,
             additional_headers={"Authorization": "Bearer jwt"},
