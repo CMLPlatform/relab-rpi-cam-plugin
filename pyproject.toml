@@ -139,8 +139,12 @@
   extra-paths = ["typings"]
 
 # UV configuration
-[tool.uv.sources]
-  relab_rpi_cam_models = { workspace = true }
+[tool.uv]
+  # Mitigate supply chain issues
+  exclude-newer = "3 days"
 
-[tool.uv.workspace]
-  members = ["relab_rpi_cam_models"]
+  [tool.uv.sources]
+    relab_rpi_cam_models = { workspace = true }
+
+  [tool.uv.workspace]
+    members = ["relab_rpi_cam_models"]
