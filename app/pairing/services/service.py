@@ -58,6 +58,9 @@ logger = logging.getLogger(__name__)
 
 
 PAIRING_CODE_TTL_SECONDS = 10 * 60
+_PAIRING_NONCE_BYTES = 16
+_PAIRING_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
+_PAIRING_LIMITS = httpx.Limits(max_connections=4, max_keepalive_connections=2)
 
 # Pairing status values
 STATUS_WAITING = "waiting"
@@ -119,7 +122,11 @@ class PairingService:
         # the human to enter the code.
         retry_delay = 10.0
         max_retry_delay = 120.0
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)) as client:
+        async with httpx.AsyncClient(
+            timeout=_PAIRING_TIMEOUT,
+            limits=_PAIRING_LIMITS,
+            follow_redirects=False,
+        ) as client:
             while True:
                 try:
                     await self._pairing_cycle(client, base, on_paired)
@@ -354,7 +361,7 @@ def _log_pairing_timeout(stage: str, code: str, retry_in_s: int) -> None:
 def _new_pairing_registration() -> PairingRegistration:
     code, fingerprint = _generate_code_and_fingerprint()
     private_key = _generate_private_key()
-    key_id = secrets.token_urlsafe(16)
+    key_id = secrets.token_urlsafe(_PAIRING_NONCE_BYTES)
     return PairingRegistration(
         code=code,
         fingerprint=fingerprint,
@@ -486,7 +493,7 @@ async def _complete_pairing_state(
 
 def _generate_code_and_fingerprint() -> tuple[str, str]:
     code = "".join(secrets.choice(PAIRING_CODE_ALPHABET) for _ in range(PAIRING_CODE_LENGTH))
-    fingerprint = secrets.token_urlsafe(16)
+    fingerprint = secrets.token_urlsafe(_PAIRING_NONCE_BYTES)
     return code, fingerprint
 
 
