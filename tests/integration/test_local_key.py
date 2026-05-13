@@ -8,6 +8,8 @@ from app.pairing.routers import local_key as local_key_router
 
 LOCAL_KEY_PATH = "/local-key"
 TEST_LOCAL_KEY = "test-local-api-key"
+NO_STORE_CACHE_CONTROL = "no-store"
+LOCAL_KEY_ATTACHMENT = 'attachment; filename="local-api-key.txt"'
 
 
 @pytest.fixture
@@ -30,6 +32,8 @@ class TestLocalKeyEndpoint:
         resp = await client.get(LOCAL_KEY_PATH)
         assert resp.status_code == 200
         assert resp.text.strip() == TEST_LOCAL_KEY
+        assert resp.headers["cache-control"] == NO_STORE_CACHE_CONTROL
+        assert resp.headers["content-disposition"] == LOCAL_KEY_ATTACHMENT
 
     async def test_rejects_unauthenticated_local_clients(
         self,

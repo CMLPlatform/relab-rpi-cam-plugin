@@ -19,4 +19,10 @@ async def get_local_key(request: Request) -> PlainTextResponse:
         raise HTTPException(status_code=403, detail="Local key access is only available from the local network")
     if not runtime.runtime_state.local_api_key:
         raise HTTPException(status_code=503, detail="Local API key has not been generated yet")
-    return PlainTextResponse(runtime.runtime_state.local_api_key)
+    return PlainTextResponse(
+        runtime.runtime_state.local_api_key,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'attachment; filename="local-api-key.txt"',
+        },
+    )
