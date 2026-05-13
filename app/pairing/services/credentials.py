@@ -41,8 +41,8 @@ def save_relay_credentials(
 ) -> None:
     """Persist relay credentials atomically to the JSON credentials file.
 
-    Writes via a temp file + ``Path.replace`` so a power loss mid-write
-    cannot leave a truncated credentials file behind.
+    Writes via a ``0600`` temp file + ``Path.replace`` so credentials are not
+    briefly world-readable and a power loss cannot leave a truncated file.
     """
     data = {
         "relay_backend_url": relay_backend_url,
@@ -52,17 +52,21 @@ def save_relay_credentials(
         "relay_private_key_pem": private_key_pem,
     }
     _CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
-    ) as tmp:
-        tmp_path = tmp.name
-        tmp.write(json.dumps(data, indent=2))
+    tmp_path: Path | None = None
     try:
-        Path(tmp_path).replace(_CREDENTIALS_FILE)
-        _CREDENTIALS_FILE.chmod(0o600)
+        with tempfile.NamedTemporaryFile(
+            mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(json.dumps(data, indent=2))
+            tmp.flush()
+            os.fchmod(tmp.fileno(), 0o600)
+            os.fsync(tmp.fileno())
+        tmp_path.replace(_CREDENTIALS_FILE)
     except OSError:
-        with suppress(OSError):
-            Path(tmp_path).unlink()
+        if tmp_path is not None:
+            with suppress(OSError):
+                tmp_path.unlink()
         raise
     logger.info("Relay credentials saved to %s", _CREDENTIALS_FILE)
 
