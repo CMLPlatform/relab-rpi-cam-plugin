@@ -52,7 +52,10 @@ def _is_authorized(api_key: str, authorized_api_keys: frozenset[str]) -> bool:
     Readers use an immutable snapshot captured from runtime state for the
     current request or explicit caller context.
     """
-    return any(hmac.compare_digest(api_key, candidate) for candidate in authorized_api_keys)
+    matched = False
+    for candidate in authorized_api_keys:
+        matched = hmac.compare_digest(api_key, candidate) or matched
+    return matched
 
 
 def _now_utc() -> datetime:

@@ -27,6 +27,26 @@ class TestAuthorizedSnapshot:
         refreshed_snapshot = auth_mod.reload_authorized_hashes(runtime_state)
         assert auth_mod._is_authorized(SNAPSHOT_KEY_2, refreshed_snapshot) is True
 
+    def test_authorization_compares_every_candidate_before_returning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """API-key checks should not leak the matching candidate's position."""
+        candidates = frozenset({"first-match", "second-key", "third-key"})
+        compared: list[str] = []
+
+        def _compare_digest(left: str, right: str) -> bool:
+            del left
+            compared.append(right)
+            return True
+
+        monkeypatch.setattr(auth_mod.hmac, "compare_digest", _compare_digest)
+
+        assert auth_mod._is_authorized("first-match", candidates) is True
+        assert set(compared) == candidates
+        assert len(compared) == len(candidates)
+
+
 class TestBrowserSessions:
     """Tests for server-side browser session lifetime policy."""
 
