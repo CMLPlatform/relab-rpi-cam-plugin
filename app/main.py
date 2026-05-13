@@ -13,7 +13,7 @@ from app.core.lifespan import lifespan
 from app.core.middleware import register_middleware
 from app.core.runtime import ensure_app_runtime
 from app.core.settings import settings
-from app.observability.logging import setup_logging
+from app.observability.logging import build_security_log_extra, setup_logging
 from app.observability.tracing import setup_observability
 from app.router import router as main_router
 
@@ -58,7 +58,34 @@ async def camera_initialization_exception_handler(
     )
 
 
+async def unhandled_exception_handler(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    """Handle unexpected exceptions with client-safe output and full server logs."""
+    logger.exception(
+        "Unhandled application exception",
+        exc_info=(type(exc), exc, exc.__traceback__),
+        extra=build_security_log_extra(
+            event="error.unhandled",
+            outcome="failure",
+            request=request,
+            status_code=500,
+        ),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": client_error_detail(
+                "Internal server error",
+                request_id=getattr(request.state, "request_id", None),
+            )
+        },
+    )
+
+
 app.add_exception_handler(CameraInitializationError, camera_initialization_exception_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.state.runtime = runtime
 
