@@ -78,6 +78,7 @@ THEME_TOGGLE_MARKER = "data-theme-toggle"
 LOGO_SRC = "/static/logo.png"
 THEME_INIT_JS_SRC = "/static/theme-init.js"
 SETUP_PAGE_JS_SRC = "/static/setup-page.js"
+LOGOUT_FORM_MARKER = 'class="site-header__logout"'
 THEME_AUTO_LABEL = "Theme: Auto"
 
 
@@ -247,6 +248,7 @@ class TestSetupPage:
         assert COPY_PAIRING_CODE_LABEL in resp.text
         assert NEW_PAIRING_CODE_BUTTON in resp.text
         assert NEW_PAIRING_CODE_LABEL in resp.text
+        assert LOGOUT_FORM_MARKER in resp.text
 
     async def test_setup_page_shows_pairing_error(
         self,
@@ -288,6 +290,7 @@ class TestSetupPage:
         resp = await unauthed_client.get("/setup")
         assert resp.status_code == 200
         assert UNPAIR_BUTTON_MARKER not in resp.text
+        assert LOGOUT_FORM_MARKER not in resp.text
         assert PAIRING_BACKEND_URL_TEXT not in resp.text
         assert EXAMPLE_RELAY_BACKEND_URL not in resp.text
         assert EXAMPLE_RELAY_CAMERA_ID not in resp.text

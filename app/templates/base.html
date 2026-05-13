@@ -30,6 +30,11 @@
       </a>
       <div class="site-header__controls">
         {% block site_header_nav %}{% endblock %}
+        {% if operator_authenticated %}
+        <form action="{{ url_for('logout') }}" method="post" class="site-header__logout">
+          <button class="btn logout" type="submit">Log out</button>
+        </form>
+        {% endif %}
         <button
           type="button"
           class="theme-toggle"
