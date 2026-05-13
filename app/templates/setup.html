@@ -195,7 +195,7 @@
         <summary>
           <div class="setup-advanced__summary-main">
             <span>
-              {% if local_mode_enabled and local_api_key %}
+              {% if local_mode_enabled and has_local_api_key %}
               <span class="status-chip status-chip--live">Local access</span>
               {% elif local_mode_enabled %}
               <span class="status-chip status-chip--muted">Local access</span>
@@ -231,16 +231,20 @@
               <span class="setup-debug__text">Use the same key in your browser or send it with <code>X-API-Key</code>.</span>
             </div>
           </div>
-          {% if local_api_key %}
+          {% if has_local_api_key %}
           <div class="setup-value-list">
             <div class="setup-value-card setup-value-card--key">
               <div class="setup-value-card__header">
                 <span class="setup-debug__label">Local API key</span>
-                <button class="btn setup-copy-btn" type="button" data-copy-source="local-api-key">
+                <button class="btn setup-copy-btn" type="button" data-local-key-reveal>
+                  Reveal local API key
+                </button>
+                <button class="btn setup-copy-btn" type="button" data-copy-source="local-api-key" data-local-key-copy disabled>
                   Copy
                 </button>
               </div>
-              <code id="local-api-key" class="setup-value-card__content setup-value-card__content--secret">{{ local_api_key }}</code>
+              <code id="local-api-key" class="setup-value-card__content setup-value-card__content--secret">Key hidden until revealed.</code>
+              <p class="setup-debug__hint" id="local-key-status" aria-live="polite"></p>
             </div>
             <div class="setup-debug__row">
               <span class="setup-debug__label">HLS preview</span>

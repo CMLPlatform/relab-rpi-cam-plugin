@@ -50,6 +50,8 @@ STANDALONE_CLIENTS_TEXT = "Browser and script access"
 LOCAL_KEY_WARNING_TEXT = "Relay pairing still uses the 6-character unambiguous code above."
 LOCAL_KEY_NOTE_TEXT = "Direct LAN access for browser, app, and scripts."
 LOCAL_API_KEY_TEXT = "Local API key"
+REVEAL_LOCAL_KEY_TEXT = "Reveal local API key"
+LOCAL_API_KEY_PLACEHOLDER = "Key hidden until revealed."
 SETUP_LOCAL_API_KEY_VALUE = "test-local-api-key"
 HLS_PREVIEW_TEXT = "HLS preview"
 PREVIEW_HLS_URL = f"http://{THIS_IP_PLACEHOLDER}:8018/preview/hls/cam-preview/index.m3u8"
@@ -372,16 +374,19 @@ class TestSetupPage:
         assert LOCAL_API_KEY_TEXT not in resp.text
         assert SETUP_LOCAL_API_KEY_VALUE not in resp.text
 
-    async def test_setup_page_shows_local_api_key_to_browser_sessions(
+    async def test_setup_page_shows_local_api_key_reveal_to_browser_sessions(
         self,
         client: AsyncClient,
     ) -> None:
-        """The setup page should reveal the local API key only to an authenticated browser session."""
+        """The setup page should require an explicit reveal before fetching the local API key."""
         self._runtime.runtime_state.set_local_api_key(SETUP_LOCAL_API_KEY_VALUE)
         client.cookies.set(settings.browser_session_cookie_name, create_session())
         resp = await client.get("/setup")
         assert resp.status_code == 200
-        assert SETUP_LOCAL_API_KEY_VALUE in resp.text
+        assert LOCAL_API_KEY_TEXT in resp.text
+        assert REVEAL_LOCAL_KEY_TEXT in resp.text
+        assert LOCAL_API_KEY_PLACEHOLDER in resp.text
+        assert SETUP_LOCAL_API_KEY_VALUE not in resp.text
         assert HLS_PREVIEW_TEXT in resp.text
         assert PREVIEW_HLS_URL in resp.text
         assert API_TEXT in resp.text

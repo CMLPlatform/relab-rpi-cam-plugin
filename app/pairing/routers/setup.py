@@ -83,7 +83,7 @@ async def setup_page(request: Request) -> HTMLResponse:
             "status_error": _STATUS_ERROR,
             "pairing_code_ttl_seconds": PAIRING_CODE_TTL_SECONDS,
             "local_mode_enabled": settings.local_mode_enabled,
-            "local_api_key": runtime.runtime_state.local_api_key if operator_authenticated else "",
+            "has_local_api_key": bool(runtime.runtime_state.local_api_key) if operator_authenticated else False,
             "operator_authenticated": operator_authenticated,
             "connection_host": connection_host,
             "lan_ips": lan_ips,

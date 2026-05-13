@@ -185,6 +185,49 @@ async function confirmUnpair() {
   }
 }
 
+function setLocalKeyStatus(text, state) {
+  const status = document.getElementById("local-key-status");
+  if (!status) {
+    return;
+  }
+  status.dataset.state = state || "";
+  status.textContent = text || "";
+}
+
+async function revealLocalKey(button) {
+  const target = document.getElementById("local-api-key");
+  const copyButton = document.querySelector("[data-local-key-copy]");
+  if (!target) {
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Revealing...";
+  setLocalKeyStatus("Fetching local key...", "pending");
+
+  try {
+    const resp = await fetch("/local-key", {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const key = (await resp.text()).trim();
+    target.textContent = key || "Local key is empty.";
+    if (copyButton) {
+      copyButton.disabled = !key;
+    }
+    button.textContent = "Local API key revealed";
+    setLocalKeyStatus("Key revealed for this page only.", "success");
+  } catch (_err) {
+    button.disabled = false;
+    button.textContent = "Reveal local API key";
+    setLocalKeyStatus("Could not reveal the local key from this client.", "failed");
+  }
+}
+
 function setupCountdown() {
   const countdown = document.querySelector("[data-pairing-countdown]");
   const expiry = document.querySelector("[data-pairing-expiry]");
@@ -277,6 +320,11 @@ function setupActions() {
   const refreshButton = document.querySelector("[data-refresh-pairing]");
   if (refreshButton) {
     refreshButton.addEventListener("click", () => refreshPairingCode(refreshButton));
+  }
+
+  const revealLocalKeyButton = document.querySelector("[data-local-key-reveal]");
+  if (revealLocalKeyButton) {
+    revealLocalKeyButton.addEventListener("click", () => revealLocalKey(revealLocalKeyButton));
   }
 
   const openUnpairButton = document.querySelector("[data-unpair-open]");
