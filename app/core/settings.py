@@ -207,6 +207,10 @@ class Settings(BaseSettings):
     upload_queue_max_pending_bytes: int = Field(default=2 * 1024 * 1024 * 1024, ge=0)
     upload_queue_dead_max_entries: int = Field(default=500, ge=0)
 
+    # Captured media file size limits (enforced in-memory before upload to avoid OOM crashes)
+    max_capture_pixels: int = Field(default=20_000_000, ge=1)
+    max_capture_file_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
+
     @property
     def relay_enabled(self) -> bool:
         """Relay is enabled when the platform device credential is configured."""
