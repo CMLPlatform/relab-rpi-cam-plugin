@@ -6,10 +6,10 @@ import asyncio
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from app.auth.dependencies import has_valid_browser_session, verify_request
+from app.auth.dependencies import has_valid_browser_session
 from app.backend.client import notify_self_unpair
 from app.core.bootstrap import clear_runtime_relay_credentials
 from app.core.runtime import get_request_runtime
@@ -29,6 +29,7 @@ _PAIRING_BACKEND_REACHABILITY_TIMEOUT = httpx.Timeout(connect=1.5, read=1.5, wri
 
 logger = logging.getLogger(__name__)
 
+public_router = APIRouter(tags=["setup"])
 router = APIRouter(tags=["setup"])
 
 
@@ -47,7 +48,7 @@ async def _pairing_backend_reachable() -> bool:
     return True
 
 
-@router.get("/setup")
+@public_router.get("/setup")
 async def setup_page(request: Request) -> HTMLResponse:
     """HTML page showing camera config status and pairing code."""
     runtime = get_request_runtime(request)
@@ -92,7 +93,7 @@ async def setup_page(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/pairing/state")
+@public_router.get("/pairing/state")
 async def pairing_state(request: Request) -> JSONResponse:
     """Return the current pairing state for client-side polling by the setup page."""
     runtime = get_request_runtime(request)
@@ -105,7 +106,7 @@ async def pairing_state(request: Request) -> JSONResponse:
     )
 
 
-@router.delete("/pairing", status_code=204, dependencies=[Depends(verify_request)])
+@router.delete("/pairing", status_code=204)
 async def unpair(request: Request) -> Response:
     """Clear relay credentials and restart the pairing flow.
 
@@ -151,7 +152,7 @@ async def unpair(request: Request) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/pairing/code", status_code=204, dependencies=[Depends(verify_request)])
+@router.post("/pairing/code", status_code=204)
 async def refresh_pairing_code(request: Request) -> Response:
     """Rotate the active pairing code without deleting credentials.
 
