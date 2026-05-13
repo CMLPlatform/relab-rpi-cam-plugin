@@ -9,14 +9,14 @@ them to the local FastAPI app and sends the response back.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 
 import httpx
-import websockets
 from pydantic import ValidationError
+from websockets.asyncio.client import connect as websocket_connect
+from websockets.asyncio.client import process_exception as classify_websocket_exception
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from app.core.runtime_state import RuntimeState
@@ -25,67 +25,26 @@ from app.device_jwt import build_device_assertion
 from app.observability.logging import build_log_extra
 from app.relay.state import RelayRuntimeState
 from relab_rpi_cam_models import (
+    RELAY_COMMAND_FORBIDDEN_DETAIL,
     RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
-    SAFE_RELAY_TRACE_HEADERS,
     RelayCommandEnvelope,
     RelayMessageType,
     RelayResponseEnvelope,
+    extract_safe_relay_headers,
+    relay_command_is_allowed,
+    relay_content_type_is_binary,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Callable
+    from collections.abc import AsyncIterator, Callable, Iterator
 
-# WebSocket message types
-_MSG_TYPE_PING = RelayMessageType.PING
-_MSG_TYPE_REQUEST = RelayMessageType.REQUEST
+    from websockets.asyncio.client import ClientConnection
 
-# Content-type substrings used to detect binary responses. ``video`` covers
-# LL-HLS segments (``video/mp4`` / ``video/iso.segment``) that the HLS proxy
-# router serves from MediaMTX through the relay.
-_BINARY_IMAGE = "image"
-_BINARY_OCTET = "octet-stream"
-_BINARY_VIDEO = "video"
 _RELAY_WS_MAX_QUEUE = 8
-_RELAY_COMMAND_FORBIDDEN_DETAIL = "Relay command is not allowed."
-_RELAY_ALLOWED_PATHS_BY_METHOD = {
-    "DELETE": frozenset({"/pairing", "/streams/youtube"}),
-    "GET": frozenset(
-        {
-            "/camera",
-            "/camera/controls",
-            "/streams/youtube",
-            "/system/local-access",
-            "/system/telemetry",
-        }
-    ),
-    "PATCH": frozenset({"/camera/controls"}),
-    "POST": frozenset({"/captures", "/preview/start", "/preview/stop", "/streams/youtube"}),
-    "PUT": frozenset({"/camera/focus"}),
-}
-_RELAY_ALLOWED_PATH_PREFIXES_BY_METHOD = {"GET": ("/preview/hls/",)}
-
-
-class _AsyncWebSocket(Protocol):
-    """Protocol for async WebSocket connections (e.g. websockets library)."""
-
-    async def send(self, data: str | bytes) -> None:
-        """Send a text or binary frame."""
-        raise NotImplementedError
-
-    async def recv(self) -> str | bytes:
-        """Receive the next text or binary frame."""
-        raise NotImplementedError
-
-    async def close(self) -> None:
-        """Close the connection."""
-        raise NotImplementedError
-
+_RELAY_RECONNECT_INITIAL_DELAY_S = 1.0
+_RELAY_RECONNECT_MAX_DELAY_S = 60.0
 
 logger = logging.getLogger(__name__)
-
-_WEBSOCKET_CONNECTION_ERRORS: tuple[type[Exception], ...] = (ConnectionClosed, InvalidStatus, OSError)
-
-_RELAY_CONNECTION_ERRORS: tuple[type[Exception], ...] = (RuntimeError, *_WEBSOCKET_CONNECTION_ERRORS)
 
 
 class RelayService:
@@ -108,40 +67,35 @@ class RelayService:
             logger.info("WebSocket relay not configured; relay will not start.")
             return
 
-        delay = self._settings.relay_reconnect_min_s
         url = self.build_url()
 
-        while True:
+        async for ws in _iter_websocket_connections(url):
+            self._state.mark_connected()
             try:
-                logger.info("Connecting to ReLab backend relay at %s", url, extra=build_log_extra())
-                async with _websocket_connect(url) as ws:
-                    delay = self._settings.relay_reconnect_min_s
-                    self._state.mark_connected()
-                    logger.info("Relay connected. Waiting for commands.", extra=build_log_extra())
-                    await _receive_loop(
-                        ws,
-                        relay_state=self._state,
-                        runtime_state=self._runtime_state,
-                        app_settings=self._settings,
-                    )
-            except _RELAY_CONNECTION_ERRORS as exc:
+                logger.info("Relay connected to %s. Waiting for commands.", url, extra=build_log_extra())
+                await _receive_loop(
+                    ws,
+                    relay_state=self._state,
+                    runtime_state=self._runtime_state,
+                    app_settings=self._settings,
+                )
+            except ConnectionClosed as exc:
                 logger.warning(
-                    "Relay connection lost (%s). Reconnecting in %.0fs…",
+                    "Relay connection closed (%s); reconnecting.",
                     _format_relay_connection_error(exc),
-                    delay,
                     extra=build_log_extra(),
                 )
+                continue
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 logger.exception(
-                    "Relay loop failed unexpectedly. Reconnecting in %.0fs…",
-                    delay,
+                    "Relay loop failed unexpectedly; reconnecting.",
                     extra=build_log_extra(),
                 )
+                continue
             finally:
                 self._state.mark_disconnected()
-
-            await asyncio.sleep(delay)
-            delay = min(delay * 2, self._settings.relay_reconnect_max_s)
 
     def is_configured(self) -> bool:
         """Whether relay credentials are present."""
@@ -156,49 +110,56 @@ class RelayService:
 def _format_relay_connection_error(exc: Exception) -> str:
     """Return a concise description for expected transient relay failures."""
     if isinstance(exc, InvalidStatus):
-        response = exc.response
-        return f"HTTP {response.status_code}"
+        return f"HTTP {exc.response.status_code}"
     return str(exc) or type(exc).__name__
 
 
-class _WebSocketConnection:
-    def __init__(self, ws: _AsyncWebSocket) -> None:
-        self._ws = ws
-
-    async def send(self, data: str) -> None:
-        await self._ws.send(data)
-
-    async def send_bytes(self, data: bytes) -> None:
-        await self._ws.send(data)
-
-    async def recv(self) -> str | bytes:
-        return await self._ws.recv()
-
-    async def close(self) -> None:
-        await self._ws.close()
+def _relay_reconnect_delays() -> Iterator[float]:
+    """Yield bounded exponential reconnect delays for transient handshake failures."""
+    delay = _RELAY_RECONNECT_INITIAL_DELAY_S
+    while True:
+        yield delay
+        delay = min(delay * 2, _RELAY_RECONNECT_MAX_DELAY_S)
 
 
-@contextlib.asynccontextmanager
-async def _websocket_connect(url: str) -> AsyncGenerator[_WebSocketConnection]:
-    """Connect to a WebSocket and yield a wrapped connection."""
-    raw_ws = cast(
-        "_AsyncWebSocket",
-        await websockets.connect(
-            url,
-            max_size=RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
-            max_queue=_RELAY_WS_MAX_QUEUE,
-            compression=None,
-            additional_headers={"Authorization": f"Bearer {build_device_assertion()}"},
-        ),
-    )
-    try:
-        yield _WebSocketConnection(raw_ws)
-    finally:
-        await raw_ws.close()
+async def _iter_websocket_connections(url: str) -> AsyncIterator[ClientConnection]:
+    """Yield relay WebSocket connections, minting a fresh assertion for every handshake attempt."""
+    delays = None
+    while True:
+        try:
+            async with websocket_connect(
+                url,
+                max_size=RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
+                max_queue=_RELAY_WS_MAX_QUEUE,
+                compression=None,
+                additional_headers={"Authorization": f"Bearer {build_device_assertion()}"},
+            ) as ws:
+                delays = None
+                yield ws
+        except Exception as exc:
+            classified = classify_websocket_exception(exc)
+            if classified is exc:
+                raise
+            if classified is not None:
+                raise classified from exc
+
+            if delays is None:
+                delays = _relay_reconnect_delays()
+            delay = next(delays)
+            logger.info(
+                "Relay connection attempt failed; reconnecting in %.1fs: %s",
+                delay,
+                _format_relay_connection_error(exc),
+                extra=build_log_extra(),
+            )
+            await asyncio.sleep(delay)
+            continue
+        else:
+            delays = None
 
 
 async def _receive_loop(
-    ws: _WebSocketConnection,
+    ws: ClientConnection,
     *,
     relay_state: RelayRuntimeState,
     runtime_state: RuntimeState,
@@ -223,11 +184,7 @@ async def _receive_loop(
 
     async with httpx.AsyncClient(base_url=str(app_settings.base_url).rstrip("/"), headers=auth_headers) as http:
         try:
-            while True:
-                raw = await _recv_relay_message(ws)
-                if raw is None:
-                    # Connection closed or error — let the outer loop reconnect.
-                    return
+            async for raw in ws:
                 await _handle_relay_message(
                     ws,
                     http,
@@ -245,15 +202,8 @@ async def _receive_loop(
             await _drain_pending_tasks(pending_tasks)
 
 
-async def _recv_relay_message(ws: _WebSocketConnection) -> str | bytes | None:
-    try:
-        return await ws.recv()
-    except _WEBSOCKET_CONNECTION_ERRORS:
-        return None
-
-
 async def _handle_relay_message(
-    ws: _WebSocketConnection,
+    ws: ClientConnection,
     http: httpx.AsyncClient,
     raw: str | bytes,
     pending_tasks: set[asyncio.Task[None]],
@@ -279,11 +229,11 @@ async def _handle_relay_message(
 
     msg_type = msg.get("type")
 
-    if msg_type == _MSG_TYPE_PING:
+    if msg_type == RelayMessageType.PING:
         await ws.send(json.dumps({"type": RelayMessageType.PONG}))
         return
 
-    if msg_type != _MSG_TYPE_REQUEST:
+    if msg_type != RelayMessageType.REQUEST:
         return
 
     # Only real command traffic resets the idle timer — pings and noise don't
@@ -302,7 +252,7 @@ async def _handle_relay_message(
 
 
 async def _run_command(
-    ws: _WebSocketConnection,
+    ws: ClientConnection,
     http: httpx.AsyncClient,
     msg: dict,
     command_semaphore: asyncio.Semaphore,
@@ -322,7 +272,7 @@ async def _drain_pending_tasks(pending_tasks: set[asyncio.Task[None]], *, cancel
     await asyncio.gather(*pending_tasks, return_exceptions=True)
 
 
-async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg: dict) -> None:
+async def _handle_command(ws: ClientConnection, http: httpx.AsyncClient, msg: dict) -> None:
     """Dispatch a single command to the local API and send the response."""
     try:
         envelope = RelayCommandEnvelope.model_validate(msg)
@@ -339,12 +289,12 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
     path = envelope.path
     params = envelope.params
     body = envelope.body
-    request_headers = _extract_trace_headers(envelope.headers)
+    request_headers = extract_safe_relay_headers(envelope.headers)
 
     logger.debug("Relay command %s: %s %s", msg_id, method, path)
 
-    if not _relay_command_is_allowed(method, path):
-        await _send_error(ws, msg_id, 403, _RELAY_COMMAND_FORBIDDEN_DETAIL)
+    if not relay_command_is_allowed(method, path):
+        await _send_error(ws, msg_id, 403, RELAY_COMMAND_FORBIDDEN_DETAIL)
         return
 
     try:
@@ -364,9 +314,7 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
         logger.warning("Relay received 403 from local API — check that local_relay_api_key is set correctly")
 
     content_type = response.headers.get("content-type", "")
-    is_binary = _BINARY_IMAGE in content_type or _BINARY_OCTET in content_type or _BINARY_VIDEO in content_type
-
-    if is_binary:
+    if relay_content_type_is_binary(content_type):
         # Send JSON header first, then binary frame
         header = RelayResponseEnvelope(
             id=msg_id,
@@ -375,7 +323,7 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
             has_binary=True,
         )
         await ws.send(header.model_dump_json())
-        await ws.send_bytes(response.content)
+        await ws.send(response.content)
     else:
         try:
             data = response.json()
@@ -393,33 +341,6 @@ async def _handle_command(ws: _WebSocketConnection, http: httpx.AsyncClient, msg
         )
 
 
-async def _send_error(ws: _WebSocketConnection, msg_id: str, status: int, detail: str) -> None:
+async def _send_error(ws: ClientConnection, msg_id: str, status: int, detail: str) -> None:
     response = RelayResponseEnvelope(id=msg_id, status=status, has_binary=False, data={"detail": detail})
     await ws.send(response.model_dump_json())
-
-
-def _relay_command_is_allowed(method: str, path: str) -> bool:
-    """Return whether a backend relay command may reach the local API."""
-    if not path.startswith("/"):
-        return False
-
-    normalized_path = path.rstrip("/") or "/"
-    if normalized_path in _RELAY_ALLOWED_PATHS_BY_METHOD.get(method, frozenset()):
-        return True
-
-    return any(path.startswith(prefix) for prefix in _RELAY_ALLOWED_PATH_PREFIXES_BY_METHOD.get(method, ()))
-
-
-def _extract_trace_headers(headers: object) -> dict[str, str]:
-    """Return relay-safe tracing headers from an incoming command payload."""
-    if not isinstance(headers, dict):
-        return {}
-
-    trace_headers: dict[str, str] = {}
-    for name, value in headers.items():
-        if not isinstance(name, str) or not isinstance(value, str):
-            continue
-        normalized_name = name.lower()
-        if normalized_name in SAFE_RELAY_TRACE_HEADERS:
-            trace_headers[normalized_name] = value
-    return trace_headers

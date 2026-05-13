@@ -18,12 +18,17 @@ from relab_rpi_cam_models import (
     RelayAuthScheme,
     RelayCommandEnvelope,
     RelayResponseEnvelope,
+    build_relay_command,
+    extract_safe_relay_headers,
+    relay_command_is_allowed,
+    relay_content_type_is_binary,
 )
 
 CAMERA_ID = "cam-1"
 PAIRING_WS_URL = "wss://backend.example/v1/plugins/rpi-cam/ws/connect"
 BACKEND_OWNED_RELAY_METHOD = "CONNECT"
 BACKEND_OWNED_RELAY_PATH = "relative path checked by runtime"
+RELAY_GET_METHOD = "GET"
 
 
 def test_pairing_register_request_round_trips() -> None:
@@ -97,6 +102,83 @@ def test_relay_command_and_response_envelopes_round_trip() -> None:
 
     assert RelayCommandEnvelope.model_validate_json(command.model_dump_json()) == command
     assert RelayResponseEnvelope.model_validate_json(response.model_dump_json()) == response
+
+
+def test_relay_helpers_build_envelopes_and_filter_safe_headers() -> None:
+    """Shared helpers should build the wire envelopes and keep only safe trace headers."""
+    command = build_relay_command(
+        "msg-1",
+        "get",
+        "/camera",
+        params={"include": "status"},
+        headers={"TraceParent": "parent", "Authorization": "Bearer no"},
+    )
+    assert command.method == RELAY_GET_METHOD
+    assert command.headers == {"traceparent": "parent"}
+    assert extract_safe_relay_headers({"TraceState": "state", "x-test": "no", "baggage": 123}) == {
+        "tracestate": "state"
+    }
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/camera"),
+        ("GET", "/camera/controls"),
+        ("PATCH", "/camera/controls"),
+        ("PUT", "/camera/focus"),
+        ("POST", "/preview/start"),
+        ("POST", "/preview/stop"),
+        ("GET", "/camera%2Fcontrols"),
+        ("GET", "/preview/hls/cam-preview/index.m3u8"),
+    ],
+)
+def test_relay_command_policy_accepts_shared_allowlist(method: str, path: str) -> None:
+    """Backend and Pi should agree on every relay command that may cross the seam."""
+    assert relay_command_is_allowed(method, path)
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "camera"),
+        ("GET", "/preview/hls"),
+        ("GET", "/preview/hls/../private/segment.mp4"),
+        ("GET", "/preview/hls/%2e%2e/private/segment.mp4"),
+        ("GET", "/preview/hls/%252e%252e/private/segment.mp4"),
+        ("GET", "/preview/hls/%252525252e%252525252e/private/segment.mp4"),
+        ("GET", "/camera/../system/telemetry"),
+        ("GET", "/camera/%2e%2e/system/telemetry"),
+        ("GET", "/camera/%252e%252e/system/telemetry"),
+        ("POST", "/preview/hls/cam-preview/index.m3u8"),
+        ("DELETE", "/camera"),
+    ],
+)
+def test_relay_command_policy_rejects_out_of_scope_commands(method: str, path: str) -> None:
+    """Shared command policy should reject relative paths and non-allowlisted operations."""
+    assert not relay_command_is_allowed(method, path)
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "image/jpeg",
+        "application/octet-stream",
+        "application/octet-stream; charset=binary",
+        "video/mp4",
+        "video/iso.segment; charset=binary",
+    ],
+)
+def test_relay_content_type_binary_detection(content_type: str) -> None:
+    """Shared binary detection should cover images, opaque bytes, and HLS video segments."""
+    assert relay_content_type_is_binary(content_type)
+
+
+def test_relay_content_type_binary_detection_rejects_text() -> None:
+    """Text and JSON responses should remain in the JSON relay envelope."""
+    assert not relay_content_type_is_binary("application/json")
+    assert not relay_content_type_is_binary("application/vnd.apple.mpegurl")
+    assert not relay_content_type_is_binary("application/not-octet-stream")
 
 
 def test_relay_command_envelope_allows_backend_owned_command_policy() -> None:

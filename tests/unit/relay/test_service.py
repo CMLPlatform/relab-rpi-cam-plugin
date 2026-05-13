@@ -2,23 +2,24 @@
 
 import asyncio
 import json
-from typing import Self
-from unittest.mock import AsyncMock
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 from websockets.datastructures import Headers
-from websockets.exceptions import InvalidStatus
+from websockets.exceptions import ConnectionClosedOK, InvalidStatus
 from websockets.http11 import Response
 
 from app.core.runtime_state import RuntimeState
 from app.relay import service as relay_mod
 from app.relay.service import (
     RelayService,
-    _extract_trace_headers,
     _format_relay_connection_error,
     _handle_command,
     _handle_relay_message,
+    _iter_websocket_connections,
     _receive_loop,
     _send_error,
 )
@@ -26,9 +27,13 @@ from app.relay.state import RelayRuntimeState
 from relab_rpi_cam_models import RELAY_WS_TEXT_FRAME_LIMIT_BYTES
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
+if TYPE_CHECKING:
+    from websockets.asyncio.client import ClientConnection
+
 RELAY_AUTH_SCHEME = "device_assertion"
 RELAY_KEY_ID = "key-1"
 RELAY_PRIVATE_KEY_PEM = "private-key"
+BEARER_JWT = "Bearer jwt"
 MESSAGE_ID = "msg-1"
 MALFORMED_MESSAGE_ID = "msg-bad"
 OVERFLOW_MESSAGE_ID = "overflow"
@@ -43,8 +48,7 @@ TRACESTATE = "vendor=value"
 BAGGAGE = "user_id=42"
 HTTP_502_SUMMARY = "HTTP 502"
 NETWORK_DOWN = "network down"
-RELAY_RECONNECT_LOG = "Relay connection lost (HTTP 502). Reconnecting in 2s"
-TRACEBACK_MARKER = "Traceback"
+RELAY_RECONNECT_LOG = "Relay connection closed (no close frame received or sent); reconnecting."
 LOCAL_ACCESS_PATH = "/system/local-access"
 CAMERA_PATH = "/camera"
 PREVIEW_HLS_SEGMENT_PATH = "/preview/hls/cam-preview/seg.mp4"
@@ -132,27 +136,67 @@ class TestSendError:
 
 
 class TestWebsocketConnect:
-    """Tests for the websocket context manager wrapper."""
+    """Tests for direct websockets.asyncio connection usage."""
 
-    async def test_closes_raw_websocket_on_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The wrapper should close the underlying websocket when the context exits."""
-        raw_ws = AsyncMock()
-        raw_ws.close = AsyncMock()
-        connect = AsyncMock(return_value=raw_ws)
-        monkeypatch.setattr(relay_mod.websockets, "connect", connect)
-        monkeypatch.setattr(relay_mod, "build_device_assertion", lambda: "jwt")
-
-        async with relay_mod._websocket_connect(EXAMPLE_RELAY_BACKEND_URL) as ws:
-            assert ws is not None
-
-        connect.assert_awaited_once_with(
-            EXAMPLE_RELAY_BACKEND_URL,
-            max_size=RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
-            max_queue=8,
-            compression=None,
-            additional_headers={"Authorization": "Bearer jwt"},
+    async def test_run_forever_uses_websocket_connection_iterator(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The relay service should delegate connection iteration to one helper."""
+        runtime_state = RuntimeState()
+        runtime_state.set_relay_credentials(
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
+            relay_camera_id="cam-1",
+            relay_auth_scheme=RELAY_AUTH_SCHEME,
+            relay_key_id=RELAY_KEY_ID,
+            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
-        raw_ws.close.assert_awaited_once()
+        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        iter_connections = MagicMock(return_value=_ConnectionIterator([_Conn()]))
+        monkeypatch.setattr(relay_mod, "_iter_websocket_connections", iter_connections)
+        monkeypatch.setattr(relay_mod, "_receive_loop", AsyncMock(side_effect=asyncio.CancelledError()))
+
+        with pytest.raises(asyncio.CancelledError):
+            await service.run_forever()
+
+        iter_connections.assert_called_once_with(EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID.replace("cam-42", "cam-1"))
+
+    async def test_connection_iterator_builds_fresh_auth_headers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Each outer connection iterator attempt should mint a fresh device assertion."""
+        connect = MagicMock(side_effect=[_Connect(_Conn()), _Connect(_Conn())])
+        assertions = iter(["jwt-1", "jwt-2"])
+        monkeypatch.setattr(relay_mod, "websocket_connect", connect)
+        monkeypatch.setattr(relay_mod, "build_device_assertion", lambda: next(assertions))
+
+        connections = _iter_websocket_connections(EXAMPLE_RELAY_BACKEND_URL)
+
+        assert await anext(connections) is not None
+        assert await anext(connections) is not None
+
+        assert connect.call_args_list[0].kwargs["additional_headers"] == {"Authorization": "Bearer jwt-1"}
+        assert connect.call_args_list[1].kwargs["additional_headers"] == {"Authorization": "Bearer jwt-2"}
+        assert connect.call_args_list[0].kwargs["max_size"] == RELAY_WS_TEXT_FRAME_LIMIT_BYTES
+        assert connect.call_args_list[0].kwargs["max_queue"] == 8
+        assert connect.call_args_list[0].kwargs["compression"] is None
+
+    async def test_connection_iterator_uses_process_exception_and_refreshes_auth_after_transient_handshake_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Transient handshake classification should retry with a new connect call and fresh JWT."""
+        transient_response = Response(502, "Bad Gateway", Headers(), b"bad gateway")
+        connect = MagicMock(side_effect=[_HandshakeContextFailure(transient_response), _Connect(_Conn())])
+        assertions = iter(["jwt-failed", "jwt-retry"])
+        monkeypatch.setattr(relay_mod, "websocket_connect", connect)
+        monkeypatch.setattr(relay_mod, "build_device_assertion", lambda: next(assertions))
+        monkeypatch.setattr(relay_mod, "_relay_reconnect_delays", lambda: iter([0.0]))
+        sleep = AsyncMock()
+        monkeypatch.setattr(relay_mod.asyncio, "sleep", sleep)
+
+        connections = _iter_websocket_connections(EXAMPLE_RELAY_BACKEND_URL)
+
+        assert await anext(connections) is not None
+
+        assert connect.call_args_list[0].kwargs["additional_headers"] == {"Authorization": "Bearer jwt-failed"}
+        assert connect.call_args_list[1].kwargs["additional_headers"] == {"Authorization": "Bearer jwt-retry"}
+        sleep.assert_awaited_once_with(0.0)
 
 
 class TestReceiveLoop:
@@ -160,52 +204,46 @@ class TestReceiveLoop:
 
     async def test_ignores_binary_frames(self) -> None:
         """Should ignore binary frames without crashing."""
-        ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=[b"\x00binary", OSError("closed")])
-        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        ws = _Conn([b"\x00binary"])
+        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
         # Should not crash, just log and continue until connection closes
 
     async def test_ignores_invalid_json(self) -> None:
         """Should ignore frames that aren't valid JSON without crashing."""
-        ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=["not json {{{", OSError("closed")])
-        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        ws = _Conn(["not json {{{"])
+        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
 
     async def test_handles_ping(self) -> None:
         """Should respond to ping messages with a pong."""
-        ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=[json.dumps({"type": "ping"}), OSError("closed")])
-        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        ws = _Conn([json.dumps({"type": "ping"})])
+        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
         # Should have sent a pong
-        ws.send.assert_called_once()
-        pong = json.loads(ws.send.call_args[0][0])
+        ws.send.assert_awaited_once()
+        pong = json.loads(ws.send.await_args_list[0].args[0])
         assert pong["type"] == PONG_TYPE
 
     async def test_ignores_unknown_type(self) -> None:
         """Should ignore messages with unknown type without crashing."""
-        ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=[json.dumps({"type": "unknown"}), OSError("closed")])
-        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        ws = _Conn([json.dumps({"type": "unknown"})])
+        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
 
     async def test_ignores_non_object_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Valid JSON frames that are not objects should not dispatch commands."""
-        ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=[json.dumps(["request"]), OSError("closed")])
+        ws = _Conn([json.dumps(["request"])])
         handler = AsyncMock()
         monkeypatch.setattr(relay_mod, "_handle_command", handler)
 
-        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
 
         handler.assert_not_awaited()
 
     async def test_dispatches_request_messages(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should dispatch messages of type "request" to the command handler."""
-        ws = AsyncMock()
-        ws.recv = AsyncMock(side_effect=[json.dumps({"type": "request", "id": "1"}), OSError("closed")])
+        ws = _Conn([json.dumps({"type": "request", "id": "1"})])
         monkeypatch.setattr(relay_mod.asyncio, "create_task", lambda coro: asyncio.get_running_loop().create_task(coro))
         handler = AsyncMock()
         monkeypatch.setattr(relay_mod, "_handle_command", handler)
-        await _receive_loop(ws, relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
         await asyncio.sleep(0)
         handler.assert_awaited_once()
 
@@ -306,8 +344,8 @@ class TestHandleCommand:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
             ws = AsyncMock()
             await _handle_command(ws, http, {"id": "msg-1", "method": "GET", "path": CAMERA_PATH})
-            assert ws.send.await_count == 1
-            ws.send_bytes.assert_awaited_once_with(b"abc")
+            assert ws.send.await_count == 2
+            ws.send.assert_any_await(b"abc")
 
     async def test_handles_hls_video_segment_response_as_binary(self) -> None:
         """HLS video segments should travel over the relay as binary frames."""
@@ -324,10 +362,10 @@ class TestHandleCommand:
                 {"id": "msg-hls", "method": "GET", "path": PREVIEW_HLS_SEGMENT_PATH},
             )
 
-        header = json.loads(ws.send.call_args.args[0])
+        header = json.loads(ws.send.await_args_list[0].args[0])
         assert header["has_binary"] is True
         assert header["content_type"] == HLS_SEGMENT_CONTENT_TYPE
-        ws.send_bytes.assert_awaited_once_with(HLS_SEGMENT_BYTES)
+        ws.send.assert_any_await(HLS_SEGMENT_BYTES)
 
     async def test_handles_text_response(self) -> None:
         """Should send text responses as JSON frames."""
@@ -401,36 +439,6 @@ class TestHandleCommand:
         assert payload["data"]["detail"] == BLOCKED_RELAY_DETAIL
 
 
-class TestExtractTraceHeaders:
-    """Tests for relay trace header filtering."""
-
-    def test_keeps_only_supported_trace_headers(self) -> None:
-        """The relay should forward tracing headers and ignore unrelated ones."""
-        assert _extract_trace_headers(
-            {
-                "TraceParent": "parent",
-                "TrAcEsTaTe": "state",
-                "baggage": "bag",
-                "Authorization": "Bearer no",
-                "X-Whatever": "nope",
-            },
-        ) == {
-            "traceparent": "parent",
-            "tracestate": "state",
-            "baggage": "bag",
-        }
-
-    def test_ignores_non_string_header_names_and_values(self) -> None:
-        """Malformed header payloads should be dropped quietly."""
-        assert _extract_trace_headers(
-            {
-                "traceparent": "parent",
-                "baggage": 123,
-                1: "value",
-            },
-        ) == {"traceparent": "parent"}
-
-
 class TestRelayServiceRunForever:
     """Tests for the runtime-owned relay loop."""
 
@@ -439,67 +447,12 @@ class TestRelayServiceRunForever:
         service = RelayService(state=RelayRuntimeState(), runtime_state=RuntimeState())
         await service.run_forever()
 
-    async def test_reconnects_after_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Should attempt to reconnect after a failure with exponential backoff."""
-        runtime_state = RuntimeState()
-        runtime_state.set_relay_credentials(
-            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
-            relay_camera_id="cam-1",
-            relay_auth_scheme=RELAY_AUTH_SCHEME,
-            relay_key_id=RELAY_KEY_ID,
-            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
-        )
-        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
-        monkeypatch.setattr(relay_mod, "_receive_loop", AsyncMock(side_effect=RuntimeError("boom")))
-        monkeypatch.setattr(relay_mod.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError()))
-
-        class _Conn:
-            async def __aenter__(self) -> Self:
-                return self
-
-            async def __aexit__(self, *_: object) -> None:
-                return None
-
-        monkeypatch.setattr(relay_mod, "_websocket_connect", lambda _url: _Conn())
-        with pytest.raises(asyncio.CancelledError):
-            await service.run_forever()
-
-    async def test_reconnects_after_websocket_handshake_rejection(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """A transient handshake rejection should be treated as reconnectable."""
-        runtime_state = RuntimeState()
-        runtime_state.set_relay_credentials(
-            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
-            relay_camera_id="cam-1",
-            relay_auth_scheme=RELAY_AUTH_SCHEME,
-            relay_key_id=RELAY_KEY_ID,
-            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
-        )
-        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
-        handshake_response = Response(
-            502,
-            "Bad Gateway",
-            Headers(),
-            b"error code: 502",
-        )
-        monkeypatch.setattr(
-            relay_mod,
-            "_websocket_connect",
-            lambda _url: _HandshakeFailure(handshake_response),
-        )
-        monkeypatch.setattr(relay_mod.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError()))
-
-        with pytest.raises(asyncio.CancelledError):
-            await service.run_forever()
-
-    async def test_expected_connection_errors_log_without_traceback(
+    async def test_reconnects_after_connection_closed(
         self,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Expected reconnectable failures should log concisely without traceback noise."""
+        """Closed relay connections should reconnect via the websockets async iterator."""
         runtime_state = RuntimeState()
         runtime_state.set_relay_credentials(
             relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
@@ -509,25 +462,130 @@ class TestRelayServiceRunForever:
             relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
         service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
-        response = Response(502, "Bad Gateway", Headers(), b"error code: 502")
-        monkeypatch.setattr(relay_mod, "_websocket_connect", lambda _url: _HandshakeFailure(response))
-        monkeypatch.setattr(relay_mod.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError()))
+        first = _Conn([ConnectionClosedOK(None, None)])
+        second = _Conn([asyncio.CancelledError()])
+        iter_connections = MagicMock(return_value=_ConnectionIterator([first, second]))
+        monkeypatch.setattr(relay_mod, "_iter_websocket_connections", iter_connections)
 
         with caplog.at_level("WARNING"), pytest.raises(asyncio.CancelledError):
             await service.run_forever()
 
+        iter_connections.assert_called_once()
         assert RELAY_RECONNECT_LOG in caplog.text
-        assert TRACEBACK_MARKER not in caplog.text
+
+    async def test_run_forever_delegates_reconnect_iteration_to_connection_iterator(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The service loop should rely on the connection iterator for reconnect attempts."""
+        runtime_state = RuntimeState()
+        runtime_state.set_relay_credentials(
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
+            relay_camera_id="cam-1",
+            relay_auth_scheme=RELAY_AUTH_SCHEME,
+            relay_key_id=RELAY_KEY_ID,
+            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
+        )
+        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        iter_connections = MagicMock(return_value=_ConnectionIterator([_Conn([asyncio.CancelledError()])]))
+        monkeypatch.setattr(relay_mod, "_iter_websocket_connections", iter_connections)
+
+        with pytest.raises(asyncio.CancelledError):
+            await service.run_forever()
+
+        iter_connections.assert_called_once()
+
+    async def test_fatal_handshake_rejection_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Fatal websocket iterator failures should stop the relay loop."""
+        runtime_state = RuntimeState()
+        runtime_state.set_relay_credentials(
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
+            relay_camera_id="cam-1",
+            relay_auth_scheme=RELAY_AUTH_SCHEME,
+            relay_key_id=RELAY_KEY_ID,
+            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
+        )
+        service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        response = Response(401, "Unauthorized", Headers(), b"unauthorized")
+        monkeypatch.setattr(relay_mod, "_iter_websocket_connections", lambda _url: _HandshakeIteratorFailure(response))
+
+        with pytest.raises(InvalidStatus):
+            await service.run_forever()
 
 
-class _HandshakeFailure:
-    """Async context manager that raises an InvalidStatus on enter."""
+class _Conn:
+    """Async iterator stand-in for websockets.asyncio ClientConnection."""
+
+    def __init__(self, messages: list[str | bytes | BaseException] | None = None) -> None:
+        self._messages = messages or []
+        self.send = AsyncMock()
+
+    def __aiter__(self) -> AsyncIterator[str | bytes]:
+        return self
+
+    async def __anext__(self) -> str | bytes:
+        if not self._messages:
+            raise StopAsyncIteration
+        message = self._messages.pop(0)
+        if isinstance(message, StopAsyncIteration):
+            raise message
+        if isinstance(message, BaseException):
+            raise message
+        return message
+
+
+class _Connect:
+    """Async context manager stand-in for websockets.asyncio.client.connect."""
+
+    def __init__(self, connection: _Conn) -> None:
+        self._connection = connection
+
+    async def __aenter__(self) -> _Conn:
+        return self._connection
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+
+class _ConnectionIterator:
+    """Async iterator stand-in for the relay connection iterator."""
+
+    def __init__(self, connections: list[_Conn]) -> None:
+        self._connections = connections
+
+    def __aiter__(self) -> AsyncIterator[_Conn]:
+        return self
+
+    async def __anext__(self) -> _Conn:
+        if not self._connections:
+            raise StopAsyncIteration
+        return self._connections.pop(0)
+
+
+class _HandshakeContextFailure:
+    """Async context manager that raises InvalidStatus during connect."""
 
     def __init__(self, response: Response) -> None:
         self._response = response
 
-    async def __aenter__(self) -> Self:
+    async def __aenter__(self) -> _Conn:
         raise InvalidStatus(self._response)
 
     async def __aexit__(self, *_: object) -> None:
         return None
+
+
+class _HandshakeIteratorFailure:
+    """Async iterator that raises InvalidStatus before yielding a connection."""
+
+    def __init__(self, response: Response) -> None:
+        self._response = response
+
+    def __aiter__(self) -> AsyncIterator[_Conn]:
+        return self
+
+    async def __anext__(self) -> _Conn:
+        raise InvalidStatus(self._response)

@@ -2,8 +2,8 @@
 
 from .camera import CameraMode, CameraStatusView
 from .device_seam import (
+    RELAY_COMMAND_FORBIDDEN_DETAIL,
     RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
-    SAFE_RELAY_TRACE_HEADERS,
     DeviceImageUploadAck,
     DevicePreviewThumbnailAck,
     DevicePublicKeyJWK,
@@ -19,6 +19,10 @@ from .device_seam import (
     RelayCommandEnvelope,
     RelayMessageType,
     RelayResponseEnvelope,
+    build_relay_command,
+    extract_safe_relay_headers,
+    relay_command_is_allowed,
+    relay_content_type_is_binary,
 )
 from .images import (
     BaseMetadata,
@@ -33,8 +37,8 @@ from .stream import StreamMetadata, StreamMode, StreamView
 from .telemetry import TelemetrySnapshot, ThermalState
 
 __all__ = [
+    "RELAY_COMMAND_FORBIDDEN_DETAIL",
     "RELAY_WS_TEXT_FRAME_LIMIT_BYTES",
-    "SAFE_RELAY_TRACE_HEADERS",
     "BaseMetadata",
     "CameraMode",
     "CameraProperties",
@@ -64,4 +68,8 @@ __all__ = [
     "StreamView",
     "TelemetrySnapshot",
     "ThermalState",
+    "build_relay_command",
+    "extract_safe_relay_headers",
+    "relay_command_is_allowed",
+    "relay_content_type_is_binary",
 ]

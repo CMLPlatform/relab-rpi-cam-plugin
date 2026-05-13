@@ -194,10 +194,6 @@ class Settings(BaseSettings):
     relay_key_id: str = ""
     relay_private_key_pem: str = ""
     local_relay_api_key: str = ""  # Bootstrap-only relay-local auth key seed; runtime-owned after startup
-    # Relay reconnect/backoff tunables. Defaults chosen for typical home/LTE
-    # links; operators on flaky networks may want a higher ceiling.
-    relay_reconnect_min_s: float = 2.0
-    relay_reconnect_max_s: float = 60.0
     relay_max_concurrent_commands: int = Field(default=8, ge=1)
     relay_max_pending_commands: int = Field(default=32, ge=1)
 

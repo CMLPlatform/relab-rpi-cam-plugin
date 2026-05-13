@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from http import HTTPMethod
+from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
+from urllib.parse import unquote
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, WebsocketUrl
 
@@ -23,6 +26,10 @@ _GeneratedKeyId = Annotated[str, Field(min_length=8, max_length=64, pattern=_SAF
 _BootstrapKeyId = Annotated[str, Field(min_length=1, max_length=64, pattern=_SAFE_IDENTIFIER_PATTERN)]
 _HttpOrRelativeUrl = Annotated[str, Field(min_length=1, max_length=2048, pattern=_HTTP_OR_RELATIVE_URL_PATTERN)]
 _RelayMessageId = Annotated[str, Field(min_length=1, max_length=64, pattern=_SAFE_IDENTIFIER_PATTERN)]
+_PARENT_PATH_SEGMENT = ".."
+_BINARY_MEDIA_TYPE_PREFIXES = ("image/", "video/")
+_OCTET_STREAM_MEDIA_TYPE = "application/octet-stream"
+_MAX_RELAY_PATH_UNQUOTE_PASSES = 4
 
 
 class RelayAuthScheme(StrEnum):
@@ -146,11 +153,34 @@ class RelayMessageType(StrEnum):
     PONG = "pong"
 
 
-SAFE_RELAY_TRACE_HEADERS: frozenset[str] = frozenset({"traceparent", "tracestate", "baggage"})
+_SAFE_RELAY_TRACE_HEADERS: frozenset[str] = frozenset({"traceparent", "tracestate", "baggage"})
 """Header names allowed to cross the relay boundary."""
 
 RELAY_WS_TEXT_FRAME_LIMIT_BYTES = 64 * 1024
 """Maximum JSON/text relay frame size shared by the backend and Pi."""
+
+RELAY_COMMAND_FORBIDDEN_DETAIL = "Relay command is not allowed."
+"""Canonical detail returned when a relay command is outside the allowlist."""
+
+_RELAY_ALLOWED_PATHS_BY_METHOD: dict[HTTPMethod, frozenset[str]] = {
+    HTTPMethod.DELETE: frozenset({"/pairing", "/streams/youtube"}),
+    HTTPMethod.GET: frozenset(
+        {
+            "/camera",
+            "/camera/controls",
+            "/streams/youtube",
+            "/system/local-access",
+            "/system/telemetry",
+        }
+    ),
+    HTTPMethod.PATCH: frozenset({"/camera/controls"}),
+    HTTPMethod.POST: frozenset({"/captures", "/preview/start", "/preview/stop", "/streams/youtube"}),
+    HTTPMethod.PUT: frozenset({"/camera/focus"}),
+}
+"""Exact HTTP-like relay commands permitted across the backend<->Pi seam."""
+
+_RELAY_ALLOWED_PATH_PREFIXES_BY_METHOD: dict[HTTPMethod, tuple[str, ...]] = {HTTPMethod.GET: ("/preview/hls/",)}
+"""Prefix-based relay commands. Prefixes must end in '/' to avoid sibling matches."""
 
 
 class RelayCommandEnvelope(BaseModel):
@@ -178,3 +208,82 @@ class RelayResponseEnvelope(BaseModel):
     data: dict[str, Any] | list[Any] | str | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+
+def _normalize_relay_path(path: str) -> str | None:
+    """Return the canonical relay path, or None when the path is not absolute."""
+    decoded_path = path
+    for _ in range(_MAX_RELAY_PATH_UNQUOTE_PASSES):
+        next_path = unquote(decoded_path)
+        if next_path == decoded_path:
+            break
+        decoded_path = next_path
+    else:
+        if unquote(decoded_path) != decoded_path:
+            return None
+    if not decoded_path.startswith("/"):
+        return None
+    if _PARENT_PATH_SEGMENT in PurePosixPath(decoded_path).parts:
+        return None
+    return decoded_path.rstrip("/") or "/"
+
+
+def relay_command_is_allowed(method: str, path: str) -> bool:
+    """Return whether a backend relay command may reach the Pi's local API."""
+    normalized_path = _normalize_relay_path(path)
+    if normalized_path is None:
+        return False
+
+    try:
+        normalized_method = HTTPMethod(method.upper())
+    except ValueError:
+        return False
+    if normalized_path in _RELAY_ALLOWED_PATHS_BY_METHOD.get(normalized_method, frozenset()):
+        return True
+
+    return any(
+        normalized_path.startswith(prefix)
+        for prefix in _RELAY_ALLOWED_PATH_PREFIXES_BY_METHOD.get(normalized_method, ())
+    )
+
+
+def extract_safe_relay_headers(headers: object) -> dict[str, str]:
+    """Return relay-safe tracing headers from an untrusted header mapping."""
+    if not isinstance(headers, dict):
+        return {}
+
+    safe_headers: dict[str, str] = {}
+    for name, value in headers.items():
+        if not isinstance(name, str) or not isinstance(value, str):
+            continue
+        normalized_name = name.lower()
+        if normalized_name in _SAFE_RELAY_TRACE_HEADERS:
+            safe_headers[normalized_name] = value
+    return safe_headers
+
+
+def relay_content_type_is_binary(content_type: str | None) -> bool:
+    """Return whether an HTTP response body should travel as a binary frame."""
+    if not content_type:
+        return False
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return media_type.startswith(_BINARY_MEDIA_TYPE_PREFIXES) or media_type == _OCTET_STREAM_MEDIA_TYPE
+
+
+def build_relay_command(
+    msg_id: str,
+    method: str,
+    path: str,
+    params: dict[str, Any] | None = None,
+    body: dict[str, Any] | None = None,
+    headers: object = None,
+) -> RelayCommandEnvelope:
+    """Build a backend->Pi relay command envelope."""
+    return RelayCommandEnvelope(
+        id=msg_id,
+        method=method.upper(),
+        path=path,
+        params=params or {},
+        body=body,
+        headers=extract_safe_relay_headers(headers),
+    )

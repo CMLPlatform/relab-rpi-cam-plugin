@@ -3,7 +3,7 @@ revision = 3
 requires-python = "==3.13.*"
 
 [options]
-exclude-newer = "2026-05-09T22:00:54.332335347Z"
+exclude-newer = "2026-05-10T00:21:39.60065165Z"
 exclude-newer-span = "P3D"
 
 [manifest]
@@ -1357,7 +1357,7 @@ wheels = [
 
 [[package]]
 name = "relab-rpi-cam-models"
-version = "0.3.1"
+version = "0.3.2"
 source = { editable = "relab_rpi_cam_models" }
 dependencies = [
     { name = "pydantic" },
@@ -1417,7 +1417,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.8.0" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.12.1" },
     { name = "relab-rpi-cam-models", editable = "relab_rpi_cam_models" },
-    { name = "websockets", specifier = ">=14.0" },
+    { name = "websockets", specifier = ">=16.0" },
 ]
 
 [package.metadata.requires-dev]

@@ -34,8 +34,8 @@
     "psutil>=5.9",
     "pydantic-settings>=2.8.0",
     "pyjwt[crypto]>=2.12.1",
-    "relab-rpi-cam-models>=0.3.1",                    # NOTE: Keep this aligned with the published contract package
-    "websockets>=14.0",
+    "relab-rpi-cam-models>=0.3.2",                    # NOTE: Keep this aligned with the published contract package
+    "websockets>=16.0",
   ]
 
   requires-python = ">=3.13,<3.14" # Python 3.13 is needed in Debian Trixie for picamera2
