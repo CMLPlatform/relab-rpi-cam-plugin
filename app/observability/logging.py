@@ -132,9 +132,7 @@ def build_security_log_extra(
     extra = build_log_extra()
     extra["event"] = event
     extra["outcome"] = outcome
-    request_id = get_request_id() or (
-        getattr(request.state, "request_id", None) if request is not None else None
-    )
+    request_id = get_request_id() or (getattr(request.state, "request_id", None) if request is not None else None)
     if request_id:
         extra["request_id"] = request_id
     if auth_method:
