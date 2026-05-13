@@ -32,6 +32,8 @@ UNEXPECTED_STATUS_LOG = "backend returned HTTP 500"
 NETWORK_WARNING_LOG = "network error reaching backend"
 DEVICE_UPLOAD_PATH = "/v1/plugins/rpi-cam/device/cameras/"
 PREVIEW_THUMBNAIL_URL = "https://backend.example/uploads/rpi-cam/previews/cam.jpg"
+REMOTE_HTTP_IMAGE_URL = "http://backend.example/uploads/rpi-cam/images/abc.jpg"
+REMOTE_HTTP_PREVIEW_THUMBNAIL_URL = "http://backend.example/uploads/rpi-cam/previews/cam.jpg"
 UNSAFE_CAMERA_ID = "cam/../42?admin=true"
 ENCODED_UNSAFE_CAMERA_ID = "cam%2F..%2F42%3Fadmin%3Dtrue"
 
@@ -171,6 +173,31 @@ class TestUploadImage:
 
         assert result.image_id == SAMPLE_SERVER_IMAGE_ID
         assert str(result.image_url) == BACKEND_IMAGE_URL
+
+    async def test_remote_http_image_url_is_rejected_in_production(self) -> None:
+        """Backend acks must not downgrade returned media URLs to remote HTTP."""
+        response = _fake_response(
+            200,
+            {"image_id": SAMPLE_SERVER_IMAGE_ID, "image_url": REMOTE_HTTP_IMAGE_URL},
+        )
+
+        with _patch_async_client(response), pytest.raises(BackendUploadError, match="image_url must use https"):
+            await upload_image(
+                image_bytes=b"\xff\xd8fake-jpg",
+                filename="test.jpg",
+                capture_metadata={"width": 1920},
+                upload_metadata={"product_id": 1},
+            )
+
+    async def test_remote_http_preview_thumbnail_url_is_rejected_in_production(self) -> None:
+        """Preview thumbnail acks must not downgrade returned media URLs to remote HTTP."""
+        response = _fake_response(200, {"preview_thumbnail_url": REMOTE_HTTP_PREVIEW_THUMBNAIL_URL})
+
+        with (
+            _patch_async_client(response),
+            pytest.raises(BackendUploadError, match="preview_thumbnail_url must use https"),
+        ):
+            await upload_preview_thumbnail(image_bytes=b"\xff\xd8preview")
 
     async def test_http_error_wrapped_in_backend_upload_error(self) -> None:
         """An httpx transport error should surface as BackendUploadError."""

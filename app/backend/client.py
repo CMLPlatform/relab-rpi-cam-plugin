@@ -19,7 +19,7 @@ import httpx
 from pydantic import AnyUrl
 
 from app.core.runtime_context import get_active_runtime
-from app.core.settings import settings
+from app.core.settings import settings, validate_endpoint_transport
 from app.device_jwt import build_device_assertion
 from app.observability.logging import build_log_extra
 from relab_rpi_cam_models import DeviceImageUploadAck, DevicePreviewThumbnailAck
@@ -30,14 +30,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _UPLOAD_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=5.0)
+_UPLOAD_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
 _UPLOAD_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/image-upload"
 _PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/preview-thumbnail-upload"
 _SELF_UNPAIR_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/self"
 _SELF_UNPAIR_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
+_SELF_UNPAIR_LIMITS = httpx.Limits(max_connections=4, max_keepalive_connections=2)
 
 
 def _camera_endpoint(template: str, camera_id: str) -> str:
     return template.format(camera_id=quote(camera_id, safe=""))
+
+
+def _resolve_backend_media_url(raw_url: str, *, base_url: str, field_name: str) -> AnyUrl:
+    if raw_url.startswith("/"):
+        raw_url = f"{base_url}{raw_url}"
+    try:
+        validate_endpoint_transport(raw_url, setting_name=field_name, app_env=settings.app_env)
+    except ValueError as exc:
+        raise BackendUploadError(str(exc)) from exc
+    return AnyUrl(raw_url)
 
 
 class BackendUploadError(RuntimeError):
@@ -85,7 +97,11 @@ class BackendUploadClient:
         headers = {"Authorization": f"Bearer {assertion}"}
 
         try:
-            async with httpx.AsyncClient(timeout=_UPLOAD_TIMEOUT) as client:
+            async with httpx.AsyncClient(
+                timeout=_UPLOAD_TIMEOUT,
+                limits=_UPLOAD_LIMITS,
+                follow_redirects=False,
+            ) as client:
                 response = await client.post(url, files=files, data=data, headers=headers)
         except httpx.HTTPError as exc:
             msg = f"Network error during image upload: {exc}"
@@ -108,10 +124,10 @@ class BackendUploadClient:
             msg = f"Backend upload response missing fields: {payload!r}"
             raise BackendUploadError(msg) from exc
 
-        raw_url = ack.image_url
-        if not raw_url.startswith("http"):
-            raw_url = f"{self.base_url}{raw_url}"
-        return UploadedImageInfo(image_id=ack.image_id, image_url=AnyUrl(raw_url))
+        return UploadedImageInfo(
+            image_id=ack.image_id,
+            image_url=_resolve_backend_media_url(ack.image_url, base_url=self.base_url, field_name="image_url"),
+        )
 
     async def upload_preview_thumbnail(
         self,
@@ -127,7 +143,11 @@ class BackendUploadClient:
         headers = {"Authorization": f"Bearer {assertion}"}
 
         try:
-            async with httpx.AsyncClient(timeout=_UPLOAD_TIMEOUT) as client:
+            async with httpx.AsyncClient(
+                timeout=_UPLOAD_TIMEOUT,
+                limits=_UPLOAD_LIMITS,
+                follow_redirects=False,
+            ) as client:
                 response = await client.post(url, files=files, headers=headers)
         except httpx.HTTPError as exc:
             msg = f"Network error during preview thumbnail upload: {exc}"
@@ -150,10 +170,13 @@ class BackendUploadClient:
             msg = f"Backend preview thumbnail response missing fields: {payload!r}"
             raise BackendUploadError(msg) from exc
 
-        raw_url = ack.preview_thumbnail_url
-        if not raw_url.startswith("http"):
-            raw_url = f"{self.base_url}{raw_url}"
-        return UploadedPreviewThumbnailInfo(preview_thumbnail_url=AnyUrl(raw_url))
+        return UploadedPreviewThumbnailInfo(
+            preview_thumbnail_url=_resolve_backend_media_url(
+                ack.preview_thumbnail_url,
+                base_url=self.base_url,
+                field_name="preview_thumbnail_url",
+            )
+        )
 
 
 async def upload_image(
@@ -250,7 +273,11 @@ async def notify_self_unpair() -> None:
 
     headers = {"Authorization": f"Bearer {assertion}"}
     try:
-        async with httpx.AsyncClient(timeout=_SELF_UNPAIR_TIMEOUT) as client:
+        async with httpx.AsyncClient(
+            timeout=_SELF_UNPAIR_TIMEOUT,
+            limits=_SELF_UNPAIR_LIMITS,
+            follow_redirects=False,
+        ) as client:
             response = await client.delete(url, headers=headers)
         if response.status_code in (204, 200, 404):
             logger.info(
