@@ -38,16 +38,6 @@ _VALUE_HSTS = "max-age=31536000; includeSubDomains"
 _VALUE_NO_REFERRER = "no-referrer"
 _VALUE_NOSNIFF = "nosniff"
 _VALUE_SAME_ORIGIN = "same-origin"
-_VALUE_CHARSET_PARAMETER = "charset="
-_VALUE_UTF8_CHARSET = "charset=utf-8"
-_BODYLESS_STATUS_CODES = frozenset({204, 304})
-_TEXTUAL_APPLICATION_MEDIA_TYPES = frozenset(
-    {
-        "application/json",
-        "application/vnd.apple.mpegurl",
-        "application/xml",
-    }
-)
 
 _HOMEPAGE_CSP = (
     "default-src 'self'; "
@@ -223,26 +213,6 @@ def _is_html_response(response: Response) -> bool:
     return response.headers.get(_HEADER_CONTENT_TYPE, "").lower().startswith(_HTML_CONTENT_TYPE)
 
 
-def _media_type_needs_charset(content_type: str) -> bool:
-    media_type = content_type.split(";", 1)[0].strip().lower()
-    return (
-        media_type.startswith("text/")
-        or media_type.endswith(("+json", "+xml"))
-        or media_type in _TEXTUAL_APPLICATION_MEDIA_TYPES
-    )
-
-
-def _ensure_body_content_type_charset(response: Response) -> None:
-    """Declare UTF-8 on textual response bodies when the handler omitted a charset."""
-    if response.status_code in _BODYLESS_STATUS_CODES:
-        return
-    content_type = response.headers.get(_HEADER_CONTENT_TYPE)
-    if not content_type or _VALUE_CHARSET_PARAMETER in content_type.lower():
-        return
-    if _media_type_needs_charset(content_type):
-        response.headers[_HEADER_CONTENT_TYPE] = f"{content_type}; {_VALUE_UTF8_CHARSET}"
-
-
 async def security_headers_middleware(request: Request, call_next: Callable) -> Response:
     """Attach baseline security headers to every HTTP response."""
     request.state.csp_nonce = token_urlsafe(_CSP_NONCE_BYTES)
@@ -256,7 +226,6 @@ async def security_headers_middleware(request: Request, call_next: Callable) -> 
         _HEADER_CONTENT_SECURITY_POLICY,
         _csp_for_request_path(request.url.path, nonce=request.state.csp_nonce),
     )
-    _ensure_body_content_type_charset(response)
     if settings.base_url.scheme == _HTTPS_SCHEME:
         response.headers.setdefault(_HEADER_STRICT_TRANSPORT_SECURITY, _VALUE_HSTS)
     return response

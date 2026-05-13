@@ -20,15 +20,6 @@ _WSS_SCHEME_SOURCE = "wss:"
 TEST_API_KEY = "test-secret-api-key"
 OTHER_TEST_API_KEY = "other-secret-api-key"
 TEST_COOKIE_VALUE = "test-session-token"
-APPLICATION_JSON = "application/json"
-APPLICATION_JSON_UTF8 = "application/json; charset=utf-8"
-CUSTOM_JSON = "application/problem+json"
-CUSTOM_JSON_UTF8 = "application/problem+json; charset=utf-8"
-HLS_PLAYLIST_CONTENT_TYPE = "application/vnd.apple.mpegurl"
-HLS_PLAYLIST_CONTENT_TYPE_UTF8 = "application/vnd.apple.mpegurl; charset=utf-8"
-JPEG_CONTENT_TYPE = "image/jpeg"
-CONTENT_TYPE_HEADER = "content-type"
-APPLICATION_JSON_LATIN1 = "application/json; charset=iso-8859-1"
 
 
 def _request(method: str, path: str, *, headers: dict[str, str] | None = None, client: str = "192.0.2.10") -> Request:
@@ -71,51 +62,6 @@ class TestContentSecurityPolicy:
 
         assert csp == _DEFAULT_CSP
         assert _WORKER_SRC_DIRECTIVE not in csp
-
-
-class TestContentTypeCharset:
-    """Tests for response content-type charset normalization."""
-
-    @pytest.mark.parametrize(
-        ("content_type", "expected"),
-        [
-            (APPLICATION_JSON, APPLICATION_JSON_UTF8),
-            (CUSTOM_JSON, CUSTOM_JSON_UTF8),
-            (HLS_PLAYLIST_CONTENT_TYPE, HLS_PLAYLIST_CONTENT_TYPE_UTF8),
-        ],
-    )
-    def test_textual_body_content_types_gain_utf8_charset(self, content_type: str, expected: str) -> None:
-        """Textual and structured body responses should declare their UTF-8 charset."""
-        response = Response(content=b"{}", media_type=content_type)
-
-        middleware_mod._ensure_body_content_type_charset(response)
-
-        assert response.headers["content-type"] == expected
-
-    def test_existing_charset_is_preserved(self) -> None:
-        """Explicit charsets should not be rewritten."""
-        response = Response(content=b"{}", headers={CONTENT_TYPE_HEADER: APPLICATION_JSON_LATIN1})
-
-        middleware_mod._ensure_body_content_type_charset(response)
-
-        assert response.headers[CONTENT_TYPE_HEADER] == APPLICATION_JSON_LATIN1
-
-    def test_binary_content_type_is_unchanged(self) -> None:
-        """Binary responses should not receive a charset."""
-        response = Response(content=b"\xff\xd8\xff\xd9", media_type=JPEG_CONTENT_TYPE)
-
-        middleware_mod._ensure_body_content_type_charset(response)
-
-        assert response.headers[CONTENT_TYPE_HEADER] == JPEG_CONTENT_TYPE
-
-    @pytest.mark.parametrize("status_code", [204, 304])
-    def test_bodyless_responses_are_unchanged(self, status_code: int) -> None:
-        """Bodyless responses should not be forced to carry a content type."""
-        response = Response(status_code=status_code)
-
-        middleware_mod._ensure_body_content_type_charset(response)
-
-        assert CONTENT_TYPE_HEADER not in response.headers
 
 
 class TestRateLimiter:
