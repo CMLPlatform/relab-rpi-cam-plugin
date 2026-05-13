@@ -34,7 +34,7 @@ from app.camera.services.manager import CameraManager
 from app.core.http_errors import client_error_detail
 from app.core.runtime import get_request_runtime
 from app.media.preview_pipeline import PreviewPipelineManager
-from app.observability.logging import build_log_extra
+from app.observability.logging import build_log_extra, build_security_log_extra
 from app.relay.state import RelayRuntimeState
 from app.utils.network import is_local_client
 from app.workers.preview_thumbnail import PreviewThumbnailWorker
@@ -123,6 +123,12 @@ async def start_preview(
 ) -> Response:
     """Explicitly start the preview pipeline. Idempotent."""
     if not _is_local_client(request.client.host if request.client else None):
+        logger.warning(
+            "Security event: preview start denied — not a local client",
+            extra=build_security_log_extra(
+                event="preview.start.denied", outcome="failure", request=request, status_code=403
+            ),
+        )
         raise HTTPException(status_code=403, detail="Preview control is only available from the local network")
     camera = camera_manager.backend.camera
     if camera is None:
@@ -149,6 +155,12 @@ async def stop_preview(
 ) -> Response:
     """Explicitly stop the preview pipeline and refresh the cached thumbnail."""
     if not _is_local_client(request.client.host if request.client else None):
+        logger.warning(
+            "Security event: preview stop denied — not a local client",
+            extra=build_security_log_extra(
+                event="preview.stop.denied", outcome="failure", request=request, status_code=403
+            ),
+        )
         raise HTTPException(status_code=403, detail="Preview control is only available from the local network")
     camera = camera_manager.backend.camera
     if camera is not None and pipeline.is_running:
@@ -185,6 +197,12 @@ async def proxy_hls(
 ) -> Response:
     """Fetch an LL-HLS resource from the local MediaMTX and return it verbatim."""
     if not _is_local_client(request.client.host if request.client else None):
+        logger.warning(
+            "Security event: HLS access denied — not a local client",
+            extra=build_security_log_extra(
+                event="hls.access.denied", outcome="failure", request=request, status_code=403
+            ),
+        )
         raise HTTPException(status_code=403, detail="HLS preview is only available from the local network")
 
     # Record viewer intent before hitting MediaMTX. If the encoder is asleep,

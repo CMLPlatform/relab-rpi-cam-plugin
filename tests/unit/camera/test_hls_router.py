@@ -14,8 +14,8 @@ from app.camera.routers.hls import _is_local_client, proxy_hls, start_preview, s
 from app.relay.state import RelayRuntimeState
 from tests.constants import HLS_M3U8_CONTENT_TYPE, HLS_MP4_CONTENT_TYPE, HLS_PREVIEW_ENCODER_FRAGMENT
 
-MEDIAMTX_UNAVAILABLE_DETAIL = "MediaMTX HLS is temporarily unavailable"
-PREVIEW_START_FAILED_DETAIL = "Preview encoder failed to start"
+MEDIAMTX_UNAVAILABLE_DETAIL = {"message": "MediaMTX HLS is temporarily unavailable"}
+PREVIEW_START_FAILED_DETAIL = {"message": "Preview encoder failed to start"}
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
