@@ -20,8 +20,11 @@ from app.core.settings import (
     validate_relay_backend_url,
 )
 from app.pairing.services.credentials import _CREDENTIALS_FILE, load_relay_credentials
+from app.relay.credentials import validate_relay_credentials
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_API_KEY_BYTES = 32
 
 
 def _is_running_in_container() -> bool:
@@ -47,6 +50,12 @@ def apply_relay_credentials(runtime_state: RuntimeState) -> None:
     """
     logger.info("Relay credentials path resolved to %s", _CREDENTIALS_FILE)
     if runtime_state.relay_enabled:
+        validate_relay_credentials(
+            relay_camera_id=runtime_state.relay_camera_id,
+            relay_auth_scheme=runtime_state.relay_auth_scheme,
+            relay_key_id=runtime_state.relay_key_id,
+            relay_private_key_pem=runtime_state.relay_private_key_pem,
+        )
         logger.info(
             "Relay bootstrap credentials already present from static config; skipping persisted relay credentials"
         )
@@ -136,7 +145,7 @@ def apply_local_mode(runtime_state: RuntimeState, app_settings: Settings = setti
         local_api_key = str(creds.get("local_api_key", "")) if creds else ""
 
     if not local_api_key:
-        local_api_key = f"local_{secrets.token_urlsafe(32)}"
+        local_api_key = f"local_{secrets.token_urlsafe(_LOCAL_API_KEY_BYTES)}"
         _persist_local_api_key(local_api_key)
         logger.info("Local mode: generated new API key and persisted to credentials file")
 
@@ -160,6 +169,12 @@ def set_runtime_relay_credentials(
 ) -> None:
     """Apply relay credentials at runtime and refresh dependent auth state."""
     validate_relay_backend_url(relay_backend_url, app_env=app_settings.app_env)
+    validate_relay_credentials(
+        relay_camera_id=relay_camera_id,
+        relay_auth_scheme=relay_auth_scheme,
+        relay_key_id=relay_key_id,
+        relay_private_key_pem=relay_private_key_pem,
+    )
     runtime_state.set_relay_credentials(
         relay_backend_url=relay_backend_url,
         relay_camera_id=relay_camera_id,

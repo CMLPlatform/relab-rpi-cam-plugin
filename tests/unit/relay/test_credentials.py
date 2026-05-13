@@ -6,7 +6,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
-from app.relay.credentials import load_relay_signing_private_key
+from app.relay.credentials import load_relay_signing_private_key, validate_relay_credentials
 
 _EXPECTED_RELAY_CURVE_NAME = "secp256r1"
 
@@ -48,3 +48,52 @@ def test_load_relay_signing_private_key_rejects_malformed_pem() -> None:
     """Malformed key material should produce a clear validation error."""
     with pytest.raises(ValueError, match="private key"):
         load_relay_signing_private_key("not a private key")
+
+
+def test_validate_relay_credentials_accepts_valid_device_assertion_credentials() -> None:
+    """Complete relay credentials should validate at process trust boundaries."""
+    private_key = ec.generate_private_key(ec.SECP256R1())
+
+    validate_relay_credentials(
+        relay_camera_id="cam-1",
+        relay_auth_scheme="device_assertion",
+        relay_key_id="key-1",
+        relay_private_key_pem=_private_key_pem(private_key),
+    )
+
+
+def test_validate_relay_credentials_rejects_non_device_assertion_scheme() -> None:
+    """Relay credentials are currently only valid for device assertion auth."""
+    private_key = ec.generate_private_key(ec.SECP256R1())
+
+    with pytest.raises(ValueError, match="device_assertion"):
+        validate_relay_credentials(
+            relay_camera_id="cam-1",
+            relay_auth_scheme="bearer",
+            relay_key_id="key-1",
+            relay_private_key_pem=_private_key_pem(private_key),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "relay_camera_id", "relay_key_id"),
+    [
+        ("relay_camera_id", "bad camera id", "key-1"),
+        ("relay_key_id", "cam-1", "bad key id!"),
+    ],
+)
+def test_validate_relay_credentials_rejects_malformed_identifiers(
+    field_name: str,
+    relay_camera_id: str,
+    relay_key_id: str,
+) -> None:
+    """Relay camera and key identifiers should stay bounded and URL-safe."""
+    private_key = ec.generate_private_key(ec.SECP256R1())
+
+    with pytest.raises(ValueError, match=field_name):
+        validate_relay_credentials(
+            relay_camera_id=relay_camera_id,
+            relay_auth_scheme="device_assertion",
+            relay_key_id=relay_key_id,
+            relay_private_key_pem=_private_key_pem(private_key),
+        )
