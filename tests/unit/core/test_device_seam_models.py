@@ -187,12 +187,65 @@ def test_relay_command_envelope_allows_backend_owned_command_policy() -> None:
         id="msg-policy",
         method=BACKEND_OWNED_RELAY_METHOD,
         path=BACKEND_OWNED_RELAY_PATH,
-        params={f"k{i}": i for i in range(33)},
-        headers={"x" * 65: "ok"},
+        params={"page": 1},
+        headers={"traceparent": "00-abc-def-01"},
     )
 
     assert command.method == BACKEND_OWNED_RELAY_METHOD
     assert command.path == BACKEND_OWNED_RELAY_PATH
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "id": "msg-params",
+            "method": "GET",
+            "path": "/camera",
+            "params": {f"k{i}": i for i in range(17)},
+        },
+        {
+            "id": "msg-param-name",
+            "method": "GET",
+            "path": "/camera",
+            "params": {"x" * 65: "value"},
+        },
+        {
+            "id": "msg-param-value",
+            "method": "GET",
+            "path": "/camera",
+            "params": {"include": {"nested": "no"}},
+        },
+        {
+            "id": "msg-param-nan",
+            "method": "GET",
+            "path": "/camera",
+            "params": {"value": float("nan")},
+        },
+        {
+            "id": "msg-headers",
+            "method": "GET",
+            "path": "/camera",
+            "headers": {f"x-{i}": "value" for i in range(17)},
+        },
+        {
+            "id": "msg-header-name",
+            "method": "GET",
+            "path": "/camera",
+            "headers": {"x" * 65: "value"},
+        },
+        {
+            "id": "msg-header-value",
+            "method": "GET",
+            "path": "/camera",
+            "headers": {"traceparent": "x" * 513},
+        },
+    ],
+)
+def test_relay_command_envelope_rejects_unbounded_params_and_headers(payload: dict[str, object]) -> None:
+    """Relay params and headers should stay bounded before dispatch to httpx."""
+    with pytest.raises(ValidationError):
+        RelayCommandEnvelope.model_validate(payload)
 
 
 @pytest.mark.parametrize(

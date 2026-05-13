@@ -8,7 +8,7 @@ from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 from urllib.parse import unquote
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, WebsocketUrl
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, HttpUrl, StrictBool, StrictInt, StrictStr, WebsocketUrl
 
 # These bounds mirror existing seam contracts: pairing codes are 6-character
 # operator codes, and key IDs/camera IDs are URL-safe opaque IDs.
@@ -26,10 +26,16 @@ _GeneratedKeyId = Annotated[str, Field(min_length=8, max_length=64, pattern=_SAF
 _BootstrapKeyId = Annotated[str, Field(min_length=1, max_length=64, pattern=_SAFE_IDENTIFIER_PATTERN)]
 _HttpOrRelativeUrl = Annotated[str, Field(min_length=1, max_length=2048, pattern=_HTTP_OR_RELATIVE_URL_PATTERN)]
 _RelayMessageId = Annotated[str, Field(min_length=1, max_length=64, pattern=_SAFE_IDENTIFIER_PATTERN)]
+_RelayParamName = Annotated[StrictStr, Field(min_length=1, max_length=64, pattern=_SAFE_IDENTIFIER_PATTERN)]
+_RelayParamValue = Annotated[StrictStr, Field(max_length=256)] | StrictInt | FiniteFloat | StrictBool
+_RelayHeaderName = Annotated[StrictStr, Field(min_length=1, max_length=64, pattern=_SAFE_IDENTIFIER_PATTERN)]
+_RelayHeaderValue = Annotated[StrictStr, Field(max_length=512)]
 _PARENT_PATH_SEGMENT = ".."
 _BINARY_MEDIA_TYPE_PREFIXES = ("image/", "video/")
 _OCTET_STREAM_MEDIA_TYPE = "application/octet-stream"
 _MAX_RELAY_PATH_UNQUOTE_PASSES = 4
+_MAX_RELAY_QUERY_PARAMS = 16
+_MAX_RELAY_HEADERS = 16
 
 
 class RelayAuthScheme(StrEnum):
@@ -190,9 +196,9 @@ class RelayCommandEnvelope(BaseModel):
     type: Literal[RelayMessageType.REQUEST] = RelayMessageType.REQUEST
     method: Annotated[str, Field(min_length=1, max_length=16)]
     path: Annotated[str, Field(min_length=1, max_length=2048)]
-    params: dict[str, Any] = Field(default_factory=dict)
+    params: dict[_RelayParamName, _RelayParamValue] = Field(default_factory=dict, max_length=_MAX_RELAY_QUERY_PARAMS)
     body: dict[str, Any] | None = None
-    headers: dict[str, str] = Field(default_factory=dict)
+    headers: dict[_RelayHeaderName, _RelayHeaderValue] = Field(default_factory=dict, max_length=_MAX_RELAY_HEADERS)
 
     model_config = ConfigDict(extra="forbid")
 
