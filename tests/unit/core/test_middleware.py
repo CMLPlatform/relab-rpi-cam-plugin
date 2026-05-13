@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 from fastapi import Request
 from starlette.responses import Response
@@ -23,7 +25,12 @@ TEST_COOKIE_VALUE = "test-session-token"
 VALID_REQUEST_ID = "client-req_123"
 INVALID_REQUEST_ID = "bad\nrequest"
 OVERSIZED_REQUEST_ID = "r" * 129
-
+RATE_LIMIT_EVENT = "security.rate_limit"
+RATE_LIMIT_OUTCOME = "blocked"
+RATE_LIMIT_METHOD = "POST"
+RATE_LIMIT_PATH = "/auth/login"
+RATE_LIMIT_STATUS_CODE = 429
+RATE_LIMIT_CLIENT_HOST = "198.51.100.7"
 
 
 def _request(method: str, path: str, *, headers: dict[str, str] | None = None, client: str = "192.0.2.10") -> Request:
@@ -84,6 +91,29 @@ class TestRateLimiter:
         response = await limiter.handle(request, lambda _request: _response(403))
 
         assert response.status_code == 429
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_rejection_logs_security_event(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Rate-limit denials should be logged as security control events."""
+        limiter = middleware_mod.RateLimiter()
+        request = _request(RATE_LIMIT_METHOD, RATE_LIMIT_PATH, client=RATE_LIMIT_CLIENT_HOST)
+
+        for _ in range(limiter.LOGIN_MAX_FAILED_ATTEMPTS):
+            await limiter.handle(request, lambda _request: _response(403))
+
+        with caplog.at_level("WARNING"):
+            response = await limiter.handle(request, lambda _request: _response(403))
+
+        assert response.status_code == 429
+        record = cast(
+            "Any",
+            next(record for record in caplog.records if getattr(record, "event", "") == RATE_LIMIT_EVENT),
+        )
+        assert record.outcome == RATE_LIMIT_OUTCOME
+        assert record.method == RATE_LIMIT_METHOD
+        assert record.path == RATE_LIMIT_PATH
+        assert record.status_code == RATE_LIMIT_STATUS_CODE
+        assert record.client_host == RATE_LIMIT_CLIENT_HOST
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

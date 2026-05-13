@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.core.settings import settings
 from app.observability.logging import bind_request_id, build_security_log_extra, new_request_id, reset_request_id
@@ -20,26 +20,16 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from fastapi import FastAPI
-    from starlette.responses import Response
 
+_CSP_NONCE_BYTES = 16
+_LOGIN_ROUTE = ("POST", "/auth/login")
 _HOMEPAGE_PATH = "/"
 _SETUP_PATH = "/setup"
 _DOCS_PATH_PREFIX = "/docs"
-_LOGIN_ROUTE = ("POST", "/auth/login")
-_HTML_CONTENT_TYPE = "text/html"
-_CSP_NONCE_BYTES = 16
-_HEADER_CONTENT_SECURITY_POLICY = "Content-Security-Policy"
-_HEADER_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-_HEADER_CROSS_ORIGIN_OPENER_POLICY = "Cross-Origin-Opener-Policy"
-_HEADER_CROSS_ORIGIN_RESOURCE_POLICY = "Cross-Origin-Resource-Policy"
-_HEADER_REFERRER_POLICY = "Referrer-Policy"
-_HEADER_REQUEST_ID = "X-Request-ID"
-_HEADER_STRICT_TRANSPORT_SECURITY = "Strict-Transport-Security"
-_HEADER_CONTENT_TYPE = "content-type"
-_VALUE_HSTS = "max-age=31536000; includeSubDomains"
-_VALUE_NO_REFERRER = "no-referrer"
-_VALUE_NOSNIFF = "nosniff"
-_VALUE_SAME_ORIGIN = "same-origin"
+_STATIC_PATH_PREFIX = "/static/"
+_FAVICON_PATH = "/favicon.ico"
+_TRACE_METHOD = "TRACE"
+_HTTPS_SCHEME = "https"
 
 _HOMEPAGE_CSP = (
     "default-src 'self'; "
@@ -237,24 +227,32 @@ def _csp_for_request_path(path: str, *, nonce: str | None = None) -> str:
 
 
 def _is_html_response(response: Response) -> bool:
-    return response.headers.get(_HEADER_CONTENT_TYPE, "").lower().startswith(_HTML_CONTENT_TYPE)
+    return response.headers.get("content-type", "").lower().startswith("text/html")
+
+
+def _is_static_asset_path(path: str) -> bool:
+    return path == _FAVICON_PATH or path.startswith(_STATIC_PATH_PREFIX)
 
 
 async def security_headers_middleware(request: Request, call_next: Callable) -> Response:
     """Attach baseline security headers to every HTTP response."""
     request.state.csp_nonce = token_urlsafe(_CSP_NONCE_BYTES)
     response = await call_next(request)
-    response.headers.setdefault(_HEADER_CONTENT_TYPE_OPTIONS, _VALUE_NOSNIFF)
-    response.headers.setdefault(_HEADER_REFERRER_POLICY, _VALUE_NO_REFERRER)
-    response.headers.setdefault(_HEADER_CROSS_ORIGIN_RESOURCE_POLICY, _VALUE_SAME_ORIGIN)
+    if not _is_static_asset_path(request.url.path):
+        response.headers.setdefault("Cache-Control", "no-store")
+        response.headers.setdefault("Pragma", "no-cache")
+        response.headers.setdefault("Expires", "0")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
     if _is_html_response(response):
-        response.headers.setdefault(_HEADER_CROSS_ORIGIN_OPENER_POLICY, _VALUE_SAME_ORIGIN)
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     response.headers.setdefault(
-        _HEADER_CONTENT_SECURITY_POLICY,
+        "Content-Security-Policy",
         _csp_for_request_path(request.url.path, nonce=request.state.csp_nonce),
     )
     if settings.base_url.scheme == _HTTPS_SCHEME:
-        response.headers.setdefault(_HEADER_STRICT_TRANSPORT_SECURITY, _VALUE_HSTS)
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
 
 
