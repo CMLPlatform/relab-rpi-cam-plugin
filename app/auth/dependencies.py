@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from urllib.parse import urlsplit
 
-from fastapi import HTTPException, Request, Security, status
-from fastapi.security import APIKeyCookie, APIKeyHeader
+from fastapi import HTTPException, Request, Security
+from fastapi.security import APIKeyHeader
 
 from app.core.runtime import get_active_runtime, get_request_runtime
 from app.core.runtime_state import RuntimeState
@@ -20,11 +20,6 @@ HTTP_SCHEME = "http"
 HTTPS_SCHEME = "https"
 
 api_key_header = APIKeyHeader(name=settings.auth_key_name, auto_error=False, description="API Key for API access.")
-session_cookie = APIKeyCookie(
-    name=settings.session_cookie_name,
-    auto_error=False,
-    description="Browser session cookie for operator UI access.",
-)
 
 _active_sessions: dict[str, datetime] = {}
 
@@ -83,6 +78,16 @@ def has_valid_session(token: str | None) -> bool:
     return token in _active_sessions
 
 
+def _browser_session_token(request: Request) -> str | None:
+    """Return the browser session token from the active cookie name."""
+    return request.cookies.get(settings.browser_session_cookie_name)
+
+
+def has_valid_browser_session(request: Request) -> bool:
+    """Return whether the request carries a valid browser session cookie."""
+    return has_valid_session(_browser_session_token(request))
+
+
 def _default_port(scheme: str) -> int | None:
     if scheme == HTTP_SCHEME:
         return 80
@@ -125,7 +130,6 @@ def verify_cookie_write_csrf(request: Request) -> None:
 async def verify_request(
     request: Request,
     x_api_key_header: Annotated[str | None, Security(api_key_header)] = None,
-    session_token: Annotated[str | None, Security(session_cookie)] = None,
 ) -> str:
     """Verify API access using a valid API key header or browser session."""
     authorized_api_keys = reload_authorized_hashes(get_request_runtime(request).runtime_state)
@@ -134,25 +138,8 @@ async def verify_request(
             raise HTTPException(status_code=403, detail="Invalid API Key")
         return x_api_key_header
 
-    if has_valid_session(session_token):
+    if has_valid_browser_session(request):
         verify_cookie_write_csrf(request)
         return "browser-session"
 
     raise HTTPException(status_code=401, detail="API Key header or browser session is missing")
-
-
-async def require_cookie_auth(
-    request: Request,
-    session_token: Annotated[str | None, Security(session_cookie)] = None,
-) -> bool:
-    """Check if user has a valid browser session cookie, redirect to login if not."""
-    if not has_valid_session(session_token):
-        current_path = str(request.url.path)
-        login_url = f"/login?redirect_url={current_path}"
-        raise HTTPException(status_code=status.HTTP_307_TEMPORARY_REDIRECT, headers={"Location": login_url})
-    return True
-
-
-async def get_auth_status(session_token: Annotated[str | None, Security(session_cookie)] = None) -> bool:
-    """Return whether the request carries a valid browser session."""
-    return has_valid_session(session_token)

@@ -23,6 +23,30 @@ _HOMEPAGE_PATH = "/"
 _SETUP_PATH = "/setup"
 _DOCS_PATH_PREFIX = "/docs"
 _LOGIN_ROUTE = ("POST", "/auth/login")
+_HTML_CONTENT_TYPE = "text/html"
+_CSP_NONCE_BYTES = 16
+_HEADER_CONTENT_SECURITY_POLICY = "Content-Security-Policy"
+_HEADER_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
+_HEADER_CROSS_ORIGIN_OPENER_POLICY = "Cross-Origin-Opener-Policy"
+_HEADER_CROSS_ORIGIN_RESOURCE_POLICY = "Cross-Origin-Resource-Policy"
+_HEADER_REFERRER_POLICY = "Referrer-Policy"
+_HEADER_REQUEST_ID = "X-Request-ID"
+_HEADER_STRICT_TRANSPORT_SECURITY = "Strict-Transport-Security"
+_HEADER_CONTENT_TYPE = "content-type"
+_VALUE_HSTS = "max-age=31536000; includeSubDomains"
+_VALUE_NO_REFERRER = "no-referrer"
+_VALUE_NOSNIFF = "nosniff"
+_VALUE_SAME_ORIGIN = "same-origin"
+_VALUE_CHARSET_PARAMETER = "charset="
+_VALUE_UTF8_CHARSET = "charset=utf-8"
+_BODYLESS_STATUS_CODES = frozenset({204, 304})
+_TEXTUAL_APPLICATION_MEDIA_TYPES = frozenset(
+    {
+        "application/json",
+        "application/vnd.apple.mpegurl",
+        "application/xml",
+    }
+)
 
 _HOMEPAGE_CSP = (
     "default-src 'self'; "
@@ -144,7 +168,7 @@ class RateLimiter:
         route_key = ":".join(route)
         if api_key := request.headers.get(settings.auth_key_name):
             return _hashed_bucket(f"{route_key}:api", api_key)
-        if session_token := request.cookies.get(settings.session_cookie_name):
+        if session_token := request.cookies.get(settings.browser_session_cookie_name):
             return _hashed_bucket(f"{route_key}:session", session_token)
         client_ip = request.client.host if request.client else "unknown"
         return _hashed_bucket(f"{route_key}:ip", client_ip)
@@ -171,7 +195,7 @@ async def rate_limit_middleware(request: Request, call_next: Callable) -> Respon
 
 async def request_context_middleware(request: Request, call_next: Callable) -> Response:
     """Attach a request id to the current context and echo it to the client."""
-    request_id = request.headers.get("X-Request-ID") or new_request_id()
+    request_id = request.headers.get(_HEADER_REQUEST_ID) or new_request_id()
     token = bind_request_id(request_id)
     try:
         response = await call_next(request)
@@ -200,7 +224,7 @@ async def security_headers_middleware(request: Request, call_next: Callable) -> 
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("Content-Security-Policy", _content_security_policy_for_path(request.url.path))
     if settings.base_url.scheme == _HTTPS_SCHEME:
-        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+        response.headers.setdefault(_HEADER_STRICT_TRANSPORT_SECURITY, _VALUE_HSTS)
     return response
 
 
@@ -218,6 +242,6 @@ def register_middleware(app: FastAPI) -> None:
         allow_origins=cors_origins,
         allow_credentials=not settings.local_mode_enabled,
         allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
-        allow_headers=["Content-Type", "Authorization", "Accept", "X-Request-ID", settings.auth_key_name],
+        allow_headers=["Content-Type", "Authorization", "Accept", _HEADER_REQUEST_ID, settings.auth_key_name],
         allow_private_network=settings.local_mode_enabled,
     )

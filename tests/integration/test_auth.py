@@ -2,6 +2,7 @@
 
 import pytest
 from httpx import AsyncClient
+from pydantic import HttpUrl
 
 from app.auth.dependencies import create_session, reload_authorized_hashes
 from app.core.runtime import AppRuntime
@@ -10,6 +11,9 @@ from app.core.settings import settings
 VALID_API_KEY = "valid-key"
 AUTH_COOKIE_NAME = "relab_session"
 SECURE_ATTR = "Secure"
+HTTPONLY_ATTR = "HttpOnly"
+SAMESITE_ATTR = "SameSite=lax"
+PATH_ATTR = "Path=/"
 REQUEST_ID_HEADER = "x-request-id"
 ALLOW_ORIGIN_HEADER = "access-control-allow-origin"
 ALLOW_PRIVATE_NETWORK_HEADER = "access-control-allow-private-network"
@@ -31,6 +35,12 @@ def _set_test_api_key(app_runtime: AppRuntime) -> None:
 class TestAuthMiddleware:
     """Tests for API key verification on protected endpoints."""
 
+    async def test_unsupported_http_methods_use_framework_405(self, unauthed_client: AsyncClient) -> None:
+        """Unsupported methods should be blocked by FastAPI routing rather than custom redirects."""
+        resp = await unauthed_client.request("TRACE", "/camera")
+
+        assert resp.status_code == 405
+
     async def test_missing_api_key_returns_401(self, unauthed_client: AsyncClient) -> None:
         """Test that requests without an API key return a 401 Unauthorized response."""
         resp = await unauthed_client.get("/camera")
@@ -48,13 +58,26 @@ class TestAuthMiddleware:
 
     async def test_valid_browser_session_passes(self, unauthed_client: AsyncClient) -> None:
         """A valid browser session should be accepted for local UI requests."""
-        unauthed_client.cookies.set(settings.session_cookie_name, create_session())
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
         resp = await unauthed_client.get("/camera")
+        assert resp.status_code == 200
+
+    async def test_secure_browser_session_cookie_passes(
+        self,
+        unauthed_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """HTTPS deployments should accept the __Host-prefixed session cookie."""
+        monkeypatch.setattr(settings, "auth_cookie_secure", True)
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
+
+        resp = await unauthed_client.get("/camera")
+
         assert resp.status_code == 200
 
     async def test_cookie_authenticated_cross_site_write_is_rejected(self, unauthed_client: AsyncClient) -> None:
         """Browser-session writes from another site should fail CSRF checks."""
-        unauthed_client.cookies.set(settings.session_cookie_name, create_session())
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
 
         resp = await unauthed_client.put(
             "/camera/focus",
@@ -66,7 +89,7 @@ class TestAuthMiddleware:
 
     async def test_cookie_authenticated_same_origin_write_passes(self, unauthed_client: AsyncClient) -> None:
         """Same-origin browser-session writes should keep working."""
-        unauthed_client.cookies.set(settings.session_cookie_name, create_session())
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
 
         resp = await unauthed_client.put(
             "/camera/focus",
@@ -110,6 +133,31 @@ class TestLoginEndpoint:
             follow_redirects=False,
         )
         assert SECURE_ATTR not in resp.headers["set-cookie"]
+        assert AUTH_COOKIE_NAME in resp.headers["set-cookie"]
+
+    async def test_login_uses_host_prefixed_secure_cookie_for_https(
+        self,
+        unauthed_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """HTTPS deployments should use an ASVS-aligned host-prefixed cookie."""
+        monkeypatch.setattr(settings, "base_url", HttpUrl("https://camera.example/"))
+        monkeypatch.setattr(settings, "auth_cookie_secure", None)
+
+        resp = await unauthed_client.post(
+            "/auth/login",
+            data={"api_key": VALID_API_KEY, "redirect_url": ROOT_REDIRECT},
+            follow_redirects=False,
+        )
+
+        cookie = resp.headers["set-cookie"]
+        assert resp.status_code == 303
+        assert settings.browser_session_cookie_name in cookie
+        assert AUTH_COOKIE_NAME not in resp.cookies
+        assert SECURE_ATTR in cookie
+        assert HTTPONLY_ATTR in cookie
+        assert SAMESITE_ATTR in cookie
+        assert PATH_ATTR in cookie
 
     async def test_login_with_invalid_key_returns_403(self, unauthed_client: AsyncClient) -> None:
         """Test that logging in with an invalid API key returns a 403 response and does not set the auth cookie."""
@@ -156,7 +204,7 @@ class TestLogoutEndpoint:
 
     async def test_logout_clears_cookie(self, unauthed_client: AsyncClient) -> None:
         """Test that logging out clears the authentication cookie and redirects to the login page."""
-        unauthed_client.cookies.set(settings.session_cookie_name, create_session())
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
         resp = await unauthed_client.post(
             "/auth/logout",
             headers={"Origin": SAME_ORIGIN},
@@ -166,9 +214,27 @@ class TestLogoutEndpoint:
         # Cookie should be cleared (set with max-age=0 or deleted)
         assert AUTH_COOKIE_NAME in resp.headers.get("set-cookie", "")
 
+    async def test_logout_clears_secure_cookie_name(
+        self,
+        unauthed_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """HTTPS deployments should delete the active host-prefixed cookie name."""
+        monkeypatch.setattr(settings, "auth_cookie_secure", True)
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
+
+        resp = await unauthed_client.post(
+            "/auth/logout",
+            headers={"Origin": SAME_ORIGIN},
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 303
+        assert settings.browser_session_cookie_name in resp.headers.get("set-cookie", "")
+
     async def test_logout_rejects_cross_site_cookie_write(self, unauthed_client: AsyncClient) -> None:
         """Logout is cookie-authenticated and should enforce the same CSRF policy."""
-        unauthed_client.cookies.set(settings.session_cookie_name, create_session())
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
 
         resp = await unauthed_client.post(
             "/auth/logout",

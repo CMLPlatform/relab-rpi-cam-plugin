@@ -9,7 +9,7 @@ import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from app.auth.dependencies import has_valid_session, verify_request
+from app.auth.dependencies import has_valid_browser_session, verify_request
 from app.backend.client import notify_self_unpair
 from app.core.bootstrap import clear_runtime_relay_credentials
 from app.core.runtime import get_request_runtime
@@ -54,7 +54,7 @@ async def setup_page(request: Request) -> HTMLResponse:
     base_url = str(settings.base_url).rstrip("/")
     pairing = runtime.pairing_service.get_state()
     pairing_expires_at_iso = pairing.expires_at.isoformat() if pairing.expires_at else ""
-    operator_authenticated = has_valid_session(request.cookies.get(settings.session_cookie_name))
+    operator_authenticated = has_valid_browser_session(request)
 
     lan_ips: list[str] = []
     connection_host = ""

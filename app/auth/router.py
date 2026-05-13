@@ -3,7 +3,7 @@
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Form, HTTPException, Request, Response, Security
+from fastapi import APIRouter, Form, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
 from app.auth.dependencies import (
@@ -12,7 +12,6 @@ from app.auth.dependencies import (
     delete_session,
     has_valid_session,
     reload_authorized_hashes,
-    session_cookie,
     verify_cookie_write_csrf,
 )
 from app.core.runtime import get_request_runtime
@@ -49,7 +48,7 @@ async def login(
     safe_redirect_url = _safe_local_redirect_target(redirect_url)
     response = RedirectResponse(url=safe_redirect_url, status_code=303)
     response.set_cookie(
-        key=settings.session_cookie_name,
+        key=settings.browser_session_cookie_name,
         value=session_token,
         httponly=True,
         secure=settings.cookie_secure,
@@ -64,12 +63,12 @@ async def login(
 async def logout(
     request: Request,
     response: Response,
-    session_token: Annotated[str | None, Security(session_cookie)] = None,
 ) -> RedirectResponse:
     """Invalidate the current browser session."""
+    session_token = request.cookies.get(settings.browser_session_cookie_name)
     if has_valid_session(session_token):
         verify_cookie_write_csrf(request)
     delete_session(session_token)
     response = RedirectResponse(url="/", status_code=303)
-    response.delete_cookie(key=settings.session_cookie_name, path="/")
+    response.delete_cookie(key=settings.browser_session_cookie_name, path="/", secure=settings.cookie_secure)
     return response

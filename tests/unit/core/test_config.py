@@ -19,6 +19,8 @@ from tests.constants import (
 OTEL_SERVICE_NAME = "relab-rpi-cam-plugin"
 APP_ENV_DEVELOPMENT = "development"
 APP_ENV_PRODUCTION = "production"
+LOCAL_SESSION_COOKIE_NAME = "relab_session"
+SECURE_SESSION_COOKIE_NAME = "__Host-relab_session"
 EXPLICIT_S3 = "s3"
 EXPLICIT_BACKEND = "backend"
 UNCONFIGURED = "unconfigured"
@@ -240,6 +242,21 @@ class TestSettingsDefaults:
         """Explicit cookie security settings should win over the base URL."""
         s = Settings(base_url=HttpUrl("http://camera.example"), auth_cookie_secure=True)
         assert s.cookie_secure is True
+
+    def test_browser_session_cookie_name_uses_plain_name_for_http(self) -> None:
+        """Local HTTP browser sessions should keep the LAN-friendly cookie name."""
+        s = Settings(base_url=HttpUrl("http://camera.example"))
+        assert s.browser_session_cookie_name == LOCAL_SESSION_COOKIE_NAME
+
+    def test_browser_session_cookie_name_uses_host_prefix_for_https(self) -> None:
+        """HTTPS browser sessions should use the strict host-prefixed cookie name."""
+        s = Settings(base_url=HttpUrl("https://camera.example"))
+        assert s.browser_session_cookie_name == SECURE_SESSION_COOKIE_NAME
+
+    def test_browser_session_cookie_name_follows_explicit_secure_override(self) -> None:
+        """Explicit secure-cookie settings should also choose the host-prefixed name."""
+        s = Settings(base_url=HttpUrl("http://camera.example"), auth_cookie_secure=True)
+        assert s.browser_session_cookie_name == SECURE_SESSION_COOKIE_NAME
 
     @pytest.mark.parametrize(
         ("raw_value", "expected_value"),

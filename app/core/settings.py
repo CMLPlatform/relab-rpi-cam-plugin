@@ -26,6 +26,7 @@ IMAGE_SINK_S3 = "s3"
 DEFAULT_PAIRING_BACKEND_URL = "https://api.cml-relab.org"
 APP_ENV_DEVELOPMENT = "development"
 APP_ENV_PRODUCTION = "production"
+SECURE_SESSION_COOKIE_PREFIX = "__Host-"
 type HttpFieldName = Annotated[
     str,
     StringConstraints(min_length=1, max_length=64, pattern=r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$"),
@@ -223,6 +224,13 @@ class Settings(BaseSettings):
         if self.auth_cookie_secure is not None:
             return self.auth_cookie_secure
         return self.base_url.scheme == HTTPS_SCHEME
+
+    @property
+    def browser_session_cookie_name(self) -> str:
+        """Return the effective browser session cookie name."""
+        if self.cookie_secure:
+            return f"{SECURE_SESSION_COOKIE_PREFIX}{self.session_cookie_name}"
+        return self.session_cookie_name
 
     @property
     def api_docs_enabled(self) -> bool:
