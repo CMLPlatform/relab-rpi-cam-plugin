@@ -22,6 +22,12 @@ REDACTED = "[REDACTED]"
 BEARER_VALUE = "Bearer token-123"
 PAIRING_CODE = "ABC234"
 LOCAL_OPERATOR_ONLY_MESSAGE = "[local operator message omitted]"
+SECURITY_EVENT = "auth.login"
+SECURITY_OUTCOME = "success"
+SECURITY_AUTH_METHOD = "api_key"
+SECURITY_METHOD = "POST"
+SECURITY_PATH = "/auth/login"
+SECURITY_CLIENT_HOST = "192.0.2.10"
 
 
 def _request_with_headers(*, headers: list[tuple[bytes, bytes]] | None = None) -> Request:
@@ -74,6 +80,36 @@ class TestJsonFormatter:
         assert payload["request_id"] == REQUEST_ID
         assert payload["camera_id"] == CAMERA_ID
         assert payload["stream_mode"] == STREAM_MODE
+
+    def test_includes_security_event_metadata(self) -> None:
+        """Formatter output should preserve structured security-event fields."""
+        formatter = logging_mod.JsonFormatter()
+        record = logging.LogRecord(
+            name="test.security",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=10,
+            msg="security event",
+            args=(),
+            exc_info=None,
+        )
+        record.event = SECURITY_EVENT
+        record.outcome = SECURITY_OUTCOME
+        record.auth_method = SECURITY_AUTH_METHOD
+        record.method = SECURITY_METHOD
+        record.path = SECURITY_PATH
+        record.status_code = 303
+        record.client_host = SECURITY_CLIENT_HOST
+
+        payload = json.loads(formatter.format(record))
+
+        assert payload["event"] == SECURITY_EVENT
+        assert payload["outcome"] == SECURITY_OUTCOME
+        assert payload["auth_method"] == SECURITY_AUTH_METHOD
+        assert payload["method"] == SECURITY_METHOD
+        assert payload["path"] == SECURITY_PATH
+        assert payload["status_code"] == 303
+        assert payload["client_host"] == SECURITY_CLIENT_HOST
 
     def test_redacts_sensitive_message_fields(self) -> None:
         """Structured logs should redact known secret fields before JSON output."""

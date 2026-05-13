@@ -15,6 +15,8 @@ from uuid import uuid4
 from app.core.runtime_context import get_active_runtime
 
 if TYPE_CHECKING:
+    from fastapi import Request
+
     from app.core.settings import Settings
 
 _request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
@@ -50,6 +52,15 @@ _BEARER_RE = re.compile(
 _PRIVATE_KEY_RE = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
     re.DOTALL,
+)
+_STRUCTURED_LOG_FIELDS = (
+    "event",
+    "outcome",
+    "auth_method",
+    "method",
+    "path",
+    "status_code",
+    "client_host",
 )
 
 
@@ -106,6 +117,45 @@ def build_log_extra(
     return extra
 
 
+def build_security_log_extra(
+    *,
+    event: str,
+    outcome: str,
+    request: "Request | None" = None,
+    auth_method: str | None = None,
+    status_code: int | None = None,
+    method: str | None = None,
+    path: str | None = None,
+    client_host: str | None = None,
+) -> dict[str, object]:
+    """Build structured metadata for security-relevant log events."""
+    extra = build_log_extra()
+    extra["event"] = event
+    extra["outcome"] = outcome
+    request_id = get_request_id() or (
+        getattr(request.state, "request_id", None) if request is not None else None
+    )
+    if request_id:
+        extra["request_id"] = request_id
+    if auth_method:
+        extra["auth_method"] = auth_method
+    if status_code is not None:
+        extra["status_code"] = status_code
+    if request is not None:
+        extra["method"] = request.method.upper()
+        extra["path"] = request.url.path
+        if request.client:
+            extra["client_host"] = request.client.host
+    else:
+        if method:
+            extra["method"] = method.upper()
+        if path:
+            extra["path"] = path
+        if client_host:
+            extra["client_host"] = client_host
+    return extra
+
+
 class JsonFormatter(logging.Formatter):
     """JSON log formatter for structured, machine-readable file output."""
 
@@ -124,6 +174,10 @@ class JsonFormatter(logging.Formatter):
             log_entry["camera_id"] = camera_id
         if stream_mode := getattr(record, "stream_mode", None):
             log_entry["stream_mode"] = str(stream_mode)
+        for field in _STRUCTURED_LOG_FIELDS:
+            value = getattr(record, field, None)
+            if value is not None:
+                log_entry[field] = value
         if record.exc_info:
             log_entry["exception"] = redact_log_text(self.formatException(record.exc_info))
         if record.stack_info:
