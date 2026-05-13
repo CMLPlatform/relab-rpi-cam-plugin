@@ -30,6 +30,7 @@ from app.camera.services.manager import CameraControlsNotSupportedError, CameraM
 from app.core.runtime import AppRuntime
 from app.core.settings import settings
 from app.image_sinks.base import StoredImage
+from app.media.file_policy import CaptureFileValidationError
 from app.media.stream_service import StreamService
 from tests.constants import EXAMPLE_IMAGE_URL, YOUTUBE_WATCH_URL_PREFIX
 
@@ -575,6 +576,60 @@ class TestCameraManagerCapture:
         # Neither the target nor the .tmp sidecar should exist.
         leftover = list((tmp_path / "images").iterdir())
         assert leftover == [], f"atomic encode leaked files: {leftover}"
+
+    async def test_capture_rejects_frames_over_pixel_limit(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Capture should reject oversized frames before encoding or upload."""
+        backend = FakeBackend()
+        backend.capture_image.return_value = CaptureResult(
+            image=Image.new("RGB", (4, 4), color="blue"),
+            camera_properties={"Model": "mock-camera"},
+            capture_metadata={"FrameDuration": 33_333},
+        )
+
+        class _StubSink:
+            put = AsyncMock()
+
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend), sink=_StubSink())
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
+        monkeypatch.setattr(settings, "max_capture_pixels", 15)
+        settings.image_path.mkdir()
+
+        with pytest.raises(CaptureFileValidationError, match="pixels"):
+            await manager.capture_jpeg()
+
+        assert _StubSink.put.await_count == 0
+        assert list(settings.image_path.iterdir()) == []
+
+    async def test_capture_rejects_encoded_files_over_byte_limit(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Capture should reject encoded media that exceeds the configured byte limit."""
+        backend = FakeBackend()
+        backend.capture_image.return_value = CaptureResult(
+            image=Image.new("RGB", (64, 64), color="blue"),
+            camera_properties={"Model": "mock-camera"},
+            capture_metadata={"FrameDuration": 33_333},
+        )
+
+        class _StubSink:
+            put = AsyncMock()
+
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend), sink=_StubSink())
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
+        monkeypatch.setattr(settings, "max_capture_file_bytes", 16)
+        settings.image_path.mkdir()
+
+        with pytest.raises(CaptureFileValidationError, match="exceeds"):
+            await manager.capture_jpeg()
+
+        assert _StubSink.put.await_count == 0
+        assert list(settings.image_path.iterdir()) == []
 
 
 class TestCameraManagerLocking:

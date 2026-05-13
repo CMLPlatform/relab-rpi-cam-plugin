@@ -12,8 +12,10 @@ HLS_PREVIEW_ENCODER_FRAGMENT = "preview encoder"
 HEADER_COOP = "cross-origin-opener-policy"
 HEADER_CORP = "cross-origin-resource-policy"
 HEADER_CSP = "content-security-policy"
+HEADER_NOSNIFF = "x-content-type-options"
 COOP_SAME_ORIGIN = "same-origin"
 CORP_SAME_ORIGIN = "same-origin"
+NOSNIFF = "nosniff"
 CSP_NONCE_ATTR_RE = re.compile(r'<script\b[^>]*\bnonce="([^"]+)"')
 
 # Shared URL bases and prefixes

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import uuid
 from io import BytesIO
 from typing import TYPE_CHECKING
 
@@ -22,8 +21,10 @@ from app.camera.schemas import (
     YoutubeStreamConfig,
 )
 from app.camera.services.backend import CameraBackend, ControllableCameraBackend, StreamingCameraBackend
+from app.core.crypto_policy import generate_capture_id
 from app.core.settings import settings
 from app.image_sinks import ImageSink, ImageSinkError, get_image_sink
+from app.media.file_policy import JPEG_CAPTURE_POLICY, CaptureFileValidationError
 from app.media.stream_service import StreamService
 from app.media.stream_state import ActiveStreamState
 from app.observability.logging import build_log_extra
@@ -191,12 +192,13 @@ class CameraManager:
         """
         upload_meta = upload_metadata or {}
 
-        image_id = uuid.uuid4().hex
-        filename = f"{image_id}.jpg"
+        image_id = generate_capture_id()
+        filename = JPEG_CAPTURE_POLICY.filename_for(image_id)
         image_path = settings.image_path / filename
 
         async with self._locked():
             result = await self.backend.capture_image()
+            JPEG_CAPTURE_POLICY.validate_dimensions(result.image.size, max_pixels=settings.max_capture_pixels)
             img_metadata = build_image_metadata(result.image, result.camera_properties, result.capture_metadata)
             image_bytes = await asyncio.to_thread(
                 _encode_jpeg_atomic,
@@ -204,6 +206,11 @@ class CameraManager:
                 image_path,
                 image_metadata_to_exif(img_metadata),
             )
+            try:
+                JPEG_CAPTURE_POLICY.validate_size(image_bytes, max_bytes=settings.max_capture_file_bytes)
+            except CaptureFileValidationError:
+                await asyncio.to_thread(_unlink_quiet, image_path)
+                raise
 
         capture_metadata_dict = img_metadata.model_dump(mode="json")
 
@@ -226,7 +233,6 @@ class CameraManager:
                 await self.upload_queue.enqueue(
                     image_id=image_id,
                     image_path=image_path,
-                    filename=filename,
                     capture_metadata=capture_metadata_dict,
                     upload_metadata=upload_meta,
                 )

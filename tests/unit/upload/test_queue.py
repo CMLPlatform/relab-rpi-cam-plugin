@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock
 
 import pytest
+from PIL import Image
 from pydantic import AnyUrl
 
 from app.image_sinks.base import ImageSink, ImageSinkError, StoredImage
@@ -20,6 +22,12 @@ from tests.constants import EXAMPLE_IMAGE_URL
 def image_id(seed: int) -> str:
     """Return a generated capture ID-shaped test value."""
     return f"{seed:032x}"
+
+
+def _jpeg_bytes() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (8, 8), color="green").save(buffer, format="JPEG")
+    return buffer.getvalue()
 
 
 if TYPE_CHECKING:
@@ -62,7 +70,7 @@ def failing_sink() -> _FakeSink:
 def sample_image(tmp_path: Path) -> Path:
     """A small fake JPEG file outside the queue root."""
     path = tmp_path / "capture.jpg"
-    path.write_bytes(b"\xff\xd8\xff\xe0fake-jpg-body")
+    path.write_bytes(_jpeg_bytes())
     return path
 
 
@@ -81,7 +89,6 @@ class TestEnqueue:
         entry = await queue.enqueue(
             image_id=capture_id,
             image_path=sample_image,
-            filename=f"{capture_id}.jpg",
             capture_metadata={"width": 1920},
             upload_metadata={"product_id": 42},
         )
@@ -117,7 +124,6 @@ class TestEnqueue:
             await queue.enqueue(
                 image_id=capture_id,
                 image_path=sample_image,
-                filename=f"{capture_id}.jpg",
                 capture_metadata={},
                 upload_metadata={},
             )
@@ -143,7 +149,6 @@ class TestIterPending:
         await queue.enqueue(
             image_id=first_id,
             image_path=sample_image,
-            filename=f"{first_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
@@ -151,10 +156,10 @@ class TestIterPending:
         # Manually add a second entry dated in the future.
         future = datetime.now(UTC) + timedelta(hours=1)
         image_b = queue_root / f"{second_id}.jpg"
-        image_b.write_bytes(b"\xff\xd8bbb")
+        image_b.write_bytes(_jpeg_bytes())
         (queue_root / f"{second_id}.json").write_text(
-            f'{{"image_id": "{second_id}", "filename": "{second_id}.jpg", "capture_metadata": {{}}, '
-            f'"upload_metadata": {{}}, "attempts": 1, "next_attempt_at": "{future.isoformat()}"}}'
+            f'{{"image_id": "{second_id}", "capture_metadata": {{}}, "upload_metadata": {{}}, '
+            f'"attempts": 1, "next_attempt_at": "{future.isoformat()}"}}'
         )
 
         entries = queue.iter_pending()
@@ -169,19 +174,33 @@ class TestIterPending:
         assert queue.iter_pending() == []
         assert not orphan.exists()
 
-    def test_uses_sidecar_filename_as_authoritative_image_id(self, queue_root: Path, sink: _FakeSink) -> None:
-        """Sidecar JSON may not redirect queue processing to a different generated ID."""
+    def test_uses_metadata_path_stem_as_authoritative_image_id(self, queue_root: Path, sink: _FakeSink) -> None:
+        """Queue metadata path controls the generated capture id."""
         capture_id = image_id(1)
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         metadata_path = queue_root / f"{capture_id}.json"
         image_path = queue_root / f"{capture_id}.jpg"
-        image_path.write_bytes(b"\xff\xd8")
+        image_path.write_bytes(_jpeg_bytes())
         metadata_path.write_text(f'{{"image_id": "{image_id(2)}"}}')
 
         entries = queue.iter_pending()
 
         assert len(entries) == 1
         assert entries[0].image_id == capture_id
+
+    def test_ignores_hostile_sidecar_filename(self, queue_root: Path, sink: _FakeSink) -> None:
+        """Sidecar metadata must not control the queued file path or upload filename."""
+        capture_id = image_id(12)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
+        metadata_path = queue_root / f"{capture_id}.json"
+        image_path = queue_root / f"{capture_id}.jpg"
+        image_path.write_bytes(_jpeg_bytes())
+        metadata_path.write_text(f'{{"image_id": "{capture_id}", "filename": "../../escape.bin"}}')
+
+        entries = queue.iter_pending()
+
+        assert len(entries) == 1
+        assert entries[0].image_path == image_path
 
 
 class TestDrainOnce:
@@ -199,7 +218,6 @@ class TestDrainOnce:
         entry = await queue.enqueue(
             image_id=capture_id,
             image_path=sample_image,
-            filename=f"{capture_id}.jpg",
             capture_metadata={},
             upload_metadata={"product_id": 1},
         )
@@ -208,6 +226,8 @@ class TestDrainOnce:
 
         assert successes == 1
         assert sink.put.await_count == 1
+        assert sink.put.await_args is not None
+        assert sink.put.await_args.kwargs["filename"] == f"{capture_id}.jpg"
         assert not await asyncio.to_thread(entry.image_path.exists)
         assert not await asyncio.to_thread(entry.metadata_path.exists)
 
@@ -223,7 +243,6 @@ class TestDrainOnce:
         entry = await queue.enqueue(
             image_id=capture_id,
             image_path=sample_image,
-            filename=f"{capture_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
@@ -250,7 +269,6 @@ class TestDrainOnce:
         entry = await queue.enqueue(
             image_id=capture_id,
             image_path=sample_image,
-            filename=f"{capture_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
@@ -283,21 +301,19 @@ class TestDrainOnce:
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
 
         bad_image = tmp_path / f"{bad_id}.jpg"
-        bad_image.write_bytes(b"\xff\xd8bad")
+        bad_image.write_bytes(_jpeg_bytes())
         good_image = tmp_path / f"{good_id}.jpg"
-        good_image.write_bytes(b"\xff\xd8good")
+        good_image.write_bytes(_jpeg_bytes())
 
         bad_entry = await queue.enqueue(
             image_id=bad_id,
             image_path=bad_image,
-            filename=f"{bad_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
         good_entry = await queue.enqueue(
             image_id=good_id,
             image_path=good_image,
-            filename=f"{good_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
@@ -320,16 +336,36 @@ class TestDrainOnce:
         capture_id = image_id(8)
         queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
         future = datetime.now(UTC) + timedelta(hours=1)
-        (queue_root / f"{capture_id}.jpg").write_bytes(b"\xff\xd8")
+        (queue_root / f"{capture_id}.jpg").write_bytes(_jpeg_bytes())
         (queue_root / f"{capture_id}.json").write_text(
-            f'{{"image_id": "{capture_id}", "filename": "{capture_id}.jpg", "capture_metadata": {{}}, '
-            f'"upload_metadata": {{}}, "attempts": 2, "next_attempt_at": "{future.isoformat()}"}}'
+            f'{{"image_id": "{capture_id}", "capture_metadata": {{}}, "upload_metadata": {{}}, '
+            f'"attempts": 2, "next_attempt_at": "{future.isoformat()}"}}'
         )
 
         successes = await queue.drain_once()
 
         assert successes == 0
         assert sink.put.await_count == 0
+
+    async def test_invalid_queued_media_marks_failed_without_upload(
+        self,
+        queue_root: Path,
+        sink: _FakeSink,
+    ) -> None:
+        """Invalid queued media should fail through the retry path without reaching the sink."""
+        capture_id = image_id(13)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
+        (queue_root / f"{capture_id}.jpg").write_bytes(b"not a jpeg")
+        (queue_root / f"{capture_id}.json").write_text(
+            f'{{"image_id": "{capture_id}", "capture_metadata": {{}}, "upload_metadata": {{}}, "attempts": 0, '
+            f'"next_attempt_at": "{datetime.now(UTC).isoformat()}"}}'
+        )
+
+        successes = await queue.drain_once()
+
+        assert successes == 0
+        assert sink.put.await_count == 0
+        assert queue.iter_pending()[0].attempts == 1
 
 
 class TestDeadLetter:
@@ -347,7 +383,6 @@ class TestDeadLetter:
         entry = await queue.enqueue(
             image_id=capture_id,
             image_path=sample_image,
-            filename=f"{capture_id}.jpg",
             capture_metadata={},
             upload_metadata={},
         )
@@ -382,7 +417,7 @@ class TestDeadLetter:
         for index, name in enumerate((old_id, new_id)):
             dead_image = queue_root / "dead" / f"{name}.jpg"
             dead_meta = queue_root / "dead" / f"{name}.json"
-            dead_image.write_bytes(b"\xff\xd8")
+            dead_image.write_bytes(_jpeg_bytes())
             dead_meta.write_text("{}")
             mtime = (datetime.now(UTC) + timedelta(seconds=index)).timestamp()
             os.utime(dead_image, (mtime, mtime))

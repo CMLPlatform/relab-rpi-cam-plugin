@@ -9,7 +9,7 @@ move to ``data/queue/dead/`` for manual recovery.
 The queue format is intentionally simple so a human can inspect it:
   data/queue/{image_id}.jpg               — the captured bytes
   data/queue/{image_id}.json              — {capture_metadata, upload_metadata,
-                                             filename, attempts, next_attempt_at}
+                                             attempts, next_attempt_at}
   data/queue/dead/{image_id}.{jpg,json}   — dead-lettered entries
 """
 
@@ -25,7 +25,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from app.core.settings import settings
 from app.image_sinks.base import ImageSink, ImageSinkError
+from app.media.file_policy import JPEG_CAPTURE_POLICY, CaptureFileValidationError
 from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:
@@ -53,7 +55,6 @@ class QueuedCapture:
     image_id: str
     image_path: Path
     metadata_path: Path
-    filename: str
     capture_metadata: Mapping[str, object]
     upload_metadata: Mapping[str, object]
     attempts: int
@@ -93,18 +94,17 @@ class UploadQueue:
         *,
         image_id: str,
         image_path: Path,
-        filename: str,
         capture_metadata: Mapping[str, object],
         upload_metadata: Mapping[str, object],
     ) -> QueuedCapture:
         """Move a captured file into the queue for retry."""
         _validate_image_id(image_id)
-        target_image = self._root / f"{image_id}.jpg"
+        filename = JPEG_CAPTURE_POLICY.filename_for(image_id)
+        target_image = self._root / filename
         target_metadata = self._root / f"{image_id}.json"
         now = datetime.now(UTC)
         metadata_payload = _metadata_payload(
             image_id=image_id,
-            filename=filename,
             capture_metadata=capture_metadata,
             upload_metadata=upload_metadata,
             attempts=0,
@@ -121,7 +121,6 @@ class UploadQueue:
             image_id=image_id,
             image_path=target_image,
             metadata_path=target_metadata,
-            filename=filename,
             capture_metadata=capture_metadata,
             upload_metadata=upload_metadata,
             attempts=0,
@@ -165,7 +164,6 @@ class UploadQueue:
         await self._persist_metadata(
             entry.metadata_path,
             image_id=entry.image_id,
-            filename=entry.filename,
             capture_metadata=entry.capture_metadata,
             upload_metadata=entry.upload_metadata,
             attempts=attempts,
@@ -202,10 +200,15 @@ class UploadQueue:
                 continue
             try:
                 image_bytes = await asyncio.to_thread(entry.image_path.read_bytes)
+                JPEG_CAPTURE_POLICY.validate_persisted_bytes(
+                    image_bytes,
+                    max_bytes=settings.max_capture_file_bytes,
+                    max_pixels=settings.max_capture_pixels,
+                )
                 stored = await self._sink.put(
                     image_id=entry.image_id,
                     image_bytes=image_bytes,
-                    filename=entry.filename,
+                    filename=JPEG_CAPTURE_POLICY.filename_for(entry.image_id),
                     capture_metadata=entry.capture_metadata,
                     upload_metadata=entry.upload_metadata,
                 )
@@ -220,6 +223,10 @@ class UploadQueue:
             except OSError as exc:
                 logger.exception("Queue drain: %s file unreadable", entry.image_id, extra=build_log_extra())
                 await self.mark_attempt_failed(entry, reason=f"file unreadable: {exc}")
+                continue
+            except CaptureFileValidationError as exc:
+                logger.warning("Queue drain: %s failed media validation", entry.image_id, extra=build_log_extra())
+                await self.mark_attempt_failed(entry, reason=f"media validation: {exc}")
                 continue
             except Exception as exc:
                 # Unexpected exception: don't let one poisoned entry kill the drain
@@ -257,7 +264,8 @@ class UploadQueue:
             )
             _unlink_queue_pair(metadata_path)
             return None
-        image_path = self._root / f"{image_id}.jpg"
+        filename = JPEG_CAPTURE_POLICY.filename_for(image_id)
+        image_path = self._root / filename
         if not image_path.exists():
             logger.warning(
                 "Queue: metadata %s has no matching jpg; cleaning up",
@@ -274,7 +282,6 @@ class UploadQueue:
             image_id=image_id,
             image_path=image_path,
             metadata_path=metadata_path,
-            filename=payload.get("filename", f"{image_id}.jpg"),
             capture_metadata=payload.get("capture_metadata", {}),
             upload_metadata=payload.get("upload_metadata", {}),
             attempts=int(payload.get("attempts", 0)),
@@ -286,7 +293,6 @@ class UploadQueue:
         metadata_path: Path,
         *,
         image_id: str,
-        filename: str,
         capture_metadata: Mapping[str, object],
         upload_metadata: Mapping[str, object],
         attempts: int,
@@ -295,7 +301,6 @@ class UploadQueue:
         """Persist updated metadata for an entry, e.g. after a failed attempt."""
         payload = _metadata_payload(
             image_id=image_id,
-            filename=filename,
             capture_metadata=capture_metadata,
             upload_metadata=upload_metadata,
             attempts=attempts,
@@ -392,7 +397,6 @@ def _path_mtime(path: Path) -> float:
 def _metadata_payload(
     *,
     image_id: str,
-    filename: str,
     capture_metadata: Mapping[str, object],
     upload_metadata: Mapping[str, object],
     attempts: int,
@@ -400,7 +404,6 @@ def _metadata_payload(
 ) -> dict[str, object]:
     return {
         "image_id": image_id,
-        "filename": filename,
         "capture_metadata": dict(capture_metadata),
         "upload_metadata": dict(upload_metadata),
         "attempts": attempts,

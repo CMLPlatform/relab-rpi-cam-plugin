@@ -9,6 +9,7 @@ from relab_rpi_cam_models.stream import StreamMode
 from app.camera.dependencies import CameraManagerDependency
 from app.core.settings import settings
 from app.core.templates_config import templates
+from app.media.file_policy import JPEG_CAPTURE_POLICY, CaptureFileValidationError
 from app.utils.network import is_local_client
 
 router = APIRouter()
@@ -41,4 +42,12 @@ async def preview_thumbnail(request: Request) -> FileResponse:
     path = settings.image_path / "preview-thumbnail" / "current.jpg"
     if not path.exists():
         raise HTTPException(status_code=404, detail="No preview thumbnail cached yet")
+    try:
+        JPEG_CAPTURE_POLICY.validate_persisted_bytes(
+            path.read_bytes(),
+            max_bytes=settings.max_capture_file_bytes,
+            max_pixels=settings.max_capture_pixels,
+        )
+    except CaptureFileValidationError as exc:
+        raise HTTPException(status_code=503, detail="Preview thumbnail cache is invalid") from exc
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})

@@ -21,9 +21,11 @@ from tests.constants import (
     HEADER_COOP,
     HEADER_CORP,
     HEADER_CSP,
+    HEADER_NOSNIFF,
     HTML_CONTENT_TYPE,
     JPEG_CONTENT_TYPE,
     NO_STORE_CACHE_CONTROL,
+    NOSNIFF,
     YOUTUBE_TEST_BROADCAST_URL,
 )
 
@@ -164,6 +166,7 @@ class TestHomepage:
             assert resp.status_code == 200
             assert resp.headers["content-type"] == JPEG_CONTENT_TYPE
             assert resp.headers["cache-control"] == NO_STORE_CACHE_CONTROL
+            assert resp.headers[HEADER_NOSNIFF] == NOSNIFF
         finally:
             jpeg_path.unlink(missing_ok=True)
 
