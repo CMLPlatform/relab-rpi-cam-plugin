@@ -749,6 +749,7 @@ class TestPairingCycle:
             "relay_key_id": RELAY_KEY_ID,
             "relay_private_key_pem": private_key,
         }
+        assert creds_file.stat().st_mode & 0o777 == 0o600
         assert pairing_mod.load_relay_credentials() == {
             "relay_backend_url": EXAMPLE_RELAY_BACKEND_URL,
             "relay_camera_id": RELAY_CAMERA_ID,
