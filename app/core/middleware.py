@@ -196,6 +196,13 @@ async def rate_limit_middleware(request: Request, call_next: Callable) -> Respon
     return await _rate_limiter.handle(request, call_next)
 
 
+async def unsupported_method_middleware(request: Request, call_next: Callable) -> Response:
+    """Block HTTP methods that should never be exposed by this app."""
+    if request.method.upper() == _TRACE_METHOD:
+        return Response(status_code=405, headers={"Allow": "GET, HEAD, OPTIONS, POST, PUT, PATCH, DELETE"})
+    return await call_next(request)
+
+
 async def request_context_middleware(request: Request, call_next: Callable) -> Response:
     """Attach a request id to the current context and echo it to the client."""
     request_id = _request_id_from_header(request.headers.get("X-Request-ID"))
@@ -254,6 +261,7 @@ async def security_headers_middleware(request: Request, call_next: Callable) -> 
 def register_middleware(app: FastAPI) -> None:
     """Install the full middleware stack on the FastAPI app."""
     app.middleware("http")(rate_limit_middleware)
+    app.middleware("http")(unsupported_method_middleware)
     app.middleware("http")(request_context_middleware)
     app.middleware("http")(security_headers_middleware)
 
