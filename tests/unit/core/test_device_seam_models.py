@@ -186,6 +186,14 @@ def test_relay_command_policy_accepts_shared_allowlist(method: str, path: str) -
         ("GET", "/camera/%252e%252e/system/telemetry"),
         ("POST", "/preview/hls/cam-preview/index.m3u8"),
         ("DELETE", "/camera"),
+        ("POST", "/auth/login"),
+        ("GET", "/docs"),
+        ("GET", "/openapi.json"),
+        ("GET", "/system/config"),
+        ("POST", "/system/telemetry"),
+        ("GET", "/metrics"),
+        ("GET", "/local-key"),
+        ("POST", "/pairing/code"),
     ],
 )
 def test_relay_command_policy_rejects_out_of_scope_commands(method: str, path: str) -> None:

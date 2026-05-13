@@ -24,6 +24,29 @@ LIVE_TAB_REDIRECT = "/camera?tab=live"
 SAME_ORIGIN = "http://test"
 CROSS_SITE_ORIGIN = "https://evil.example"
 
+PROTECTED_ENDPOINTS: tuple[tuple[str, str, object | None], ...] = (
+    ("GET", "/camera", None),
+    ("GET", "/camera/controls", None),
+    ("POST", "/captures", {}),
+    ("POST", "/preview/start", None),
+    ("POST", "/preview/stop", None),
+    ("GET", "/streams/youtube", None),
+    ("POST", "/streams/youtube", {"stream_key": "secret-stream", "broadcast_key": "public-broadcast"}),
+    ("DELETE", "/streams/youtube", None),
+    ("DELETE", "/pairing", None),
+    ("POST", "/pairing/code", None),
+    ("GET", "/local-key", None),
+    ("GET", "/system/local-access", None),
+    ("GET", "/system/telemetry", None),
+    ("GET", "/metrics", None),
+)
+
+PUBLIC_ENDPOINTS: tuple[tuple[str, str], ...] = (
+    ("GET", "/"),
+    ("GET", "/setup"),
+    ("GET", "/pairing/state"),
+)
+
 
 @pytest.fixture(autouse=True)
 def _set_test_api_key(app_runtime: AppRuntime) -> None:
@@ -106,6 +129,35 @@ class TestAuthMiddleware:
             json={"mode": "manual", "lens_position": 1.5},
             headers={"X-API-Key": VALID_API_KEY, "Origin": CROSS_SITE_ORIGIN},
         )
+
+        assert resp.status_code == 200
+
+
+class TestAuthorizationRouteMatrix:
+    """Regression checks for public and protected local API surfaces."""
+
+    @pytest.mark.parametrize(("method", "path", "json_body"), PROTECTED_ENDPOINTS)
+    async def test_sensitive_endpoints_reject_unauthenticated_requests(
+        self,
+        unauthed_client: AsyncClient,
+        method: str,
+        path: str,
+        json_body: object | None,
+    ) -> None:
+        """Function-level access must require an explicit API key or browser session."""
+        resp = await unauthed_client.request(method, path, json=json_body)
+
+        assert resp.status_code in {401, 403}
+
+    @pytest.mark.parametrize(("method", "path"), PUBLIC_ENDPOINTS)
+    async def test_intentionally_public_endpoints_remain_reachable(
+        self,
+        unauthed_client: AsyncClient,
+        method: str,
+        path: str,
+    ) -> None:
+        """Public setup/status pages stay reachable before pairing or login."""
+        resp = await unauthed_client.request(method, path)
 
         assert resp.status_code == 200
 
