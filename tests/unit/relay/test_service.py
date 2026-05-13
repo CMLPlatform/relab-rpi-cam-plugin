@@ -2,8 +2,9 @@
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -56,6 +57,14 @@ BLOCKED_RELAY_PATH = "/auth/login"
 BLOCKED_RELATIVE_RELAY_PATH = "auth/login"
 BLOCKED_RELAY_METHOD = "POST"
 BLOCKED_RELAY_DETAIL = "Relay command is not allowed."
+SECURITY_RELAY_FORBIDDEN_EVENT = "relay.command.forbidden"
+SECURITY_RELAY_MALFORMED_EVENT = "relay.command.malformed"
+SECURITY_RELAY_RATE_LIMIT_EVENT = "relay.command.rate_limit"
+
+
+def _log_record(caplog: pytest.LogCaptureFixture, event: str) -> Any:
+    """Return a structured log record with test-owned dynamic attributes."""
+    return cast("Any", next(record for record in caplog.records if getattr(record, "event", "") == event))
 
 
 class TestRelayServiceConfig:
@@ -247,7 +256,7 @@ class TestReceiveLoop:
         await asyncio.sleep(0)
         handler.assert_awaited_once()
 
-    async def test_rejects_request_when_pending_limit_is_reached(self) -> None:
+    async def test_rejects_request_when_pending_limit_is_reached(self, caplog: pytest.LogCaptureFixture) -> None:
         """Relay request floods should receive backpressure before spawning tasks."""
         ws = AsyncMock()
         http = AsyncMock()
@@ -259,16 +268,17 @@ class TestReceiveLoop:
         pending_task = asyncio.create_task(_wait_until_released())
         pending_tasks = {pending_task}
         try:
-            await _handle_relay_message(
-                ws,
-                http,
-                json.dumps({"type": "request", "id": OVERFLOW_MESSAGE_ID, "method": "GET", "path": CAMERA_PATH}),
-                pending_tasks,
-                pending_tasks.discard,
-                asyncio.Semaphore(1),
-                relay_state=RelayRuntimeState(),
-                max_pending_commands=1,
-            )
+            with caplog.at_level(logging.WARNING):
+                await _handle_relay_message(
+                    ws,
+                    http,
+                    json.dumps({"type": "request", "id": OVERFLOW_MESSAGE_ID, "method": "GET", "path": CAMERA_PATH}),
+                    pending_tasks,
+                    pending_tasks.discard,
+                    asyncio.Semaphore(1),
+                    relay_state=RelayRuntimeState(),
+                    max_pending_commands=1,
+                )
         finally:
             blocker.set()
             await asyncio.gather(pending_task, return_exceptions=True)
@@ -277,22 +287,32 @@ class TestReceiveLoop:
         assert payload["id"] == OVERFLOW_MESSAGE_ID
         assert payload["status"] == 429
         assert len(pending_tasks) == 1
+        record = _log_record(caplog, SECURITY_RELAY_RATE_LIMIT_EVENT)
+        assert record.outcome == "blocked"
+        assert record.status_code == 429
 
 
 class TestHandleCommand:
     """Tests for relay command dispatch."""
 
-    async def test_malformed_request_does_not_reach_local_http_client(self) -> None:
+    async def test_malformed_request_does_not_reach_local_http_client(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """Malformed relay requests should be rejected before local API dispatch."""
         ws = AsyncMock()
         http = AsyncMock()
 
-        await _handle_command(ws, http, {"type": "request", "id": MALFORMED_MESSAGE_ID})
+        with caplog.at_level(logging.WARNING):
+            await _handle_command(ws, http, {"type": "request", "id": MALFORMED_MESSAGE_ID})
 
         http.request.assert_not_called()
         payload = json.loads(ws.send.call_args.args[0])
         assert payload["id"] == MALFORMED_MESSAGE_ID
         assert payload["status"] == 400
+        record = _log_record(caplog, SECURITY_RELAY_MALFORMED_EVENT)
+        assert record.outcome == "failure"
+        assert record.status_code == 400
 
     async def test_malformed_request_without_id_is_ignored(self) -> None:
         """Malformed relay requests without a usable id cannot receive an error response."""
@@ -406,21 +426,27 @@ class TestHandleCommand:
                 await _handle_command(ws, http, {"id": "msg-4", "method": "GET", "path": CAMERA_PATH})
         assert RELAY_403_FRAGMENT in caplog.text
 
-    async def test_blocks_unexpected_relay_command_path(self) -> None:
+    async def test_blocks_unexpected_relay_command_path(self, caplog: pytest.LogCaptureFixture) -> None:
         """Relay commands should only reach known local API endpoints."""
         http = AsyncMock()
         ws = AsyncMock()
 
-        await _handle_command(
-            ws,
-            http,
-            {"id": "msg-blocked", "method": BLOCKED_RELAY_METHOD, "path": BLOCKED_RELAY_PATH},
-        )
+        with caplog.at_level(logging.WARNING):
+            await _handle_command(
+                ws,
+                http,
+                {"id": "msg-blocked", "method": BLOCKED_RELAY_METHOD, "path": BLOCKED_RELAY_PATH},
+            )
 
         http.request.assert_not_called()
         payload = json.loads(ws.send.call_args.args[0])
         assert payload["status"] == 403
         assert payload["data"]["detail"] == BLOCKED_RELAY_DETAIL
+        record = _log_record(caplog, SECURITY_RELAY_FORBIDDEN_EVENT)
+        assert record.outcome == "failure"
+        assert record.method == BLOCKED_RELAY_METHOD
+        assert record.path == BLOCKED_RELAY_PATH
+        assert record.status_code == 403
 
     async def test_blocks_relative_relay_command_path(self) -> None:
         """Relay commands should not dispatch relative paths into the local client."""

@@ -22,7 +22,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 from app.core.runtime_state import RuntimeState
 from app.core.settings import Settings, settings
 from app.device_jwt import build_device_assertion
-from app.observability.logging import build_log_extra
+from app.observability.logging import build_log_extra, build_security_log_extra
 from app.relay.state import RelayRuntimeState
 from relab_rpi_cam_models import (
     RELAY_COMMAND_FORBIDDEN_DETAIL,
@@ -240,6 +240,14 @@ async def _handle_relay_message(
     # mean "a user is watching", so we don't hibernate on pings alone.
     relay_state.mark_activity()
     if len(pending_tasks) >= max_pending_commands:
+        logger.warning(
+            "Security event: relay command rate limit blocked",
+            extra=build_security_log_extra(
+                event="relay.command.rate_limit",
+                outcome="blocked",
+                status_code=429,
+            ),
+        )
         msg_id = msg.get("id")
         if isinstance(msg_id, str) and msg_id:
             await _send_error(ws, msg_id, 429, "Too many pending relay commands.")
@@ -277,6 +285,14 @@ async def _handle_command(ws: ClientConnection, http: httpx.AsyncClient, msg: di
     try:
         envelope = RelayCommandEnvelope.model_validate(msg)
     except ValidationError:
+        logger.warning(
+            "Security event: malformed relay command rejected",
+            extra=build_security_log_extra(
+                event="relay.command.malformed",
+                outcome="failure",
+                status_code=400,
+            ),
+        )
         msg_id = msg.get("id")
         if isinstance(msg_id, str) and msg_id:
             await _send_error(ws, msg_id, 400, "Malformed relay command.")
