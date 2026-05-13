@@ -465,7 +465,10 @@ class TestUploadQueueWorker:
         worker = UploadQueueWorker(queue, poll_interval_s=0.01)
 
         task = asyncio.create_task(worker.run_forever())
-        await asyncio.sleep(0.05)
+        for _ in range(20):
+            if queue.drain_calls >= 2:
+                break
+            await asyncio.sleep(0.01)
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
