@@ -12,7 +12,16 @@ from app.auth.dependencies import create_session
 from app.core.runtime import AppRuntime
 from app.core.settings import DEFAULT_PAIRING_BACKEND_URL, settings
 from app.pairing.routers import setup as setup_router
-from tests.constants import EXAMPLE_RELAY_BACKEND_URL, HTML_CONTENT_TYPE
+from tests.constants import (
+    COOP_SAME_ORIGIN,
+    CORP_SAME_ORIGIN,
+    CSP_NONCE_ATTR_RE,
+    EXAMPLE_RELAY_BACKEND_URL,
+    HEADER_COOP,
+    HEADER_CORP,
+    HEADER_CSP,
+    HTML_CONTENT_TYPE,
+)
 from tests.support.fakes import FakePairingService, FakeRelayService, SpyRuntime
 
 SETUP_TITLE = "RPi Camera — Setup"
@@ -58,7 +67,7 @@ HEADER_FRAME_OPTIONS = "x-frame-options"
 HEADER_HSTS = "strict-transport-security"
 HEADER_NOSNIFF = "nosniff"
 HEADER_NO_REFERRER = "no-referrer"
-HSTS_HOST_ONLY = "max-age=31536000"
+HSTS_WITH_SUBDOMAINS = "max-age=31536000; includeSubDomains"
 HSTS_INCLUDE_SUBDOMAINS = "includeSubDomains"
 HSTS_PRELOAD = "preload"
 SETUP_CSP_DEFAULT = "default-src 'self'"
@@ -110,23 +119,35 @@ class TestSetupPage:
         assert HEADER_HSTS not in resp.headers
         assert resp.headers["x-content-type-options"] == HEADER_NOSNIFF
         assert resp.headers["referrer-policy"] == HEADER_NO_REFERRER
-        assert SETUP_CSP_DEFAULT in resp.headers["content-security-policy"]
-        assert SETUP_CSP_INLINE not in resp.headers["content-security-policy"]
-        assert SETUP_CSP_CDN not in resp.headers["content-security-policy"]
-        assert SETUP_CSP_OBJECTS_BLOCKED in resp.headers["content-security-policy"]
+        assert resp.headers[HEADER_COOP] == COOP_SAME_ORIGIN
+        assert resp.headers[HEADER_CORP] == CORP_SAME_ORIGIN
+        assert SETUP_CSP_DEFAULT in resp.headers[HEADER_CSP]
+        assert SETUP_CSP_INLINE not in resp.headers[HEADER_CSP]
+        assert SETUP_CSP_CDN not in resp.headers[HEADER_CSP]
+        assert SETUP_CSP_OBJECTS_BLOCKED in resp.headers[HEADER_CSP]
+
+    async def test_setup_page_scripts_use_matching_csp_nonce(self, unauthed_client: AsyncClient) -> None:
+        """Server-rendered setup scripts should use the nonce advertised in CSP."""
+        resp = await unauthed_client.get("/setup")
+        nonce_values = set(CSP_NONCE_ATTR_RE.findall(resp.text))
+
+        assert nonce_values
+        assert len(nonce_values) == 1
+        nonce = next(iter(nonce_values))
+        assert f"'nonce-{nonce}'" in resp.headers[HEADER_CSP]
 
     async def test_setup_page_sets_host_only_hsts_for_https_base_url(
         self,
         unauthed_client: AsyncClient,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """HTTPS deployments should get HSTS without subdomain or preload commitments."""
+        """HTTPS deployments should get HSTS with subdomain coverage, without preload commitment."""
         monkeypatch.setattr(settings, "base_url", HttpUrl("https://camera.example/"))
 
         resp = await unauthed_client.get("/setup")
 
-        assert resp.headers[HEADER_HSTS] == HSTS_HOST_ONLY
-        assert HSTS_INCLUDE_SUBDOMAINS not in resp.headers[HEADER_HSTS]
+        assert resp.headers[HEADER_HSTS] == HSTS_WITH_SUBDOMAINS
+        assert HSTS_INCLUDE_SUBDOMAINS in resp.headers[HEADER_HSTS]
         assert HSTS_PRELOAD not in resp.headers[HEADER_HSTS]
 
     async def test_setup_page_contains_title(self, unauthed_client: AsyncClient) -> None:
@@ -170,7 +191,7 @@ class TestSetupPage:
         client: AsyncClient,
     ) -> None:
         """Authenticated operators should see backend topology and change hints."""
-        client.cookies.set(settings.session_cookie_name, create_session())
+        client.cookies.set(settings.browser_session_cookie_name, create_session())
         resp = await client.get("/setup")
         assert PAIRING_URL_DEBUG_TEXT in resp.text
         assert PAIRING_BACKEND_URL_TEXT in resp.text
@@ -187,7 +208,7 @@ class TestSetupPage:
     ) -> None:
         """The operator debugging section should reflect when the backend cannot be reached."""
         monkeypatch.setattr(setup_router, "_pairing_backend_reachable", AsyncMock(return_value=False))
-        unauthed_client.cookies.set(settings.session_cookie_name, create_session())
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
         resp = await unauthed_client.get("/setup")
         assert NOT_REACHABLE_TEXT in resp.text
         assert SETUP_NO_RELAY_RETRY in resp.text
@@ -220,7 +241,7 @@ class TestSetupPage:
         self._pairing_state.code = PAIRING_CODE
         self._pairing_state.error = None
         self._pairing_state.expires_at = datetime.now(UTC) + timedelta(minutes=10)
-        client.cookies.set(settings.session_cookie_name, create_session())
+        client.cookies.set(settings.browser_session_cookie_name, create_session())
         resp = await client.get("/setup")
         assert resp.status_code == 200
         assert COPY_PAIRING_CODE_LABEL in resp.text
@@ -283,7 +304,7 @@ class TestSetupPage:
             relay_key_id="key-1",
             relay_private_key_pem="pem",
         )
-        client.cookies.set(settings.session_cookie_name, create_session())
+        client.cookies.set(settings.browser_session_cookie_name, create_session())
         resp = await client.get("/setup")
         assert resp.status_code == 200
         assert UNPAIR_BUTTON_MARKER in resp.text
@@ -320,7 +341,7 @@ class TestSetupPage:
     ) -> None:
         """The setup page should reveal the local API key only to an authenticated browser session."""
         self._runtime.runtime_state.set_local_api_key(SETUP_LOCAL_API_KEY_VALUE)
-        client.cookies.set(settings.session_cookie_name, create_session())
+        client.cookies.set(settings.browser_session_cookie_name, create_session())
         resp = await client.get("/setup")
         assert resp.status_code == 200
         assert SETUP_LOCAL_API_KEY_VALUE in resp.text
@@ -334,7 +355,7 @@ class TestSetupPage:
     ) -> None:
         """The direct-connect instructions should not claim a bogus LAN IP."""
         self._runtime.runtime_state.set_local_api_key("test-local-api-key")
-        client.cookies.set(settings.session_cookie_name, create_session())
+        client.cookies.set(settings.browser_session_cookie_name, create_session())
         resp = await client.get("/setup")
         assert resp.status_code == 200
         assert THIS_IP_PLACEHOLDER in resp.text

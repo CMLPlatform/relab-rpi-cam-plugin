@@ -17,7 +17,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', path='setup-page.js') }}" defer></script>
+<script src="{{ url_for('static', path='setup-page.js') }}" nonce="{{ request.state.csp_nonce }}" type="module"></script>
 {% endblock %}
 
 {% block body %}

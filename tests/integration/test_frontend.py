@@ -1,9 +1,11 @@
 """Tests for frontend routes (landing page)."""
 
+from io import BytesIO
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import AsyncClient
+from PIL import Image
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
@@ -12,7 +14,18 @@ from app.camera.routers import hls as hls_mod
 from app.camera.services.manager import CameraManager
 from app.core.settings import settings
 from app.main import app
-from tests.constants import HTML_CONTENT_TYPE, JPEG_CONTENT_TYPE, NO_STORE_CACHE_CONTROL, YOUTUBE_TEST_BROADCAST_URL
+from tests.constants import (
+    COOP_SAME_ORIGIN,
+    CORP_SAME_ORIGIN,
+    CSP_NONCE_ATTR_RE,
+    HEADER_COOP,
+    HEADER_CORP,
+    HEADER_CSP,
+    HTML_CONTENT_TYPE,
+    JPEG_CONTENT_TYPE,
+    NO_STORE_CACHE_CONTROL,
+    YOUTUBE_TEST_BROADCAST_URL,
+)
 
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
@@ -39,6 +52,12 @@ PREVIEW_THUMBNAIL_URL = "/preview-thumbnail.jpg"
 THEME_AUTO_LABEL = "Theme: Auto"
 
 
+def _jpeg_bytes() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (8, 8), color="blue").save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
 class TestHomepage:
     """Homepage routes."""
 
@@ -51,10 +70,27 @@ class TestHomepage:
     async def test_homepage_sets_strict_csp_for_pinned_preview_assets(self, unauthed_client: AsyncClient) -> None:
         """The landing page CSP should allow local scripts and the pinned HLS CDN without inline scripts."""
         resp = await unauthed_client.get("/")
-        assert SETUP_CSP_CDN in resp.headers["content-security-policy"]
-        assert SETUP_CSP_INLINE not in resp.headers["content-security-policy"]
-        assert SETUP_CSP_CONNECT_SELF in resp.headers["content-security-policy"]
-        assert SETUP_CSP_BROAD_CONNECT not in resp.headers["content-security-policy"]
+        assert SETUP_CSP_CDN in resp.headers[HEADER_CSP]
+        assert SETUP_CSP_INLINE not in resp.headers[HEADER_CSP]
+        assert SETUP_CSP_CONNECT_SELF in resp.headers[HEADER_CSP]
+        assert SETUP_CSP_BROAD_CONNECT not in resp.headers[HEADER_CSP]
+
+    async def test_homepage_sets_document_isolation_headers(self, unauthed_client: AsyncClient) -> None:
+        """HTML document responses should isolate browsing contexts and resource sharing."""
+        resp = await unauthed_client.get("/")
+
+        assert resp.headers[HEADER_COOP] == COOP_SAME_ORIGIN
+        assert resp.headers[HEADER_CORP] == CORP_SAME_ORIGIN
+
+    async def test_homepage_scripts_use_matching_csp_nonce(self, unauthed_client: AsyncClient) -> None:
+        """Server-rendered script tags should use the nonce advertised in CSP."""
+        resp = await unauthed_client.get("/")
+        nonce_values = set(CSP_NONCE_ATTR_RE.findall(resp.text))
+
+        assert nonce_values
+        assert len(nonce_values) == 1
+        nonce = next(iter(nonce_values))
+        assert f"'nonce-{nonce}'" in resp.headers[HEADER_CSP]
 
     async def test_homepage_renders_shared_header_assets_and_theme_control(self, unauthed_client: AsyncClient) -> None:
         """The landing page should expose the shared brand header and theme chooser."""
@@ -122,7 +158,7 @@ class TestHomepage:
         cache_dir = settings.image_path / "preview-thumbnail"
         cache_dir.mkdir(parents=True, exist_ok=True)
         jpeg_path = cache_dir / "current.jpg"
-        jpeg_path.write_bytes(b"\xff\xd8\xff\xd9")
+        jpeg_path.write_bytes(_jpeg_bytes())
         try:
             resp = await unauthed_client.get("/preview-thumbnail.jpg")
             assert resp.status_code == 200
@@ -140,6 +176,21 @@ class TestHomepage:
         jpeg_path.unlink(missing_ok=True)
         resp = await unauthed_client.get("/preview-thumbnail.jpg")
         assert resp.status_code == 404
+
+    async def test_preview_thumbnail_rejects_invalid_cached_file(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """The preview-thumbnail route should not serve arbitrary bytes from the cache path."""
+        cache_dir = settings.image_path / "preview-thumbnail"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        jpeg_path = cache_dir / "current.jpg"
+        jpeg_path.write_bytes(b"not a jpeg")
+        try:
+            resp = await unauthed_client.get("/preview-thumbnail.jpg")
+            assert resp.status_code == 503
+        finally:
+            jpeg_path.unlink(missing_ok=True)
 
     async def test_hls_preview_proxy_is_available_without_auth(self, unauthed_client: AsyncClient) -> None:
         """Local preview HLS stays usable before pairing/login."""
@@ -182,6 +233,23 @@ class TestHomepage:
             resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
 
         assert resp.headers["content-security-policy"] == DEFAULT_CSP
+
+    async def test_hls_preview_sets_same_origin_resource_policy(self, unauthed_client: AsyncClient) -> None:
+        """Browser-loadable preview media should be limited to same-origin embedding."""
+        upstream = MagicMock()
+        upstream.status_code = 200
+        upstream.content = HLS_PLAYLIST.encode()
+        upstream.headers = {"content-type": "application/vnd.apple.mpegurl"}
+
+        http_client = MagicMock()
+        http_client.get = AsyncMock(return_value=upstream)
+        http_client.__aenter__ = AsyncMock(return_value=http_client)
+        http_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
+            resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
+
+        assert resp.headers[HEADER_CORP] == CORP_SAME_ORIGIN
 
     async def test_docs_route_is_not_exposed_in_production_mode(self, unauthed_client: AsyncClient) -> None:
         """Production-style runs should not expose unauthenticated local Swagger docs."""

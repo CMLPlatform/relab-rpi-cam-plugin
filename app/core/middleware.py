@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from hashlib import sha256
+from secrets import token_urlsafe
 from typing import TYPE_CHECKING, NamedTuple
 
 from fastapi import Request
@@ -50,7 +51,7 @@ _TEXTUAL_APPLICATION_MEDIA_TYPES = frozenset(
 
 _HOMEPAGE_CSP = (
     "default-src 'self'; "
-    "script-src 'self' https://cdn.jsdelivr.net; "
+    "script-src 'self'{script_nonce} https://cdn.jsdelivr.net; "
     "worker-src 'self' blob:; "
     "style-src 'self'; "
     "img-src 'self' data:; "
@@ -62,7 +63,7 @@ _HOMEPAGE_CSP = (
 )
 _SETUP_CSP = (
     "default-src 'self'; "
-    "script-src 'self'; "
+    "script-src 'self'{script_nonce}; "
     "worker-src 'self' blob:; "
     "style-src 'self'; "
     "img-src 'self' data:; "
@@ -202,27 +203,60 @@ async def request_context_middleware(request: Request, call_next: Callable) -> R
     finally:
         reset_request_id(token)
 
-    response.headers["X-Request-ID"] = request_id
+    response.headers[_HEADER_REQUEST_ID] = request_id
     return response
 
 
-def _content_security_policy_for_path(path: str) -> str:
+def _csp_for_request_path(path: str, *, nonce: str | None = None) -> str:
     """Return the appropriate CSP for the requested route."""
+    script_nonce = f" 'nonce-{nonce}'" if nonce else ""
     if path == _HOMEPAGE_PATH:
-        return _HOMEPAGE_CSP
+        return _HOMEPAGE_CSP.format(script_nonce=script_nonce)
     if path == _SETUP_PATH:
-        return _SETUP_CSP
+        return _SETUP_CSP.format(script_nonce=script_nonce)
     if path.startswith(_DOCS_PATH_PREFIX):
         return _DOCS_CSP
     return _DEFAULT_CSP
 
 
+def _is_html_response(response: Response) -> bool:
+    return response.headers.get(_HEADER_CONTENT_TYPE, "").lower().startswith(_HTML_CONTENT_TYPE)
+
+
+def _media_type_needs_charset(content_type: str) -> bool:
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return (
+        media_type.startswith("text/")
+        or media_type.endswith(("+json", "+xml"))
+        or media_type in _TEXTUAL_APPLICATION_MEDIA_TYPES
+    )
+
+
+def _ensure_body_content_type_charset(response: Response) -> None:
+    """Declare UTF-8 on textual response bodies when the handler omitted a charset."""
+    if response.status_code in _BODYLESS_STATUS_CODES:
+        return
+    content_type = response.headers.get(_HEADER_CONTENT_TYPE)
+    if not content_type or _VALUE_CHARSET_PARAMETER in content_type.lower():
+        return
+    if _media_type_needs_charset(content_type):
+        response.headers[_HEADER_CONTENT_TYPE] = f"{content_type}; {_VALUE_UTF8_CHARSET}"
+
+
 async def security_headers_middleware(request: Request, call_next: Callable) -> Response:
     """Attach baseline security headers to every HTTP response."""
+    request.state.csp_nonce = token_urlsafe(_CSP_NONCE_BYTES)
     response = await call_next(request)
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("Referrer-Policy", "no-referrer")
-    response.headers.setdefault("Content-Security-Policy", _content_security_policy_for_path(request.url.path))
+    response.headers.setdefault(_HEADER_CONTENT_TYPE_OPTIONS, _VALUE_NOSNIFF)
+    response.headers.setdefault(_HEADER_REFERRER_POLICY, _VALUE_NO_REFERRER)
+    response.headers.setdefault(_HEADER_CROSS_ORIGIN_RESOURCE_POLICY, _VALUE_SAME_ORIGIN)
+    if _is_html_response(response):
+        response.headers.setdefault(_HEADER_CROSS_ORIGIN_OPENER_POLICY, _VALUE_SAME_ORIGIN)
+    response.headers.setdefault(
+        _HEADER_CONTENT_SECURITY_POLICY,
+        _csp_for_request_path(request.url.path, nonce=request.state.csp_nonce),
+    )
+    _ensure_body_content_type_charset(response)
     if settings.base_url.scheme == _HTTPS_SCHEME:
         response.headers.setdefault(_HEADER_STRICT_TRANSPORT_SECURITY, _VALUE_HSTS)
     return response

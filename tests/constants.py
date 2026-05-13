@@ -1,5 +1,7 @@
 """Shared literals for the test suite."""
 
+import re
+
 HTML_CONTENT_TYPE = "text/html"
 JPEG_CONTENT_TYPE = "image/jpeg"
 PNG_CONTENT_TYPE = "image/png"
@@ -7,6 +9,12 @@ NO_STORE_CACHE_CONTROL = "no-store"
 HLS_M3U8_CONTENT_TYPE = "application/vnd.apple.mpegurl"
 HLS_MP4_CONTENT_TYPE = "video/mp4"
 HLS_PREVIEW_ENCODER_FRAGMENT = "preview encoder"
+HEADER_COOP = "cross-origin-opener-policy"
+HEADER_CORP = "cross-origin-resource-policy"
+HEADER_CSP = "content-security-policy"
+COOP_SAME_ORIGIN = "same-origin"
+CORP_SAME_ORIGIN = "same-origin"
+CSP_NONCE_ATTR_RE = re.compile(r'<script\b[^>]*\bnonce="([^"]+)"')
 
 # Shared URL bases and prefixes
 BACKEND_EXAMPLE_BASE_URL = "https://backend.example"
