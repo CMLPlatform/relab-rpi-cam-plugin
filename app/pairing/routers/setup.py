@@ -41,7 +41,7 @@ async def _pairing_backend_reachable() -> bool:
 
     normalized_base_url = _normalize_pairing_backend_base_url(base_url)
     try:
-        async with httpx.AsyncClient(timeout=_PAIRING_BACKEND_REACHABILITY_TIMEOUT, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=_PAIRING_BACKEND_REACHABILITY_TIMEOUT, follow_redirects=False) as client:
             await client.get(normalized_base_url)
     except httpx.HTTPError:
         return False

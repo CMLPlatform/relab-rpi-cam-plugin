@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from typing import Self
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -80,6 +81,39 @@ THEME_INIT_JS_SRC = "/static/theme-init.js"
 SETUP_PAGE_JS_SRC = "/static/setup-page.js"
 LOGOUT_FORM_MARKER = 'class="site-header__logout"'
 THEME_AUTO_LABEL = "Theme: Auto"
+
+
+class TestPairingBackendReachability:
+    """Tests for setup-page pairing backend probes."""
+
+    async def test_pairing_backend_probe_does_not_follow_redirects(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The external reachability probe should not follow backend redirects."""
+        seen_kwargs: dict[str, object] = {}
+        get = AsyncMock()
+
+        class FakeClient:
+            async def __aenter__(self) -> Self:
+                return self
+
+            async def __aexit__(self, *_args: object) -> None:
+                return None
+
+            async def get(self, *_args: object, **_kwargs: object) -> None:
+                await get()
+
+        def fake_async_client(*_args: object, **kwargs: object) -> FakeClient:
+            seen_kwargs.update(kwargs)
+            return FakeClient()
+
+        monkeypatch.setattr(settings, "pairing_backend_url", "https://api.example")
+        monkeypatch.setattr(setup_router.httpx, "AsyncClient", fake_async_client)
+
+        assert await setup_router._pairing_backend_reachable() is True
+        assert seen_kwargs == {
+            "timeout": setup_router._PAIRING_BACKEND_REACHABILITY_TIMEOUT,
+            "follow_redirects": False,
+        }
+        get.assert_awaited_once()
 
 
 class TestSetupPage:
