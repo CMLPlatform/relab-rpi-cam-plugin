@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import re
 import time
 from hashlib import sha256
 from secrets import token_urlsafe
@@ -12,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.settings import settings
-from app.observability.logging import bind_request_id, new_request_id, reset_request_id
+from app.observability.logging import bind_request_id, build_security_log_extra, new_request_id, reset_request_id
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -76,7 +78,8 @@ _DOCS_CSP = (
     "form-action 'self'"
 )
 _DEFAULT_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
-_HTTPS_SCHEME = "https"
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+logger = logging.getLogger(__name__)
 
 
 class _RateLimitPolicy(NamedTuple):
@@ -134,6 +137,15 @@ class RateLimiter:
         attempts = self._fresh_attempts(bucket_key, now)
         counted_attempts = sum(1 for _, failed in attempts if failed) if policy.failed_only else len(attempts)
         if counted_attempts >= policy.max_attempts:
+            logger.warning(
+                "Security event: rate limit blocked request",
+                extra=build_security_log_extra(
+                    event="security.rate_limit",
+                    outcome="blocked",
+                    request=request,
+                    status_code=429,
+                ),
+            )
             return _rate_limit_response()
 
         response = await call_next(request)
@@ -186,15 +198,23 @@ async def rate_limit_middleware(request: Request, call_next: Callable) -> Respon
 
 async def request_context_middleware(request: Request, call_next: Callable) -> Response:
     """Attach a request id to the current context and echo it to the client."""
-    request_id = request.headers.get(_HEADER_REQUEST_ID) or new_request_id()
+    request_id = _request_id_from_header(request.headers.get("X-Request-ID"))
+    request.state.request_id = request_id
     token = bind_request_id(request_id)
     try:
         response = await call_next(request)
     finally:
         reset_request_id(token)
 
-    response.headers[_HEADER_REQUEST_ID] = request_id
+    response.headers["X-Request-ID"] = request_id
     return response
+
+
+def _request_id_from_header(value: str | None) -> str:
+    """Return a safe request id, replacing invalid client-supplied values."""
+    if value and _REQUEST_ID_RE.fullmatch(value):
+        return value
+    return new_request_id()
 
 
 def _csp_for_request_path(path: str, *, nonce: str | None = None) -> str:
@@ -245,6 +265,6 @@ def register_middleware(app: FastAPI) -> None:
         allow_origins=cors_origins,
         allow_credentials=not settings.local_mode_enabled,
         allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
-        allow_headers=["Content-Type", "Authorization", "Accept", _HEADER_REQUEST_ID, settings.auth_key_name],
+        allow_headers=["Content-Type", "Authorization", "Accept", "X-Request-ID", settings.auth_key_name],
         allow_private_network=settings.local_mode_enabled,
     )

@@ -20,6 +20,10 @@ _WSS_SCHEME_SOURCE = "wss:"
 TEST_API_KEY = "test-secret-api-key"
 OTHER_TEST_API_KEY = "other-secret-api-key"
 TEST_COOKIE_VALUE = "test-session-token"
+VALID_REQUEST_ID = "client-req_123"
+INVALID_REQUEST_ID = "bad\nrequest"
+OVERSIZED_REQUEST_ID = "r" * 129
+
 
 
 def _request(method: str, path: str, *, headers: dict[str, str] | None = None, client: str = "192.0.2.10") -> Request:
@@ -162,3 +166,27 @@ class TestRateLimiter:
         assert stored_keys
         assert all(TEST_API_KEY not in key for key in stored_keys)
         assert all(TEST_COOKIE_VALUE not in key for key in stored_keys)
+
+
+class TestRequestIdValidation:
+    """Tests for request-id correlation metadata."""
+
+    @pytest.mark.asyncio
+    async def test_preserves_safe_client_request_id(self) -> None:
+        """Safe bounded client request IDs should be accepted and echoed."""
+        request = _request("GET", "/camera", headers={"X-Request-ID": VALID_REQUEST_ID})
+
+        response = await middleware_mod.request_context_middleware(request, lambda _request: _response())
+
+        assert response.headers["X-Request-ID"] == VALID_REQUEST_ID
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("request_id", [INVALID_REQUEST_ID, OVERSIZED_REQUEST_ID])
+    async def test_replaces_unsafe_client_request_id(self, request_id: str) -> None:
+        """Unsafe client request IDs should not enter logs or response headers."""
+        request = _request("GET", "/camera", headers={"X-Request-ID": request_id})
+
+        response = await middleware_mod.request_context_middleware(request, lambda _request: _response())
+
+        assert response.headers["X-Request-ID"] != request_id
+        assert response.headers["X-Request-ID"]
