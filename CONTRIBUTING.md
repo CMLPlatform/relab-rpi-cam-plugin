@@ -58,6 +58,14 @@ just check
 
 Use `pre-commit run --all-files` when changing hooks or repository policy files.
 
+## Security Maintenance
+
+Keep the runtime small and the risky paths easy to spot:
+
+- Fix critical and high dependency, Action, and image findings within 7 days. Fix medium findings within 30 days.
+- Keep `pyproject.toml`, `uv.lock`, Dockerfile and Compose image pins, pinned GitHub Actions, Renovate PRs, `uv audit`, secret scanning, and Trivy current.
+- Pay extra attention to camera capture, preview and streaming, MediaMTX `runOnReady` and ffmpeg, the upload queue, the S3 sink, relay dispatch, and telemetry and log shipping.
+
 ## Test Suite Policy
 
 The suite has two primary layers:

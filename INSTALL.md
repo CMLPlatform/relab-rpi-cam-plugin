@@ -80,6 +80,7 @@ The setup page polls `GET /pairing/state` so it can reload when pairing or unpai
 Enter the code in the native RELab app under Cameras > Add Camera. The Pi receives relay credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
 
 To rotate the code without deleting relay credentials, use **Generate a new pairing code** on `/setup`.
+To rotate relay credentials, unpair the camera and pair it again. Unpairing clears the stored relay key first, and the next pairing creates a fresh key pair.
 
 Docker Compose stores runtime credentials in a named volume mounted at `/home/rpicam/.config/relab`, so paired credentials survive container restarts.
 
@@ -120,9 +121,11 @@ Runtime surfaces:
 
 RustFS is loopback-only by default. To expose it on the operator LAN, set `RUSTFS_API_BIND` and `RUSTFS_CONSOLE_BIND` to the Pi's LAN IP, then restrict ports `9000` and `9001` to trusted clients.
 
-For an external S3-compatible service such as Backblaze B2, Cloudflare R2, Wasabi, or AWS S3, set `S3_ENDPOINT_URL`, credentials, and `S3_PUBLIC_URL_TEMPLATE`. Remote production S3 endpoints require HTTPS. Keep `APP_ENV=development` for local HTTP storage only.
+For an external S3-compatible service such as Backblaze B2, Cloudflare R2, Wasabi, or AWS S3, set `S3_ENDPOINT_URL`, credentials, and `S3_PUBLIC_URL_TEMPLATE`. Remote production S3 endpoints and remote public URL templates require HTTPS. Keep `APP_ENV=development` for local HTTP storage only.
 
-Treat captures as sensitive device data. Failed uploads may remain in the local retry queue or dead-letter directory until the configured queue limits prune them, and preview thumbnails are cached locally for the setup UI. `S3_PUBLIC_URL_TEMPLATE` returns object URLs that are reachable wherever your bucket, endpoint, CDN, or reverse proxy is reachable; use private buckets, authenticated proxies, or LAN-only exposure when images should not be public.
+Treat captures as sensitive device data. Current captures are always `.jpg` / `image/jpeg`, are bounded before upload or queueing, and are checked again before retry or serving. Failed uploads can stay in the local retry queue or dead-letter directory until the queue limits prune them. `S3_PUBLIC_URL_TEMPLATE` makes images as public as the bucket or proxy behind it, so use private or authenticated storage when needed.
+
+If you rotate S3 or RustFS credentials, update the storage service first, then refresh `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `RUSTFS_SECRET_KEY` if needed.
 
 Set `COMPOSE_PROFILES=` to skip the RustFS sidecar when using a managed bucket.
 
@@ -153,6 +156,8 @@ Disable direct local API access with:
 ```sh
 LOCAL_MODE_ENABLED=false
 ```
+
+To rotate the local API key, stop the app, remove `local_api_key` from `~/.config/relab/relay_credentials.json` or delete the credentials file when you re-pair, then start the app again. Custom clients using the old key will need the new one.
 
 Network notes:
 
@@ -189,6 +194,15 @@ For headless operation, read pairing status from:
 
 Structured JSON logs are always written. Docker logs are bounded by Compose config, and rotating file logs are written to the mounted `app_logs` volume.
 
+Log inventory:
+
+- app file logs: UTC JSON in `app_logs`, rotated daily
+- Docker logs: redacted console output
+- optional shipped logs: Alloy tails `app_logs` and pushes to the configured collector
+- security events: auth results, rate-limit denials, relay validation failures, and unhandled errors
+
+Logs include request IDs where available and leave out credentials, tokens, pairing codes, private keys, request bodies, and response bodies.
+
 To ship logs to a Loki-compatible collector, add:
 
 ```sh
@@ -221,8 +235,10 @@ OTEL_EXPORTER_OTLP_ENDPOINT=https://your-observability-host:4318/v1/traces
 ```
 
 Remote production OTLP endpoints require HTTPS. Plaintext HTTP is accepted only
-for loopback collectors or when `APP_ENV=development`. Treat traces as
-operational metadata with authenticated collectors and explicit retention.
+for loopback collectors or when `APP_ENV=development`.
+If you rotate `PROMETHEUS_SCRAPE_API_KEY`, `AUTHORIZED_API_KEYS`,
+Loki/Prometheus tokens, or OTLP collector credentials, update the collector
+first, then refresh `.env` and restart the stack.
 
 Local Loki/Grafana and OTLP collectors are not bundled with this plugin.
 
