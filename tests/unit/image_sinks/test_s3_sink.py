@@ -63,7 +63,7 @@ def fake_s3_client() -> _FakeS3Client:
 
 
 @pytest.fixture(autouse=True)
-def _patch_aioboto3(fake_s3_client: _FakeS3Client) -> Iterator[MagicMock]:
+def patch_aioboto3(fake_s3_client: _FakeS3Client) -> Iterator[MagicMock]:
     """Patch ``aioboto3.Session`` so no real AWS calls are made."""
     session_instance = MagicMock()
     session_instance.client.return_value = fake_s3_client
@@ -95,6 +95,24 @@ class TestS3CompatibleSink:
 
         assert result.image_id == S3_IMAGE_ID
         assert str(result.image_url) == S3_PUBLIC_URL
+
+    async def test_s3_client_uses_bounded_sdk_config(self, patch_aioboto3: MagicMock) -> None:
+        """S3 communication should set explicit timeouts, retries, and pool limits."""
+        sink = _make_sink()
+
+        await sink.put(
+            image_id=S3_IMAGE_ID,
+            image_bytes=S3_IMAGE_BYTES,
+            filename=f"{S3_IMAGE_ID}.jpg",
+            capture_metadata={},
+            upload_metadata={"product_id": 42},
+        )
+
+        config = patch_aioboto3.Session.return_value.client.call_args.kwargs["config"]
+        assert config.connect_timeout == 5
+        assert config.read_timeout == 30
+        assert config.retries == {"max_attempts": 2, "mode": "standard"}
+        assert config.max_pool_connections == 4
 
     async def test_missing_product_id_routes_to_unsorted(self, fake_s3_client: _FakeS3Client) -> None:
         """If the upload_metadata has no product_id, the key goes under ``unsorted/``."""

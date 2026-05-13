@@ -32,12 +32,15 @@ if TYPE_CHECKING:
 
 
 aioboto3: Any = None
+_BotocoreConfig: Any = None
 try:
     import aioboto3 as _aioboto3
+    from botocore.config import Config as _BotocoreConfigImpl
 except ImportError:
     pass
 else:
     aioboto3 = _aioboto3
+    _BotocoreConfig = _BotocoreConfigImpl
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +87,7 @@ class S3CompatibleSink:
     ) -> StoredImage:
         """Upload to S3 and return the public URL."""
         del filename, capture_metadata
-        if aioboto3 is None:
+        if aioboto3 is None or _BotocoreConfig is None:
             msg = (
                 "aioboto3 is required for S3CompatibleSink. "
                 "Install the [s3] extra with `uv sync --group s3` "
@@ -102,6 +105,12 @@ class S3CompatibleSink:
                 aws_access_key_id=self._access_key_id,
                 aws_secret_access_key=self._secret_access_key,
                 region_name=self._region,
+                config=_BotocoreConfig(
+                    connect_timeout=5,
+                    read_timeout=30,
+                    retries={"max_attempts": 2, "mode": "standard"},
+                    max_pool_connections=4,
+                ),
             ) as s3:
                 await self._ensure_bucket(s3)
                 await s3.put_object(
