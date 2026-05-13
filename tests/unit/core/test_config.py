@@ -148,17 +148,63 @@ class TestLocalOriginsValidation:
     def test_local_allowed_origins_accepts_json_list(self) -> None:
         """JSON arrays should be parsed into origin lists."""
         s = Settings.model_validate({"local_allowed_origins": '["http://a", "http://b"]'})
-        assert s.local_allowed_origins == ["http://a", "http://b"]
+        assert [str(origin).rstrip("/") for origin in s.local_allowed_origins] == ["http://a", "http://b"]
 
     def test_local_allowed_origins_accepts_comma_separated_values(self) -> None:
         """Comma-separated input should stay easy to use in env files."""
         s = Settings.model_validate({"local_allowed_origins": "http://a, http://b"})
-        assert s.local_allowed_origins == ["http://a", "http://b"]
+        assert [str(origin).rstrip("/") for origin in s.local_allowed_origins] == ["http://a", "http://b"]
 
     def test_local_allowed_origins_accepts_iterables(self) -> None:
         """Non-string iterables should also be accepted."""
         s = Settings.model_validate({"local_allowed_origins": ("http://a", "http://b")})
-        assert s.local_allowed_origins == ["http://a", "http://b"]
+        assert [str(origin).rstrip("/") for origin in s.local_allowed_origins] == ["http://a", "http://b"]
+
+    def test_local_allowed_origins_rejects_malformed_origins(self) -> None:
+        """Local CORS origins should be URL-shaped before middleware uses them."""
+        with pytest.raises(ValueError, match="local_allowed_origins"):
+            Settings.model_validate({"local_allowed_origins": "not-a-url"})
+
+
+class TestBusinessLimitValidation:
+    """Tests for env-backed business limits."""
+
+    @pytest.mark.parametrize(
+        ("field_name", "value"),
+        [
+            ("camera_device_num", -1),
+            ("cleanup_interval_s", 0),
+            ("image_ttl_s", 0),
+            ("max_stream_duration_s", 0),
+            ("check_stream_interval_s", 0),
+            ("check_stream_health_interval_s", 0),
+            ("preview_hibernate_after_s", -1),
+            ("pairing_register_timeout_retry_s", 0),
+            ("pairing_poll_interval_s", 0),
+        ],
+    )
+    def test_rejects_invalid_timing_and_count_limits(self, field_name: str, value: int) -> None:
+        """Runtime limits should fail fast when configured outside documented bounds."""
+        with pytest.raises(ValueError, match=field_name):
+            Settings.model_validate({field_name: value})
+
+
+class TestAuthNameValidation:
+    """Tests for HTTP auth header and cookie name validation."""
+
+    @pytest.mark.parametrize(
+        ("field_name", "value"),
+        [
+            ("auth_key_name", "Bad Header"),
+            ("auth_key_name", ""),
+            ("session_cookie_name", "bad cookie"),
+            ("session_cookie_name", ""),
+        ],
+    )
+    def test_rejects_invalid_auth_header_and_cookie_names(self, field_name: str, value: str) -> None:
+        """Auth header and cookie names should use HTTP-token-safe names."""
+        with pytest.raises(ValueError, match=field_name):
+            Settings.model_validate({field_name: value})
 
 
 class TestSettingsDefaults:

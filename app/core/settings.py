@@ -4,10 +4,10 @@ import json
 from collections.abc import Iterable
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Literal, cast
+from typing import Annotated, Literal, cast
 from urllib.parse import urlparse
 
-from pydantic import Field, HttpUrl, field_validator, model_validator
+from pydantic import Field, HttpUrl, NonNegativeInt, PositiveInt, StringConstraints, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = ["Settings", "is_loopback_url", "settings"]
@@ -26,6 +26,10 @@ IMAGE_SINK_S3 = "s3"
 DEFAULT_PAIRING_BACKEND_URL = "https://api.cml-relab.org"
 APP_ENV_DEVELOPMENT = "development"
 APP_ENV_PRODUCTION = "production"
+type HttpFieldName = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=64, pattern=r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$"),
+]
 
 
 def _parse_list_env(v: object) -> list[str]:
@@ -110,7 +114,7 @@ class Settings(BaseSettings):
         HttpUrl("https://cml-relab.org"),
     ]
     authorized_api_keys: list[str] = []  # Bootstrap-only auth keys from env/.env
-    camera_device_num: int = 0  # Camera device number (usually 0 or 1)
+    camera_device_num: NonNegativeInt = 0  # Camera device number (usually 0 or 1)
 
     # Initialize the settings configuration from the .env file
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
@@ -122,11 +126,11 @@ class Settings(BaseSettings):
     log_path: Path = BASE_DIR / "logs"  # Used for storing log files
 
     # Directory cleanup settings
-    cleanup_interval_s: int = 60 * 10  # Interval for cleaning up expired files in seconds (10 minutes)
-    image_ttl_s: int = 60 * 60  # Time-to-live for captured images in seconds (1 hour)
-    max_stream_duration_s: int = 60 * 60 * 5  # Maximum duration for a stream in seconds (5 hours)
-    check_stream_interval_s: int = 60  # Interval for checking stream duration in seconds (1 minute)
-    check_stream_health_interval_s: int = 30  # Interval for checking stream health in seconds
+    cleanup_interval_s: PositiveInt = 60 * 10  # Cleanup interval in seconds (10 minutes)
+    image_ttl_s: PositiveInt = 60 * 60  # Time-to-live for captured images in seconds (1 hour)
+    max_stream_duration_s: PositiveInt = 60 * 60 * 5  # Maximum stream duration in seconds (5 hours)
+    check_stream_interval_s: PositiveInt = 60  # Stream duration check interval in seconds
+    check_stream_health_interval_s: PositiveInt = 30  # Stream health check interval in seconds
 
     # Camera settings
     camera_backend: Literal["picamera2"] = "picamera2"
@@ -136,7 +140,7 @@ class Settings(BaseSettings):
     # Any positive value is a relay idle window in seconds — after no relay
     # traffic for that long, the lores preview encoder is stopped until a new
     # command arrives or the relay reconnects.
-    preview_hibernate_after_s: int = 60 * 5  # Default: hibernate after 5 min idle
+    preview_hibernate_after_s: NonNegativeInt = 60 * 5  # Default: hibernate after 5 min idle
 
     # Image sink selection. ``auto`` infers from what's configured:
     # ``pairing_backend_url`` → backend, ``s3_endpoint_url`` → s3, nothing → error.
@@ -155,9 +159,9 @@ class Settings(BaseSettings):
     s3_public_url_template: str = "{endpoint}/{bucket}/{key}"
 
     # Auth
-    auth_key_name: str = "X-API-Key"
+    auth_key_name: HttpFieldName = "X-API-Key"
     auth_cookie_secure: bool | None = None
-    session_cookie_name: str = "relab_session"
+    session_cookie_name: HttpFieldName = "relab_session"
 
     # Runtime mode. Production is the safe default; development permits
     # plaintext endpoints for local-network test services.
@@ -180,7 +184,7 @@ class Settings(BaseSettings):
     local_api_key: str = ""  # Bootstrap-only local API key seed; runtime-owned after startup
     # Extra CORS origins allowed for direct-connect clients, e.g. "http://192.168.1.42"
     # Accepts a JSON array string or comma-separated list (same format as authorized_api_keys).
-    local_allowed_origins: list[str] = []
+    local_allowed_origins: list[HttpUrl] = []
 
     @field_validator("local_allowed_origins", mode="before")
     @classmethod
@@ -228,8 +232,8 @@ class Settings(BaseSettings):
     # Pairing: set this to the backend's HTTP(S) API URL to enable zero-config pairing.
     # When set and relay credentials are absent, the RPi enters pairing mode on boot.
     pairing_backend_url: str = DEFAULT_PAIRING_BACKEND_URL
-    pairing_register_timeout_retry_s: int = 1  # Delay before retrying a timed-out pairing register request
-    pairing_poll_interval_s: int = 3  # Delay between pairing poll requests and after poll timeouts
+    pairing_register_timeout_retry_s: PositiveInt = 1  # Delay before retrying timed-out pairing registration
+    pairing_poll_interval_s: PositiveInt = 3  # Delay between pairing poll requests/timeouts
 
     @field_validator("authorized_api_keys", mode="before")
     @classmethod
