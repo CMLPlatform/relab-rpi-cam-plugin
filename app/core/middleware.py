@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import time
-from collections import defaultdict
-from typing import TYPE_CHECKING
+from hashlib import sha256
+from typing import TYPE_CHECKING, NamedTuple
 
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,11 +19,10 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
     from starlette.responses import Response
 
-RATE_LIMIT_METHOD = "POST"
-RATE_LIMIT_PATH = "/auth/login"
 _HOMEPAGE_PATH = "/"
 _SETUP_PATH = "/setup"
 _DOCS_PATH_PREFIX = "/docs"
+_LOGIN_ROUTE = ("POST", "/auth/login")
 
 _HOMEPAGE_CSP = (
     "default-src 'self'; "
@@ -65,63 +64,101 @@ _DEFAULT_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; for
 _HTTPS_SCHEME = "https"
 
 
+class _RateLimitPolicy(NamedTuple):
+    max_attempts: int
+    failed_only: bool
+
+
+_LOGIN_MAX_FAILED_ATTEMPTS = 5
+_ACTION_MAX_ATTEMPTS = 20
+_RATE_LIMIT_POLICIES: dict[tuple[str, str], _RateLimitPolicy] = {
+    _LOGIN_ROUTE: _RateLimitPolicy(max_attempts=_LOGIN_MAX_FAILED_ATTEMPTS, failed_only=True),
+    ("DELETE", "/pairing"): _RateLimitPolicy(max_attempts=_ACTION_MAX_ATTEMPTS, failed_only=False),
+    ("PATCH", "/camera/controls"): _RateLimitPolicy(max_attempts=_ACTION_MAX_ATTEMPTS, failed_only=False),
+    ("POST", "/captures"): _RateLimitPolicy(max_attempts=_ACTION_MAX_ATTEMPTS, failed_only=False),
+    ("POST", "/pairing/code"): _RateLimitPolicy(max_attempts=_ACTION_MAX_ATTEMPTS, failed_only=False),
+    ("POST", "/preview/start"): _RateLimitPolicy(max_attempts=_ACTION_MAX_ATTEMPTS, failed_only=False),
+    ("POST", "/preview/stop"): _RateLimitPolicy(max_attempts=_ACTION_MAX_ATTEMPTS, failed_only=False),
+    ("POST", "/streams/youtube"): _RateLimitPolicy(max_attempts=_ACTION_MAX_ATTEMPTS, failed_only=False),
+    ("PUT", "/camera/focus"): _RateLimitPolicy(max_attempts=_ACTION_MAX_ATTEMPTS, failed_only=False),
+}
+
+
 class RateLimiter:
-    """Simple rate limiter for brute force protection on /auth/login.
+    """Simple in-memory rate limiter for sensitive local-device actions.
 
     Implemented as a plain helper class. The actual middleware is registered
     with `@app.middleware("http")` to avoid subclass signature/type mismatch
     with Starlette's `BaseHTTPMiddleware.dispatch`.
     """
 
-    MAX_ATTEMPTS = 5
+    LOGIN_MAX_FAILED_ATTEMPTS = _LOGIN_MAX_FAILED_ATTEMPTS
+    ACTION_MAX_ATTEMPTS = _ACTION_MAX_ATTEMPTS
     WINDOW_SIZE = 300
-    BLOCK_DURATION = 300
-    MAX_TRACKED_IPS = 1000
+    MAX_TRACKED_BUCKETS = 1000
 
     def __init__(self) -> None:
-        self._attempts: dict[str, list[tuple[float, bool]]] = defaultdict(list)
+        self._attempts: dict[str, list[tuple[float, bool]]] = {}
 
     def _sweep_stale_entries(self, now: float) -> None:
         """Remove entries with no attempts within the time window."""
-        stale_ips = [
-            ip for ip, attempts in self._attempts.items() if all(now - ts >= self.WINDOW_SIZE for ts, _ in attempts)
+        stale_keys = [
+            key for key, attempts in self._attempts.items() if all(now - ts >= self.WINDOW_SIZE for ts, _ in attempts)
         ]
-        for ip in stale_ips:
-            del self._attempts[ip]
+        for key in stale_keys:
+            del self._attempts[key]
 
     async def handle(self, request: Request, call_next: Callable) -> Response:
         """Check rate limits before passing request to the app."""
-        if request.method != RATE_LIMIT_METHOD or request.url.path != RATE_LIMIT_PATH:
+        route = (request.method, request.url.path)
+        policy = _RATE_LIMIT_POLICIES.get(route)
+        if policy is None:
             return await call_next(request)
-
-        client_ip = request.client.host if request.client else "unknown"
-
-        now = time.time()
-        if client_ip in self._attempts:
-            self._attempts[client_ip] = [
-                (ts, failed) for ts, failed in self._attempts[client_ip] if now - ts < self.WINDOW_SIZE
-            ]
-
-        if len(self._attempts) > self.MAX_TRACKED_IPS:
-            self._sweep_stale_entries(now)
-
-        attempts = self._attempts[client_ip]
-        if attempts:
-            failed_count = sum(1 for _, failed in attempts if failed)
-            if failed_count >= self.MAX_ATTEMPTS:
-                last_failed_time = max(ts for ts, failed in attempts if failed)
-                if now - last_failed_time < self.BLOCK_DURATION:
-                    return JSONResponse(
-                        status_code=429,
-                        content={"detail": "Too many failed login attempts. Try again later."},
-                    )
+        bucket_key = self._bucket_key(request, route=route)
+        now = time.monotonic()
+        attempts = self._fresh_attempts(bucket_key, now)
+        counted_attempts = sum(1 for _, failed in attempts if failed) if policy.failed_only else len(attempts)
+        if counted_attempts >= policy.max_attempts:
+            return _rate_limit_response()
 
         response = await call_next(request)
-
-        is_failed = response.status_code >= 400
-        self._attempts[client_ip].append((now, is_failed))
-
+        self._record(bucket_key, now, failed=response.status_code >= 400)
         return response
+
+    def _fresh_attempts(self, bucket_key: str, now: float) -> list[tuple[float, bool]]:
+        """Return and persist attempts still inside the fixed window."""
+        attempts = [(ts, failed) for ts, failed in self._attempts.get(bucket_key, []) if now - ts < self.WINDOW_SIZE]
+        if attempts:
+            self._attempts[bucket_key] = attempts
+        else:
+            self._attempts.pop(bucket_key, None)
+        if len(self._attempts) > self.MAX_TRACKED_BUCKETS:
+            self._sweep_stale_entries(now)
+        return attempts
+
+    def _record(self, bucket_key: str, now: float, *, failed: bool) -> None:
+        self._attempts.setdefault(bucket_key, []).append((now, failed))
+
+    def _bucket_key(self, request: Request, *, route: tuple[str, str]) -> str:
+        """Return a stable bucket key without storing raw credentials."""
+        route_key = ":".join(route)
+        if api_key := request.headers.get(settings.auth_key_name):
+            return _hashed_bucket(f"{route_key}:api", api_key)
+        if session_token := request.cookies.get(settings.session_cookie_name):
+            return _hashed_bucket(f"{route_key}:session", session_token)
+        client_ip = request.client.host if request.client else "unknown"
+        return _hashed_bucket(f"{route_key}:ip", client_ip)
+
+
+def _hashed_bucket(prefix: str, value: str) -> str:
+    return f"{prefix}:{sha256(value.encode()).hexdigest()}"
+
+
+def _rate_limit_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests. Try again later."},
+    )
 
 
 _rate_limiter = RateLimiter()
@@ -174,7 +211,7 @@ def register_middleware(app: FastAPI) -> None:
     app.middleware("http")(security_headers_middleware)
 
     cors_origins = [str(origin).rstrip("/") for origin in settings.allowed_cors_origins]
-    cors_origins += [o.rstrip("/") for o in settings.local_allowed_origins]
+    cors_origins += [str(origin).rstrip("/") for origin in settings.local_allowed_origins]
 
     app.add_middleware(
         CORSMiddleware,
