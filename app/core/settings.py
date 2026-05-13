@@ -289,6 +289,9 @@ class Settings(BaseSettings):
         if self.relay_backend_url and self.relay_auth_scheme != RELAY_AUTH_SCHEME_DEVICE_ASSERTION:
             msg = "RELAY_AUTH_SCHEME must be device_assertion when relay bootstrap credentials are configured."
             raise ValueError(msg)
+        if self.app_env == APP_ENV_PRODUCTION and self.debug:
+            msg = "DEBUG=true is only allowed when APP_ENV=development."
+            raise ValueError(msg)
         if self.pairing_backend_url.startswith("http://") and not is_loopback_url(self.pairing_backend_url):
             msg = "PAIRING_BACKEND_URL must use https unless it points at a loopback development host."
             raise ValueError(msg)

@@ -271,8 +271,22 @@ class TestSettingsDefaults:
     )
     def test_debug_parser_handles_common_runtime_values(self, raw_value: object, expected_value: object) -> None:
         """Debug parsing should be resilient to common environment spellings."""
-        s = Settings.model_validate({"debug": raw_value})
+        payload = {"debug": raw_value}
+        if expected_value is True:
+            payload["app_env"] = APP_ENV_DEVELOPMENT
+        s = Settings.model_validate(payload)
         assert s.debug is expected_value
+
+    def test_production_debug_mode_is_rejected(self) -> None:
+        """Production settings should fail closed instead of exposing debug behavior."""
+        with pytest.raises(ValueError, match="DEBUG=true is only allowed"):
+            Settings.model_validate({"app_env": APP_ENV_PRODUCTION, "debug": True})
+
+    def test_development_debug_mode_is_allowed(self) -> None:
+        """Development remains the explicit opt-in mode for debug behavior."""
+        s = Settings.model_validate({"app_env": APP_ENV_DEVELOPMENT, "debug": True})
+
+        assert s.debug is True
 
 
 class TestPairingSettings:
