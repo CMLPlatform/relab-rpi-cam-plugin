@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.core.runtime import AppRuntime, set_active_runtime
 from app.device_jwt import (
+    DEVICE_ASSERTION_ALGORITHM,
     DEVICE_ASSERTION_AUDIENCE,
     DEVICE_ASSERTION_TTL_SECONDS,
     build_device_assertion,
@@ -25,7 +26,6 @@ from app.device_jwt import (
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-_EXPECTED_ALG = "ES256"
 _KID_DEFAULT = "cam-key-42"
 _CAMERA_ID_DEFAULT = "11111111-2222-3333-4444-555555555555"
 _CAMERA_ID_ROUND_TRIP = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -69,7 +69,7 @@ class TestBuildDeviceAssertion:
         """The JOSE header declares ES256 and points ``kid`` at the camera's relay key."""
         token = build_device_assertion()
         header = jwt.get_unverified_header(token)
-        assert header["alg"] == _EXPECTED_ALG
+        assert header["alg"] == DEVICE_ASSERTION_ALGORITHM
         assert header["kid"] == _KID_DEFAULT
 
     def test_token_payload_has_expected_claims(self) -> None:
@@ -126,6 +126,32 @@ class TestBuildDeviceAssertionRoundTrip:
         finally:
             set_active_runtime(None)
 
-        decoded = jwt.decode(token, public_pem, algorithms=[_EXPECTED_ALG], audience=DEVICE_ASSERTION_AUDIENCE)
+        decoded = jwt.decode(
+            token,
+            public_pem,
+            algorithms=[DEVICE_ASSERTION_ALGORITHM],
+            audience=DEVICE_ASSERTION_AUDIENCE,
+        )
 
         assert decoded["iss"] == _ISS_ROUND_TRIP
+
+
+class TestBuildDeviceAssertionKeyPolicy:
+    """Validation for relay signing key material."""
+
+    def test_invalid_private_key_fails_before_signing(self) -> None:
+        """Malformed signing keys should fail closed before a JWT is minted."""
+        runtime = AppRuntime()
+        runtime.runtime_state.set_relay_credentials(
+            relay_backend_url="wss://backend.example/ws",
+            relay_camera_id=_CAMERA_ID_DEFAULT,
+            relay_auth_scheme="device_assertion",
+            relay_key_id=_KID_DEFAULT,
+            relay_private_key_pem="not a private key",
+        )
+        set_active_runtime(runtime)
+        try:
+            with pytest.raises(ValueError, match="private key"):
+                build_device_assertion()
+        finally:
+            set_active_runtime(None)
