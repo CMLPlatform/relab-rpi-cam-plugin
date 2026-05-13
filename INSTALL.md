@@ -168,7 +168,7 @@ For a non-Docker run on the Pi:
 
 ```sh
 ./scripts/local_setup.sh
-uv run fastapi run app/main.py --host 0.0.0.0 --port 8018
+uv run fastapi run app/main.py --host 0.0.0.0 --port 8018 --forwarded-allow-ips 127.0.0.1,::1
 ```
 
 ## Verify The Service
@@ -246,7 +246,7 @@ Check the CSI cable orientation, camera seating, and camera module compatibility
 
 - Check port 8018 availability: `sudo netstat -tlnp | grep :8018`
 - Check logs: `docker compose logs app`
-- For direct runs, start with `uv run fastapi run app/main.py --host 0.0.0.0 --port 8018`
+- For direct runs, start with `uv run fastapi run app/main.py --host 0.0.0.0 --port 8018 --forwarded-allow-ips 127.0.0.1,::1`
 
 ### Relay Does Not Connect
 

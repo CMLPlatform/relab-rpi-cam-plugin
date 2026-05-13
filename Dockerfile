@@ -77,7 +77,7 @@ EXPOSE 8018
 
 USER 1000:44
 
-CMD ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8018"]
+CMD ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8018", "--forwarded-allow-ips", "127.0.0.1,::1"]
 
 # Standalone runtime: identical to the paired runtime but with S3 dependencies.
 # Only the venv differs; all other layers are inherited from the runtime stage.
