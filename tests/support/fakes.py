@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from PIL import Image
 from pydantic import AnyUrl
 from relab_rpi_cam_models.camera import CameraMode
@@ -315,6 +317,16 @@ class _NoopImageSink(ImageSink):
     ) -> StoredImage:
         del image_bytes, filename, capture_metadata, upload_metadata
         return StoredImage(image_id=image_id, image_url=AnyUrl("https://example.invalid/noop-image.jpg"))
+
+
+def fresh_p256_pem() -> str:
+    """Mint a throwaway P-256 private key in PEM form."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    return key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
 
 
 def build_test_runtime(*, camera_manager: CameraManager | None = None) -> AppRuntime:

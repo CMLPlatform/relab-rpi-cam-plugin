@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 from pydantic import Field, HttpUrl, NonNegativeInt, PositiveInt, StringConstraints, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.relay.credentials import load_relay_signing_private_key
+
 __all__ = ["Settings", "is_loopback_url", "settings"]
 
 # Set the project base directory and .env file
@@ -86,6 +88,14 @@ def validate_endpoint_transport(value: str, *, setting_name: str, app_env: str) 
         return
     msg = f"{setting_name} must use https unless it points at loopback or APP_ENV=development."
     raise ValueError(msg)
+
+
+def validate_absolute_url_template_transport(value: str, *, setting_name: str, app_env: str) -> None:
+    """Enforce transport policy for URL templates that declare their own absolute origin."""
+    parsed = urlparse(value)
+    if not parsed.scheme and not parsed.netloc:
+        return
+    validate_endpoint_transport(value, setting_name=setting_name, app_env=app_env)
 
 
 def validate_relay_backend_url(value: str, *, app_env: str) -> str:
@@ -289,6 +299,8 @@ class Settings(BaseSettings):
         if self.relay_backend_url and self.relay_auth_scheme != RELAY_AUTH_SCHEME_DEVICE_ASSERTION:
             msg = "RELAY_AUTH_SCHEME must be device_assertion when relay bootstrap credentials are configured."
             raise ValueError(msg)
+        if self.relay_private_key_pem:
+            load_relay_signing_private_key(self.relay_private_key_pem)
         if self.app_env == APP_ENV_PRODUCTION and self.debug:
             msg = "DEBUG=true is only allowed when APP_ENV=development."
             raise ValueError(msg)
@@ -298,6 +310,11 @@ class Settings(BaseSettings):
         validate_endpoint_transport(
             self.s3_endpoint_url,
             setting_name="S3_ENDPOINT_URL",
+            app_env=self.app_env,
+        )
+        validate_absolute_url_template_transport(
+            self.s3_public_url_template,
+            setting_name="S3_PUBLIC_URL_TEMPLATE",
             app_env=self.app_env,
         )
         if self.otel_enabled:

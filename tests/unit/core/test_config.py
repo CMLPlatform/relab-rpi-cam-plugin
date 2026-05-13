@@ -15,6 +15,7 @@ from tests.constants import (
     EXAMPLE_RELAY_HTTP_URL,
     EXAMPLE_RELAY_HTTPS_URL,
 )
+from tests.support.fakes import fresh_p256_pem
 
 OTEL_SERVICE_NAME = "relab-rpi-cam-plugin"
 APP_ENV_DEVELOPMENT = "development"
@@ -34,6 +35,9 @@ HTTPS_PAIRING_BACKEND_URL = "https://api.example"
 LOOPBACK_HTTP_PAIRING_BACKEND_URL = "http://127.0.0.1:8000"
 HTTPS_S3_ENDPOINT_URL = "https://s3.example"
 REMOTE_HTTP_S3_ENDPOINT_URL = "http://s3.example"
+HTTPS_S3_PUBLIC_URL_TEMPLATE = "https://cdn.example/{key}"
+LOOPBACK_HTTP_S3_PUBLIC_URL_TEMPLATE = "http://127.0.0.1:9000/{bucket}/{key}"
+REMOTE_HTTP_S3_PUBLIC_URL_TEMPLATE = "http://cdn.example/{key}"
 HTTPS_OTLP_ENDPOINT_URL = "https://otel.example/v1/traces"
 REMOTE_HTTP_OTLP_ENDPOINT_URL = "http://otel.example/v1/traces"
 LOOPBACK_HTTP_OTLP_ENDPOINT_URL = "http://localhost:4318/v1/traces"
@@ -53,7 +57,7 @@ class TestRelayUrlValidation:
             relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
             relay_camera_id="cam-1",
             relay_key_id="key-1",
-            relay_private_key_pem="pem",
+            relay_private_key_pem=fresh_p256_pem(),
         )
         assert s.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL
 
@@ -74,7 +78,7 @@ class TestRelayUrlValidation:
             relay_backend_url=EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
             relay_camera_id="cam-1",
             relay_key_id="key-1",
-            relay_private_key_pem="pem",
+            relay_private_key_pem=fresh_p256_pem(),
         )
         assert s.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL_UNSECURE
 
@@ -339,6 +343,9 @@ class TestEndpointTransportValidation:
             {"s3_endpoint_url": "http://127.0.0.1:9000"},
             {"s3_endpoint_url": "http://[::1]:9000"},
             {"app_env": APP_ENV_DEVELOPMENT, "s3_endpoint_url": REMOTE_HTTP_S3_ENDPOINT_URL},
+            {"s3_public_url_template": HTTPS_S3_PUBLIC_URL_TEMPLATE},
+            {"s3_public_url_template": LOOPBACK_HTTP_S3_PUBLIC_URL_TEMPLATE},
+            {"app_env": APP_ENV_DEVELOPMENT, "s3_public_url_template": REMOTE_HTTP_S3_PUBLIC_URL_TEMPLATE},
             {"otel_enabled": True, "otel_exporter_otlp_endpoint": HTTPS_OTLP_ENDPOINT_URL},
             {"otel_enabled": True, "otel_exporter_otlp_endpoint": LOOPBACK_HTTP_OTLP_ENDPOINT_URL},
             (
@@ -360,6 +367,10 @@ class TestEndpointTransportValidation:
         ("settings_kwargs", "error_match"),
         [
             ({"s3_endpoint_url": REMOTE_HTTP_S3_ENDPOINT_URL}, "S3_ENDPOINT_URL must use https"),
+            (
+                {"s3_public_url_template": REMOTE_HTTP_S3_PUBLIC_URL_TEMPLATE},
+                "S3_PUBLIC_URL_TEMPLATE must use https",
+            ),
             (
                 {"app_env": APP_ENV_DEVELOPMENT, "s3_endpoint_url": "ftp://s3.example"},
                 "S3_ENDPOINT_URL must use http or https",
@@ -490,7 +501,7 @@ class TestConfigBootstrapHelpers:
             relay_camera_id="cam-1",
             relay_auth_scheme="device_assertion",
             relay_key_id="key-1",
-            relay_private_key_pem="pem",
+            relay_private_key_pem=fresh_p256_pem(),
         )
         assert runtime_state.relay_enabled is True
         assert runtime_state.authorized_api_keys == frozenset({"relay-local-key"})
@@ -525,7 +536,7 @@ class TestConfigBootstrapHelpers:
             relay_camera_id="cam-1",
             relay_auth_scheme="device_assertion",
             relay_key_id="key-1",
-            relay_private_key_pem="pem",
+            relay_private_key_pem=fresh_p256_pem(),
             app_settings=app_settings,
         )
 
