@@ -1,8 +1,9 @@
 """Authorization dependencies for FastAPI."""
 
-import hashlib
 import hmac
+import logging
 import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from urllib.parse import urlsplit
@@ -13,13 +14,15 @@ from fastapi.security import APIKeyHeader
 from app.core.runtime import get_active_runtime, get_request_runtime
 from app.core.runtime_state import RuntimeState
 from app.core.settings import settings
+from app.observability.logging import build_security_log_extra
 
 SESSION_INACTIVITY_TIMEOUT = timedelta(minutes=30)
 SESSION_ABSOLUTE_LIFETIME = timedelta(hours=12)
 SESSION_COOKIE_MAX_AGE_SECONDS = int(SESSION_ABSOLUTE_LIFETIME.total_seconds())
-SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 HTTP_SCHEME = "http"
 HTTPS_SCHEME = "https"
+logger = logging.getLogger(__name__)
 
 api_key_header = APIKeyHeader(name=settings.auth_key_name, auto_error=False, description="API Key for API access.")
 
@@ -33,11 +36,6 @@ class BrowserSession:
 
 
 _active_sessions: dict[str, BrowserSession] = {}
-
-
-def _hash_key(key: str) -> str:
-    """Return a hex-encoded SHA-256 hash of the given key."""
-    return hashlib.sha256(key.encode()).hexdigest()
 
 
 def reload_authorized_hashes(runtime_state: RuntimeState | None = None) -> frozenset[str]:
@@ -54,12 +52,9 @@ def _is_authorized(api_key: str, authorized_api_keys: frozenset[str]) -> bool:
     """
     matched = False
     for candidate in authorized_api_keys:
-        matched = hmac.compare_digest(api_key, candidate) or matched
+        if hmac.compare_digest(api_key, candidate):
+            matched = True
     return matched
-
-
-def _now_utc() -> datetime:
-    return datetime.now(UTC)
 
 
 def _session_expired(session: BrowserSession, now: datetime) -> bool:
@@ -70,7 +65,7 @@ def _session_expired(session: BrowserSession, now: datetime) -> bool:
 
 def _purge_expired_sessions(now: datetime | None = None) -> None:
     """Drop expired browser sessions from the in-memory session store."""
-    current_time = now or _now_utc()
+    current_time = now or datetime.now(UTC)
     expired_tokens = [token for token, session in _active_sessions.items() if _session_expired(session, current_time)]
     for token in expired_tokens:
         del _active_sessions[token]
@@ -78,7 +73,7 @@ def _purge_expired_sessions(now: datetime | None = None) -> None:
 
 def create_session() -> str:
     """Create and register a new browser session token."""
-    now = _now_utc()
+    now = datetime.now(UTC)
     _purge_expired_sessions(now)
     token = secrets.token_urlsafe(32)
     _active_sessions[token] = BrowserSession(created_at=now, last_seen_at=now)
@@ -95,7 +90,7 @@ def has_valid_session(token: str | None) -> bool:
     """Return whether the given browser session token is currently valid."""
     if not token:
         return False
-    now = _now_utc()
+    now = datetime.now(UTC)
     session = _active_sessions.get(token)
     if session is None:
         return False
@@ -152,6 +147,16 @@ def verify_cookie_write_csrf(request: Request) -> None:
             return
     elif (referer := request.headers.get("Referer")) and _same_origin(referer, expected_origin):
         return
+    logger.warning(
+        "Security event: same-origin browser proof failed",
+        extra=build_security_log_extra(
+            event="auth.csrf",
+            outcome="failure",
+            request=request,
+            auth_method="browser_session",
+            status_code=403,
+        ),
+    )
     raise HTTPException(status_code=403, detail="Same-origin browser request required")
 
 
@@ -163,6 +168,16 @@ async def verify_request(
     authorized_api_keys = reload_authorized_hashes(get_request_runtime(request).runtime_state)
     if x_api_key_header:
         if not _is_authorized(x_api_key_header, authorized_api_keys):
+            logger.warning(
+                "Security event: API-key authentication failed",
+                extra=build_security_log_extra(
+                    event="auth.request",
+                    outcome="failure",
+                    request=request,
+                    auth_method="api_key",
+                    status_code=403,
+                ),
+            )
             raise HTTPException(status_code=403, detail="Invalid API Key")
         return x_api_key_header
 
@@ -170,4 +185,14 @@ async def verify_request(
         verify_cookie_write_csrf(request)
         return "browser-session"
 
+    logger.warning(
+        "Security event: request authentication missing",
+        extra=build_security_log_extra(
+            event="auth.request",
+            outcome="failure",
+            request=request,
+            auth_method="missing",
+            status_code=401,
+        ),
+    )
     raise HTTPException(status_code=401, detail="API Key header or browser session is missing")

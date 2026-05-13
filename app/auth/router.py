@@ -1,5 +1,6 @@
 """Authentication routes for browser-session access to the UI."""
 
+import logging
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
 from app.auth.dependencies import (
+    SESSION_COOKIE_MAX_AGE_SECONDS,
     _is_authorized,
     create_session,
     delete_session,
@@ -16,8 +18,12 @@ from app.auth.dependencies import (
 )
 from app.core.runtime import get_request_runtime
 from app.core.settings import settings
+from app.observability.logging import build_security_log_extra
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
+_HEADER_CLEAR_SITE_DATA = "Clear-Site-Data"
+_VALUE_CLEAR_SITE_DATA_CACHE_STORAGE = '"cache", "storage"'
 
 
 def _safe_local_redirect_target(redirect_url: str) -> str:
@@ -43,7 +49,18 @@ async def login(
     """Validate an API key and create a browser session."""
     authorized_api_keys = reload_authorized_hashes(get_request_runtime(request).runtime_state)
     if not _is_authorized(api_key, authorized_api_keys):
+        logger.warning(
+            "Security event: browser login failed",
+            extra=build_security_log_extra(
+                event="auth.login",
+                outcome="failure",
+                request=request,
+                auth_method="api_key",
+                status_code=403,
+            ),
+        )
         raise HTTPException(status_code=403, detail="Invalid API Key")
+    delete_session(request.cookies.get(settings.browser_session_cookie_name))
     session_token = create_session()
     safe_redirect_url = _safe_local_redirect_target(redirect_url)
     response = RedirectResponse(url=safe_redirect_url, status_code=303)
@@ -53,8 +70,18 @@ async def login(
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
-        max_age=60 * 60 * 12,
+        max_age=SESSION_COOKIE_MAX_AGE_SECONDS,
         path="/",
+    )
+    logger.info(
+        "Security event: browser login succeeded",
+        extra=build_security_log_extra(
+            event="auth.login",
+            outcome="success",
+            request=request,
+            auth_method="api_key",
+            status_code=303,
+        ),
     )
     return response
 
@@ -66,9 +93,22 @@ async def logout(
 ) -> RedirectResponse:
     """Invalidate the current browser session."""
     session_token = request.cookies.get(settings.browser_session_cookie_name)
-    if has_valid_session(session_token):
+    valid_session = has_valid_session(session_token)
+    if valid_session:
         verify_cookie_write_csrf(request)
     delete_session(session_token)
     response = RedirectResponse(url="/", status_code=303)
     response.delete_cookie(key=settings.browser_session_cookie_name, path="/", secure=settings.cookie_secure)
+    response.headers[_HEADER_CLEAR_SITE_DATA] = _VALUE_CLEAR_SITE_DATA_CACHE_STORAGE
+    if valid_session:
+        logger.info(
+            "Security event: browser logout succeeded",
+            extra=build_security_log_extra(
+                event="auth.logout",
+                outcome="success",
+                request=request,
+                auth_method="browser_session",
+                status_code=303,
+            ),
+        )
     return response

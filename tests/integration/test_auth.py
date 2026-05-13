@@ -1,5 +1,8 @@
 """Tests for authentication endpoints and middleware."""
 
+import logging
+from typing import Any, cast
+
 import pytest
 from httpx import AsyncClient
 from pydantic import HttpUrl
@@ -14,6 +17,7 @@ from app.core.runtime import AppRuntime
 from app.core.settings import settings
 
 VALID_API_KEY = "valid-key"
+BAD_API_KEY = "bad-key"
 AUTH_COOKIE_NAME = "relab_session"
 SECURE_ATTR = "Secure"
 HTTPONLY_ATTR = "HttpOnly"
@@ -26,6 +30,11 @@ ALLOW_ORIGIN_HEADER = "access-control-allow-origin"
 ALLOW_PRIVATE_NETWORK_HEADER = "access-control-allow-private-network"
 WILDCARD_ORIGIN = "*"
 TRUE_HEADER_VALUE = "true"
+NO_STORE_CACHE_CONTROL = "no-store"
+NO_CACHE_PRAGMA = "no-cache"
+EXPIRES_IMMEDIATELY = "0"
+CLEAR_SITE_DATA_HEADER = "clear-site-data"
+CLEAR_SITE_DATA_VALUE = '"cache", "storage"'
 ROOT_REDIRECT = "/"
 LIVE_TAB_REDIRECT = "/camera?tab=live"
 SAME_ORIGIN = "http://test"
@@ -62,12 +71,28 @@ def _set_test_api_key(app_runtime: AppRuntime) -> None:
     reload_authorized_hashes(app_runtime.runtime_state)
 
 
+def _log_record(caplog: pytest.LogCaptureFixture, event: str) -> Any:
+    """Return a structured log record with test-owned dynamic attributes."""
+    return cast("Any", next(record for record in caplog.records if getattr(record, "event", "") == event))
+
+
 class TestAuthMiddleware:
     """Tests for API key verification on protected endpoints."""
 
     async def test_unsupported_http_methods_use_framework_405(self, unauthed_client: AsyncClient) -> None:
-        """Unsupported methods should be blocked by FastAPI routing rather than custom redirects."""
+        """TRACE should be blocked consistently before auth or route handling."""
         resp = await unauthed_client.request("TRACE", "/camera")
+
+        assert resp.status_code == 405
+
+    @pytest.mark.parametrize("path", ["/", "/static/logo.png"])
+    async def test_trace_is_blocked_for_public_and_static_routes(
+        self,
+        unauthed_client: AsyncClient,
+        path: str,
+    ) -> None:
+        """TRACE should stay unsupported on every local HTTP surface."""
+        resp = await unauthed_client.request("TRACE", path)
 
         assert resp.status_code == 405
 
@@ -76,15 +101,64 @@ class TestAuthMiddleware:
         resp = await unauthed_client.get("/camera")
         assert resp.status_code == 401
 
+    async def test_missing_api_key_logs_auth_failure(
+        self,
+        unauthed_client: AsyncClient,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Missing protected-route credentials should be logged without secrets."""
+        with caplog.at_level(logging.WARNING):
+            resp = await unauthed_client.get("/camera")
+
+        assert resp.status_code == 401
+        record = _log_record(caplog, "auth.request")
+        assert record.outcome == "failure"
+        assert record.auth_method == "missing"
+        assert record.method == "GET"
+        assert record.path == "/camera"
+        assert record.status_code == 401
+
     async def test_invalid_api_key_returns_403(self, unauthed_client: AsyncClient) -> None:
         """Test that requests with an invalid API key return a 403 Forbidden response."""
         resp = await unauthed_client.get("/camera", headers={"X-API-Key": "wrong-key"})
         assert resp.status_code == 403
 
+    async def test_invalid_api_key_logs_auth_failure_without_key(
+        self,
+        unauthed_client: AsyncClient,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Invalid API-key attempts should log metadata but never the submitted key."""
+        with caplog.at_level(logging.WARNING):
+            resp = await unauthed_client.get("/camera", headers={"X-API-Key": BAD_API_KEY})
+
+        assert resp.status_code == 403
+        record = _log_record(caplog, "auth.request")
+        assert record.outcome == "failure"
+        assert record.auth_method == "api_key"
+        assert record.status_code == 403
+        assert BAD_API_KEY not in caplog.text
+
     async def test_valid_api_key_passes(self, client: AsyncClient) -> None:
         """Test that requests with a valid API key are allowed through the middleware and return 200."""
         resp = await client.get("/camera")
         assert resp.status_code == 200
+
+    async def test_valid_api_key_does_not_log_routine_success(
+        self,
+        unauthed_client: AsyncClient,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Routine protected-route success should not add noisy auth.request logs."""
+        with caplog.at_level(logging.INFO):
+            resp = await unauthed_client.get("/camera", headers={"X-API-Key": VALID_API_KEY})
+
+        assert resp.status_code == 200
+        assert all(
+            getattr(record, "event", "") != "auth.request" or getattr(record, "outcome", "") != "success"
+            for record in caplog.records
+        )
+        assert VALID_API_KEY not in caplog.text
 
     async def test_valid_browser_session_passes(self, unauthed_client: AsyncClient) -> None:
         """A valid browser session should be accepted for local UI requests."""
@@ -117,6 +191,28 @@ class TestAuthMiddleware:
 
         assert resp.status_code == 403
 
+    async def test_cookie_authenticated_cross_site_write_logs_authorization_failure(
+        self,
+        unauthed_client: AsyncClient,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """CSRF denials should be logged as failed authorization decisions."""
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
+
+        with caplog.at_level(logging.WARNING):
+            resp = await unauthed_client.put(
+                "/camera/focus",
+                json={"mode": "manual", "lens_position": 1.5},
+                headers={"Origin": CROSS_SITE_ORIGIN},
+            )
+
+        assert resp.status_code == 403
+        record = _log_record(caplog, "auth.csrf")
+        assert record.outcome == "failure"
+        assert record.auth_method == "browser_session"
+        assert record.method == "PUT"
+        assert record.path == "/camera/focus"
+
     async def test_cookie_authenticated_same_origin_write_passes(self, unauthed_client: AsyncClient) -> None:
         """Same-origin browser-session writes should keep working."""
         unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
@@ -138,6 +234,29 @@ class TestAuthMiddleware:
         )
 
         assert resp.status_code == 200
+
+    async def test_dynamic_responses_are_not_cacheable(self, client: AsyncClient) -> None:
+        """Authenticated dynamic responses should not be stored by browser or proxy caches."""
+        resp = await client.get("/camera")
+
+        assert resp.status_code == 200
+        assert resp.headers["cache-control"] == NO_STORE_CACHE_CONTROL
+        assert resp.headers["pragma"] == NO_CACHE_PRAGMA
+        assert resp.headers["expires"] == EXPIRES_IMMEDIATELY
+
+    async def test_local_access_response_is_not_cacheable(
+        self,
+        client: AsyncClient,
+        app_runtime: AppRuntime,
+    ) -> None:
+        """The relay-forwarded local API key bootstrap response must not be cached."""
+        app_runtime.runtime_state.set_local_api_key("local-key")
+        resp = await client.get("/system/local-access")
+
+        assert resp.status_code == 200
+        assert resp.headers["cache-control"] == NO_STORE_CACHE_CONTROL
+        assert resp.headers["pragma"] == NO_CACHE_PRAGMA
+        assert resp.headers["expires"] == EXPIRES_IMMEDIATELY
 
 
 class TestAuthorizationRouteMatrix:
@@ -183,6 +302,26 @@ class TestLoginEndpoint:
         assert AUTH_COOKIE_NAME in resp.cookies
         assert VALID_API_KEY not in resp.headers["set-cookie"]
         assert resp.headers["location"] == ROOT_REDIRECT
+
+    async def test_login_with_valid_key_logs_success_without_key(
+        self,
+        unauthed_client: AsyncClient,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Successful browser login should log the event without credential material."""
+        with caplog.at_level(logging.INFO):
+            resp = await unauthed_client.post(
+                "/auth/login",
+                data={"api_key": VALID_API_KEY, "redirect_url": ROOT_REDIRECT},
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 303
+        record = _log_record(caplog, "auth.login")
+        assert record.outcome == "success"
+        assert record.auth_method == "api_key"
+        assert record.status_code == 303
+        assert VALID_API_KEY not in caplog.text
 
     async def test_login_rotates_existing_browser_session(self, unauthed_client: AsyncClient) -> None:
         """Successful login should invalidate the previous browser session token."""
@@ -254,6 +393,26 @@ class TestLoginEndpoint:
         )
         assert resp.status_code == 403
 
+    async def test_login_with_invalid_key_logs_failure_without_key(
+        self,
+        unauthed_client: AsyncClient,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Failed browser login should log the event without credential material."""
+        with caplog.at_level(logging.WARNING):
+            resp = await unauthed_client.post(
+                "/auth/login",
+                data={"api_key": BAD_API_KEY},
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 403
+        record = _log_record(caplog, "auth.login")
+        assert record.outcome == "failure"
+        assert record.auth_method == "api_key"
+        assert record.status_code == 403
+        assert BAD_API_KEY not in caplog.text
+
     async def test_login_rejects_absolute_redirect_urls(self, unauthed_client: AsyncClient) -> None:
         """Absolute redirect targets should be replaced with the local root."""
         resp = await unauthed_client.post(
@@ -299,6 +458,31 @@ class TestLogoutEndpoint:
         assert resp.status_code == 303
         # Cookie should be cleared (set with max-age=0 or deleted)
         assert AUTH_COOKIE_NAME in resp.headers.get("set-cookie", "")
+        assert resp.headers["cache-control"] == NO_STORE_CACHE_CONTROL
+        assert resp.headers["pragma"] == NO_CACHE_PRAGMA
+        assert resp.headers["expires"] == EXPIRES_IMMEDIATELY
+        assert resp.headers[CLEAR_SITE_DATA_HEADER] == CLEAR_SITE_DATA_VALUE
+
+    async def test_logout_logs_session_invalidation(
+        self,
+        unauthed_client: AsyncClient,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Logout should log that a browser session was invalidated."""
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
+
+        with caplog.at_level(logging.INFO):
+            resp = await unauthed_client.post(
+                "/auth/logout",
+                headers={"Origin": SAME_ORIGIN},
+                follow_redirects=False,
+            )
+
+        assert resp.status_code == 303
+        record = _log_record(caplog, "auth.logout")
+        assert record.outcome == "success"
+        assert record.auth_method == "browser_session"
+        assert record.status_code == 303
 
     async def test_logout_clears_secure_cookie_name(
         self,
