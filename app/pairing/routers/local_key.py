@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
+from app.core.headers import NO_STORE_HEADERS
 from app.core.runtime import get_request_runtime
 from app.utils.network import is_local_client
 
@@ -19,10 +20,4 @@ async def get_local_key(request: Request) -> PlainTextResponse:
         raise HTTPException(status_code=403, detail="Local key access is only available from the local network")
     if not runtime.runtime_state.local_api_key:
         raise HTTPException(status_code=503, detail="Local API key has not been generated yet")
-    return PlainTextResponse(
-        runtime.runtime_state.local_api_key,
-        headers={
-            "Cache-Control": "no-store",
-            "Content-Disposition": 'attachment; filename="local-api-key.txt"',
-        },
-    )
+    return PlainTextResponse(runtime.runtime_state.local_api_key, headers=NO_STORE_HEADERS)

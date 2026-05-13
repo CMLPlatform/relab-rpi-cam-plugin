@@ -13,8 +13,9 @@ import logging
 import socket
 
 import psutil
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 
+from app.core.headers import NO_STORE_HEADERS
 from app.core.runtime import get_request_runtime
 from relab_rpi_cam_models import LocalAccessInfo
 
@@ -73,13 +74,14 @@ def _get_mdns_name() -> str | None:
 
 
 @router.get("/local-access", summary="Get local direct-connection info")
-async def get_local_access_info(request: Request) -> LocalAccessInfo:
+async def get_local_access_info(request: Request, response: Response) -> LocalAccessInfo:
     """Return local API key and candidate IP URLs for direct (Ethernet/USB-C) access.
 
     Called by the backend through the WebSocket relay when the user opens the
     camera detail screen.  The response is forwarded to the authenticated frontend
     user so the app can auto-configure local mode without manual key copying.
     """
+    response.headers.update(NO_STORE_HEADERS)
     runtime = get_request_runtime(request)
     return LocalAccessInfo.model_validate(
         {
