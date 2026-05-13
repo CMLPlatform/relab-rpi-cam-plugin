@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.core.settings import Settings
 
 _DEVICE_ASSERTION_AUTH_SCHEME = "device_assertion"
+_LOCAL_RELAY_API_KEY_BYTES = 32
 
 
 @dataclass
@@ -66,7 +67,7 @@ class RuntimeState:
         self.relay_key_id = relay_key_id
         self.relay_private_key_pem = relay_private_key_pem
         if not self.local_relay_api_key:
-            self.local_relay_api_key = f"LOCAL_{secrets.token_urlsafe(32)}"
+            self.local_relay_api_key = f"LOCAL_{secrets.token_urlsafe(_LOCAL_RELAY_API_KEY_BYTES)}"
         self.add_authorized_api_key(self.local_relay_api_key)
 
     def clear_relay_credentials(self) -> None:

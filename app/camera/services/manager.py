@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import secrets
 from io import BytesIO
 from typing import TYPE_CHECKING
 
@@ -21,7 +22,6 @@ from app.camera.schemas import (
     YoutubeStreamConfig,
 )
 from app.camera.services.backend import CameraBackend, ControllableCameraBackend, StreamingCameraBackend
-from app.core.crypto_policy import generate_capture_id
 from app.core.settings import settings
 from app.image_sinks import ImageSink, ImageSinkError, get_image_sink
 from app.media.file_policy import JPEG_CAPTURE_POLICY, CaptureFileValidationError
@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from relab_rpi_cam_models.stream import StreamMode, StreamView
 
 logger = logging.getLogger(__name__)
+_CAPTURE_ID_BYTES = 16
 
 
 class StreamingNotSupportedError(RuntimeError):
@@ -192,7 +193,7 @@ class CameraManager:
         """
         upload_meta = upload_metadata or {}
 
-        image_id = generate_capture_id()
+        image_id = secrets.token_hex(_CAPTURE_ID_BYTES)
         filename = JPEG_CAPTURE_POLICY.filename_for(image_id)
         image_path = settings.image_path / filename
 

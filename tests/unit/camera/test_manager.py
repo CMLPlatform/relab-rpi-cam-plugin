@@ -25,6 +25,7 @@ from app.camera.schemas import (
     FocusMode,
     YoutubeStreamConfig,
 )
+from app.camera.services import manager as manager_mod
 from app.camera.services.backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.camera.services.manager import CameraControlsNotSupportedError, CameraManager
 from app.core.runtime import AppRuntime
@@ -344,7 +345,7 @@ class TestCameraManagerStartStreaming:
 class TestCameraManagerCapture:
     """Tests for CameraManager capture flows."""
 
-    async def test_capture_uses_backend_result(self, tmp_path: Path) -> None:
+    async def test_capture_uses_backend_result(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should build an image response from the backend capture result."""
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="green")
@@ -356,6 +357,7 @@ class TestCameraManagerCapture:
 
         # Stub sink that reports a successful upload without touching any real backend.
         stub_image_id = "a" * 32  # 32-char hex, matches ImageCaptureResponse.image_id pattern
+        generated_image_id = "b" * 32
 
         class _StubSink:
             put = AsyncMock(
@@ -365,6 +367,7 @@ class TestCameraManagerCapture:
                 )
             )
 
+        monkeypatch.setattr(manager_mod.secrets, "token_hex", lambda _n: generated_image_id)
         manager = CameraManager(
             backend=cast("StreamingCameraBackend", backend),
             sink=_StubSink(),
@@ -381,6 +384,8 @@ class TestCameraManagerCapture:
         assert response.metadata.camera_properties.camera_model == MOCK_CAMERA
         assert response.image_id == stub_image_id
         assert str(response.image_url) == EXAMPLE_IMAGE_URL
+        assert _StubSink.put.await_args.kwargs["image_id"] == generated_image_id
+        assert _StubSink.put.await_args.kwargs["filename"] == f"{generated_image_id}.jpg"
         backend.capture_image.assert_awaited_once()
 
     async def test_capture_invokes_capture_uploaded_hook_with_captured_frame(self, tmp_path: Path) -> None:
