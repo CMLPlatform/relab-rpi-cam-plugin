@@ -84,7 +84,7 @@ class BackendUploadClient:
         files: dict,
         headers: dict,
         data: dict | None = None,
-        upload_label: str = "upload",
+        upload_label: str,
     ) -> dict:
         """POST a multipart file and return the parsed JSON response."""
         try:
