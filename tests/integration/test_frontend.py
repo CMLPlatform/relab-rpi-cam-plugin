@@ -122,6 +122,24 @@ class TestHomepage:
         resp = await unauthed_client.get("/favicon.ico")
         assert resp.status_code == 200
 
+    async def test_static_allowlist_serves_known_asset_extensions(self, unauthed_client: AsyncClient) -> None:
+        """Static serving should allow only the asset extensions the UI actually uses."""
+        for path in (LOGO_SRC, SITE_JS_SRC, "/static/styles.css", "/static/favicon.ico"):
+            resp = await unauthed_client.get(path)
+
+            assert resp.status_code == 200
+
+    async def test_static_allowlist_rejects_other_extensions(self, unauthed_client: AsyncClient) -> None:
+        """Static serving should not expose unexpected file types from the static tree."""
+        probe = settings.static_path / "not-public.txt"
+        probe.write_text("internal note", encoding="utf-8")
+        try:
+            resp = await unauthed_client.get("/static/not-public.txt")
+        finally:
+            probe.unlink(missing_ok=True)
+
+        assert resp.status_code == 404
+
     async def test_homepage_shows_youtube_link_when_stream_active(
         self,
         client: AsyncClient,

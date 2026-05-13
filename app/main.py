@@ -1,10 +1,14 @@
 """FastAPI composition root for the Raspberry Pi camera streaming application."""
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 
 from app.__version__ import version
 from app.camera.exceptions import CameraInitializationError
@@ -20,6 +24,18 @@ from app.router import router as main_router
 setup_logging()
 logger = logging.getLogger(__name__)
 
+_ALLOWED_STATIC_EXTENSIONS = frozenset({".css", ".ico", ".js", ".png"})
+
+
+class AllowlistedStaticFiles(StaticFiles):
+    """StaticFiles variant that only serves the app's expected asset types."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        """Serve allowlisted static asset extensions and hide everything else."""
+        if Path(path).suffix.lower() not in _ALLOWED_STATIC_EXTENSIONS:
+            raise StarletteHTTPException(status_code=404)
+        return await super().get_response(path, scope)
+
 
 app = FastAPI(
     lifespan=lifespan,
@@ -28,7 +44,7 @@ app = FastAPI(
     description=(
         "This API allows you to remotely capture images and stream video from a Raspberry Pi camera. "
         "It is used as a plugin for the RELab platform."
-        '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank"> RELab GitHub</a>.'
+        '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank">RELab GitHub</a>.'
     ),
     docs_url="/docs" if settings.api_docs_enabled else None,
     openapi_url="/openapi.json" if settings.api_docs_enabled else None,
@@ -90,4 +106,4 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 app.state.runtime = runtime
 
 app.include_router(main_router)
-app.mount("/static", StaticFiles(directory=settings.static_path), name="static")
+app.mount("/static", AllowlistedStaticFiles(directory=settings.static_path), name="static")
