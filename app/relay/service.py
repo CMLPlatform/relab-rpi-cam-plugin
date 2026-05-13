@@ -43,6 +43,8 @@ if TYPE_CHECKING:
 _RELAY_WS_MAX_QUEUE = 8
 _RELAY_RECONNECT_INITIAL_DELAY_S = 1.0
 _RELAY_RECONNECT_MAX_DELAY_S = 60.0
+_LOCAL_DISPATCH_TIMEOUT = httpx.Timeout(connect=2.0, read=30.0, write=30.0, pool=2.0)
+_LOCAL_DISPATCH_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +184,12 @@ async def _receive_loop(
         if exc is not None:
             logger.debug("Command task failed", exc_info=exc, extra=build_log_extra())
 
-    async with httpx.AsyncClient(base_url=str(app_settings.base_url).rstrip("/"), headers=auth_headers) as http:
+    async with httpx.AsyncClient(
+        base_url=str(app_settings.base_url).rstrip("/"),
+        headers=auth_headers,
+        timeout=_LOCAL_DISPATCH_TIMEOUT,
+        limits=_LOCAL_DISPATCH_LIMITS,
+    ) as http:
         try:
             async for raw in ws:
                 await _handle_relay_message(
@@ -251,8 +258,6 @@ async def _handle_relay_message(
         msg_id = msg.get("id")
         if isinstance(msg_id, str) and msg_id:
             await _send_error(ws, msg_id, 429, "Too many pending relay commands.")
-        else:
-            logger.warning("Dropping relay command because the pending command limit was reached.")
         return
     task = asyncio.create_task(_run_command(ws, http, msg, command_semaphore))
     pending_tasks.add(task)
@@ -296,8 +301,6 @@ async def _handle_command(ws: ClientConnection, http: httpx.AsyncClient, msg: di
         msg_id = msg.get("id")
         if isinstance(msg_id, str) and msg_id:
             await _send_error(ws, msg_id, 400, "Malformed relay command.")
-        else:
-            logger.warning("Received malformed relay command without a response id.", extra=build_log_extra())
         return
 
     msg_id = envelope.id
@@ -310,6 +313,16 @@ async def _handle_command(ws: ClientConnection, http: httpx.AsyncClient, msg: di
     logger.debug("Relay command %s: %s %s", msg_id, method, path)
 
     if not relay_command_is_allowed(method, path):
+        logger.warning(
+            "Security event: forbidden relay command rejected",
+            extra=build_security_log_extra(
+                event="relay.command.forbidden",
+                outcome="failure",
+                method=method,
+                path=path,
+                status_code=403,
+            ),
+        )
         await _send_error(ws, msg_id, 403, RELAY_COMMAND_FORBIDDEN_DETAIL)
         return
 

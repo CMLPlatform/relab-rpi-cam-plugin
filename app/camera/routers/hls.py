@@ -57,6 +57,7 @@ def _no_traversal(v: str) -> str:
 # is a plain loopback address.
 _MEDIAMTX_HLS_BASE = "http://localhost:8888"
 _HLS_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=5.0, pool=2.0)
+_HLS_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
 _PREVIEW_HLS_PREFIX = "cam-preview/"
 
 
@@ -214,7 +215,7 @@ async def proxy_hls(
     # the trusted constant, preventing any influence on the request destination.
     target_url = httpx.URL(_MEDIAMTX_HLS_BASE).copy_with(path=f"/{hls_path}")
     try:
-        async with httpx.AsyncClient(timeout=_HLS_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=_HLS_TIMEOUT, limits=_HLS_LIMITS) as client:
             response = await client.get(target_url)
     except httpx.HTTPError as exc:
         logger.warning("MediaMTX HLS unreachable: %s", exc, extra=build_log_extra())

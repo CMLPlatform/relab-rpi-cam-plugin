@@ -77,6 +77,38 @@ class BackendUploadClient:
 
     base_url: str
 
+    async def _post_file(
+        self,
+        *,
+        url: str,
+        files: dict,
+        headers: dict,
+        data: dict | None = None,
+        upload_label: str = "upload",
+    ) -> dict:
+        """POST a multipart file and return the parsed JSON response."""
+        try:
+            async with httpx.AsyncClient(
+                timeout=_UPLOAD_TIMEOUT,
+                limits=_UPLOAD_LIMITS,
+                follow_redirects=False,
+            ) as client:
+                response = await client.post(url, files=files, data=data, headers=headers)
+        except httpx.HTTPError as exc:
+            msg = f"Network error during {upload_label}: {exc}"
+            raise BackendUploadError(msg) from exc
+
+        if response.status_code >= 400:
+            body_preview = response.text[:200]
+            msg = f"Backend rejected {upload_label}: HTTP {response.status_code} — {body_preview}"
+            raise BackendUploadError(msg)
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            msg = f"Backend {upload_label} response was not JSON: {response.text[:200]!r}"
+            raise BackendUploadError(msg) from exc
+
     async def upload_image(
         self,
         *,
@@ -89,41 +121,21 @@ class BackendUploadClient:
     ) -> UploadedImageInfo:
         """Push a captured JPEG to the backend and validate the ack envelope."""
         url = f"{self.base_url}{_camera_endpoint(_UPLOAD_ENDPOINT_TEMPLATE, camera_id)}"
-        files = {"file": (filename, image_bytes, "image/jpeg")}
-        data = {
-            "capture_metadata": json.dumps(dict(capture_metadata)),
-            "upload_metadata": json.dumps(dict(upload_metadata)),
-        }
-        headers = {"Authorization": f"Bearer {assertion}"}
-
-        try:
-            async with httpx.AsyncClient(
-                timeout=_UPLOAD_TIMEOUT,
-                limits=_UPLOAD_LIMITS,
-                follow_redirects=False,
-            ) as client:
-                response = await client.post(url, files=files, data=data, headers=headers)
-        except httpx.HTTPError as exc:
-            msg = f"Network error during image upload: {exc}"
-            raise BackendUploadError(msg) from exc
-
-        if response.status_code >= 400:
-            body_preview = response.text[:200]
-            msg = f"Backend rejected upload: HTTP {response.status_code} — {body_preview}"
-            raise BackendUploadError(msg)
-
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            msg = f"Backend upload response was not JSON: {response.text[:200]!r}"
-            raise BackendUploadError(msg) from exc
-
+        payload = await self._post_file(
+            url=url,
+            files={"file": (filename, image_bytes, "image/jpeg")},
+            data={
+                "capture_metadata": json.dumps(dict(capture_metadata)),
+                "upload_metadata": json.dumps(dict(upload_metadata)),
+            },
+            headers={"Authorization": f"Bearer {assertion}"},
+            upload_label="image upload",
+        )
         try:
             ack = DeviceImageUploadAck.model_validate(payload)
         except (TypeError, ValueError) as exc:
             msg = f"Backend upload response missing fields: {payload!r}"
             raise BackendUploadError(msg) from exc
-
         return UploadedImageInfo(
             image_id=ack.image_id,
             image_url=_resolve_backend_media_url(ack.image_url, base_url=self.base_url, field_name="image_url"),
@@ -139,37 +151,17 @@ class BackendUploadClient:
     ) -> UploadedPreviewThumbnailInfo:
         """Push a cached preview thumbnail to the backend and validate the ack."""
         url = f"{self.base_url}{_camera_endpoint(_PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE, camera_id)}"
-        files = {"file": (filename, image_bytes, "image/jpeg")}
-        headers = {"Authorization": f"Bearer {assertion}"}
-
-        try:
-            async with httpx.AsyncClient(
-                timeout=_UPLOAD_TIMEOUT,
-                limits=_UPLOAD_LIMITS,
-                follow_redirects=False,
-            ) as client:
-                response = await client.post(url, files=files, headers=headers)
-        except httpx.HTTPError as exc:
-            msg = f"Network error during preview thumbnail upload: {exc}"
-            raise BackendUploadError(msg) from exc
-
-        if response.status_code >= 400:
-            body_preview = response.text[:200]
-            msg = f"Backend rejected preview thumbnail upload: HTTP {response.status_code} — {body_preview}"
-            raise BackendUploadError(msg)
-
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            msg = f"Backend preview thumbnail response was not JSON: {response.text[:200]!r}"
-            raise BackendUploadError(msg) from exc
-
+        payload = await self._post_file(
+            url=url,
+            files={"file": (filename, image_bytes, "image/jpeg")},
+            headers={"Authorization": f"Bearer {assertion}"},
+            upload_label="preview thumbnail upload",
+        )
         try:
             ack = DevicePreviewThumbnailAck.model_validate(payload)
         except (TypeError, ValueError) as exc:
             msg = f"Backend preview thumbnail response missing fields: {payload!r}"
             raise BackendUploadError(msg) from exc
-
         return UploadedPreviewThumbnailInfo(
             preview_thumbnail_url=_resolve_backend_media_url(
                 ack.preview_thumbnail_url,
@@ -177,6 +169,24 @@ class BackendUploadClient:
                 field_name="preview_thumbnail_url",
             )
         )
+
+
+async def _prepare_upload_client() -> tuple[BackendUploadClient, str, str]:
+    """Return (client, camera_id, assertion) ready for upload, or raise BackendUploadError."""
+    runtime_state = get_active_runtime().runtime_state
+    if not settings.pairing_backend_url:
+        msg = "Backend upload requested but PAIRING_BACKEND_URL is not configured."
+        raise BackendUploadError(msg)
+    if not runtime_state.relay_enabled:
+        msg = "Backend upload requested but relay credentials are missing — device is unpaired."
+        raise BackendUploadError(msg)
+    base_url = settings.pairing_backend_url.rstrip("/")
+    try:
+        assertion = build_device_assertion()
+    except (ValueError, TypeError) as exc:
+        msg = f"Failed to mint device assertion: {exc}"
+        raise BackendUploadError(msg) from exc
+    return BackendUploadClient(base_url), runtime_state.relay_camera_id, assertion
 
 
 async def upload_image(
@@ -187,25 +197,9 @@ async def upload_image(
     upload_metadata: Mapping[str, object],
 ) -> UploadedImageInfo:
     """Push a captured JPEG to the backend. Raises BackendUploadError on any failure."""
-    runtime_state = get_active_runtime().runtime_state
-    if not settings.pairing_backend_url:
-        msg = "Backend upload requested but PAIRING_BACKEND_URL is not configured."
-        raise BackendUploadError(msg)
-    if not runtime_state.relay_enabled:
-        msg = "Backend upload requested but relay credentials are missing — device is unpaired."
-        raise BackendUploadError(msg)
-
-    base_url = settings.pairing_backend_url.rstrip("/")
-
-    try:
-        assertion = build_device_assertion()
-    except (ValueError, TypeError) as exc:
-        msg = f"Failed to mint device assertion: {exc}"
-        raise BackendUploadError(msg) from exc
-
-    client = BackendUploadClient(base_url)
+    client, camera_id, assertion = await _prepare_upload_client()
     return await client.upload_image(
-        camera_id=runtime_state.relay_camera_id,
+        camera_id=camera_id,
         assertion=assertion,
         image_bytes=image_bytes,
         filename=filename,
@@ -220,24 +214,9 @@ async def upload_preview_thumbnail(
     filename: str = "preview-thumbnail.jpg",
 ) -> UploadedPreviewThumbnailInfo:
     """Push a cached preview thumbnail to the backend. Raises BackendUploadError on failure."""
-    runtime_state = get_active_runtime().runtime_state
-    if not settings.pairing_backend_url:
-        msg = "Backend preview thumbnail upload requested but PAIRING_BACKEND_URL is not configured."
-        raise BackendUploadError(msg)
-    if not runtime_state.relay_enabled:
-        msg = "Backend preview thumbnail upload requested but relay credentials are missing — device is unpaired."
-        raise BackendUploadError(msg)
-
-    base_url = settings.pairing_backend_url.rstrip("/")
-    try:
-        assertion = build_device_assertion()
-    except (ValueError, TypeError) as exc:
-        msg = f"Failed to mint device assertion: {exc}"
-        raise BackendUploadError(msg) from exc
-
-    client = BackendUploadClient(base_url)
+    client, camera_id, assertion = await _prepare_upload_client()
     return await client.upload_preview_thumbnail(
-        camera_id=runtime_state.relay_camera_id,
+        camera_id=camera_id,
         assertion=assertion,
         image_bytes=image_bytes,
         filename=filename,
