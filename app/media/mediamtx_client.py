@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 # URL here (not in config) so tests can swap it cheaply.
 DEFAULT_MEDIAMTX_API_URL = "http://localhost:9997"
 _API_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=5.0, pool=2.0)
+_API_LIMITS = httpx.Limits(max_connections=4, max_keepalive_connections=2)
 
 # Hires main stream publish target on the local MediaMTX.
 HIRES_RTSP_URL = "rtsp://localhost:8554/cam-hires"
@@ -86,7 +87,7 @@ class MediaMTXClient:
     async def _patch_path(self, path: str, payload: dict[str, Any]) -> None:
         url = f"{self._base_url}/v3/config/paths/patch/{path}"
         try:
-            async with httpx.AsyncClient(timeout=_API_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=_API_TIMEOUT, limits=_API_LIMITS) as client:
                 response = await client.patch(url, json=payload)
         except httpx.HTTPError as exc:
             msg = f"MediaMTX API unreachable at {self._base_url}: {exc}"
