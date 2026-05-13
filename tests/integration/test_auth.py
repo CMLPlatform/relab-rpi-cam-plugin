@@ -4,7 +4,12 @@ import pytest
 from httpx import AsyncClient
 from pydantic import HttpUrl
 
-from app.auth.dependencies import create_session, reload_authorized_hashes
+from app.auth.dependencies import (
+    SESSION_COOKIE_MAX_AGE_SECONDS,
+    create_session,
+    has_valid_session,
+    reload_authorized_hashes,
+)
 from app.core.runtime import AppRuntime
 from app.core.settings import settings
 
@@ -14,6 +19,8 @@ SECURE_ATTR = "Secure"
 HTTPONLY_ATTR = "HttpOnly"
 SAMESITE_ATTR = "SameSite=lax"
 PATH_ATTR = "Path=/"
+MAX_AGE_ATTR = "Max-Age="
+LOGOUT_FORM_MARKER = 'class="site-header__logout"'
 REQUEST_ID_HEADER = "x-request-id"
 ALLOW_ORIGIN_HEADER = "access-control-allow-origin"
 ALLOW_PRIVATE_NETWORK_HEADER = "access-control-allow-private-network"
@@ -176,6 +183,33 @@ class TestLoginEndpoint:
         assert AUTH_COOKIE_NAME in resp.cookies
         assert VALID_API_KEY not in resp.headers["set-cookie"]
         assert resp.headers["location"] == ROOT_REDIRECT
+
+    async def test_login_rotates_existing_browser_session(self, unauthed_client: AsyncClient) -> None:
+        """Successful login should invalidate the previous browser session token."""
+        old_token = create_session()
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, old_token)
+
+        resp = await unauthed_client.post(
+            "/auth/login",
+            data={"api_key": VALID_API_KEY, "redirect_url": ROOT_REDIRECT},
+            follow_redirects=False,
+        )
+
+        new_token = resp.cookies[settings.browser_session_cookie_name]
+        assert resp.status_code == 303
+        assert new_token != old_token
+        assert has_valid_session(old_token) is False
+        assert has_valid_session(new_token) is True
+
+    async def test_login_cookie_max_age_matches_absolute_lifetime(self, unauthed_client: AsyncClient) -> None:
+        """The browser cookie should not outlive the server-side absolute session lifetime."""
+        resp = await unauthed_client.post(
+            "/auth/login",
+            data={"api_key": VALID_API_KEY, "redirect_url": ROOT_REDIRECT},
+            follow_redirects=False,
+        )
+
+        assert f"{MAX_AGE_ATTR}{SESSION_COOKIE_MAX_AGE_SECONDS}" in resp.headers["set-cookie"]
 
     async def test_login_uses_insecure_cookie_for_local_http(self, unauthed_client: AsyncClient) -> None:
         """Local HTTP deployments should not mark auth cookies as secure by default."""

@@ -14,14 +14,25 @@ from app.core.runtime import get_active_runtime, get_request_runtime
 from app.core.runtime_state import RuntimeState
 from app.core.settings import settings
 
-SESSION_TTL_HOURS = 12
+SESSION_INACTIVITY_TIMEOUT = timedelta(minutes=30)
+SESSION_ABSOLUTE_LIFETIME = timedelta(hours=12)
+SESSION_COOKIE_MAX_AGE_SECONDS = int(SESSION_ABSOLUTE_LIFETIME.total_seconds())
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 HTTP_SCHEME = "http"
 HTTPS_SCHEME = "https"
 
 api_key_header = APIKeyHeader(name=settings.auth_key_name, auto_error=False, description="API Key for API access.")
 
-_active_sessions: dict[str, datetime] = {}
+
+@dataclass(slots=True)
+class BrowserSession:
+    """Server-side browser session state."""
+
+    created_at: datetime
+    last_seen_at: datetime
+
+
+_active_sessions: dict[str, BrowserSession] = {}
 
 
 def _hash_key(key: str) -> str:
@@ -48,19 +59,26 @@ def _now_utc() -> datetime:
     return datetime.now(UTC)
 
 
+def _session_expired(session: BrowserSession, now: datetime) -> bool:
+    inactive_for = now - session.last_seen_at
+    alive_for = now - session.created_at
+    return inactive_for > SESSION_INACTIVITY_TIMEOUT or alive_for > SESSION_ABSOLUTE_LIFETIME
+
+
 def _purge_expired_sessions(now: datetime | None = None) -> None:
     """Drop expired browser sessions from the in-memory session store."""
     current_time = now or _now_utc()
-    expired_tokens = [token for token, expires_at in _active_sessions.items() if expires_at <= current_time]
+    expired_tokens = [token for token, session in _active_sessions.items() if _session_expired(session, current_time)]
     for token in expired_tokens:
         del _active_sessions[token]
 
 
 def create_session() -> str:
     """Create and register a new browser session token."""
-    _purge_expired_sessions()
+    now = _now_utc()
+    _purge_expired_sessions(now)
     token = secrets.token_urlsafe(32)
-    _active_sessions[token] = _now_utc() + timedelta(hours=SESSION_TTL_HOURS)
+    _active_sessions[token] = BrowserSession(created_at=now, last_seen_at=now)
     return token
 
 
@@ -74,8 +92,15 @@ def has_valid_session(token: str | None) -> bool:
     """Return whether the given browser session token is currently valid."""
     if not token:
         return False
-    _purge_expired_sessions()
-    return token in _active_sessions
+    now = _now_utc()
+    session = _active_sessions.get(token)
+    if session is None:
+        return False
+    if _session_expired(session, now):
+        del _active_sessions[token]
+        return False
+    session.last_seen_at = now
+    return True
 
 
 def _browser_session_token(request: Request) -> str | None:
