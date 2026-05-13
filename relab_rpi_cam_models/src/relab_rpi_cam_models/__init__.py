@@ -2,6 +2,9 @@
 
 from .camera import CameraMode, CameraStatusView
 from .device_seam import (
+    PAIRING_CODE_ALPHABET,
+    PAIRING_CODE_LENGTH,
+    PAIRING_CODE_PATTERN,
     RELAY_COMMAND_FORBIDDEN_DETAIL,
     RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
     DeviceImageUploadAck,
@@ -10,6 +13,7 @@ from .device_seam import (
     LocalAccessInfo,
     PairingClaimedBootstrap,
     PairingClaimedRecord,
+    PairingCode,
     PairingPendingRecord,
     PairingPollResponse,
     PairingRegisterRequest,
@@ -37,6 +41,9 @@ from .stream import StreamMetadata, StreamMode, StreamView
 from .telemetry import TelemetrySnapshot, ThermalState
 
 __all__ = [
+    "PAIRING_CODE_ALPHABET",
+    "PAIRING_CODE_LENGTH",
+    "PAIRING_CODE_PATTERN",
     "RELAY_COMMAND_FORBIDDEN_DETAIL",
     "RELAY_WS_TEXT_FRAME_LIMIT_BYTES",
     "BaseMetadata",
@@ -54,6 +61,7 @@ __all__ = [
     "LocalAccessInfo",
     "PairingClaimedBootstrap",
     "PairingClaimedRecord",
+    "PairingCode",
     "PairingPendingRecord",
     "PairingPollResponse",
     "PairingRegisterRequest",

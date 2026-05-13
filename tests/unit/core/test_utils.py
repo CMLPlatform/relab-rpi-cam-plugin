@@ -12,6 +12,7 @@ from app.core.settings import settings
 from app.pairing.services import service as pairing_mod
 from app.pairing.services.service import PAIRING_CODE_TTL_SECONDS, PairingState, _generate_code_and_fingerprint
 from app.utils.files import cleanup_images, clear_directory, setup_directory
+from relab_rpi_cam_models import PAIRING_CODE_ALPHABET, PAIRING_CODE_LENGTH
 
 
 def _list_dir(path: Path) -> list[Path]:
@@ -101,23 +102,23 @@ class TestPairingState:
         assert isinstance(state, PairingState)
 
     def test_generate_code_format(self) -> None:
-        """Generated code should be 6 uppercase hex characters and fingerprint should be a string."""
+        """Generated code should be 6 unambiguous uppercase characters."""
         code, fingerprint = _generate_code_and_fingerprint()
-        assert len(code) == 6
-        assert code == code.upper()
+        assert len(code) == PAIRING_CODE_LENGTH
+        assert set(code) <= set(PAIRING_CODE_ALPHABET)
         assert len(fingerprint) > 10
 
     def test_codes_are_unique(self) -> None:
         """Multiple generated codes should be unique."""
         codes = {_generate_code_and_fingerprint()[0] for _ in range(20)}
-        # With 6 hex chars, collisions in 20 samples are astronomically unlikely
+        # With the unambiguous 32-character alphabet, collisions in 20 samples are very unlikely.
         assert len(codes) > 15
 
     def test_pairing_code_state_tracks_expiry(self) -> None:
         """Active pairing state should carry a future expiry timestamp for the setup page."""
         state = PairingState()
         before = datetime.now(UTC)
-        pairing_mod._set_pairing_code_state(state, "ABC123", "fingerprint")
+        pairing_mod._set_pairing_code_state(state, "ABC234", "fingerprint")
         assert state.expires_at is not None
         lower_bound = before + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
         upper_bound = datetime.now(UTC) + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)

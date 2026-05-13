@@ -2,7 +2,7 @@
 
 When the RPi boots without relay credentials but has a `pairing_backend_url` configured,
 it enters pairing mode:
-1. Generates a 6-char code and registers it with the backend.
+1. Generates a 6-character code and registers it with the backend.
 2. Displays the code on its setup page for the user to enter in the ReLab app.
 3. Polls the backend until the user claims the code.
 4. Receives credentials, saves them to a separate JSON file, and starts the relay.
@@ -38,7 +38,12 @@ from app.pairing.services.credentials import (
     load_relay_credentials,
     save_relay_credentials,
 )
-from relab_rpi_cam_models import PairingClaimedBootstrap, PairingStatus
+from relab_rpi_cam_models import (
+    PAIRING_CODE_ALPHABET,
+    PAIRING_CODE_LENGTH,
+    PairingClaimedBootstrap,
+    PairingStatus,
+)
 
 __all__ = [
     "_CREDENTIALS_FILE",
@@ -52,7 +57,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-_CODE_LENGTH = 3  # token_hex(3) → 6 hex chars
 PAIRING_CODE_TTL_SECONDS = 10 * 60
 
 # Pairing status values
@@ -481,7 +485,7 @@ async def _complete_pairing_state(
 
 
 def _generate_code_and_fingerprint() -> tuple[str, str]:
-    code = secrets.token_hex(_CODE_LENGTH).upper()
+    code = "".join(secrets.choice(PAIRING_CODE_ALPHABET) for _ in range(PAIRING_CODE_LENGTH))
     fingerprint = secrets.token_urlsafe(16)
     return code, fingerprint
 

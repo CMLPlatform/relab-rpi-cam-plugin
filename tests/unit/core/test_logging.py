@@ -20,7 +20,7 @@ CLIENT_REQUEST_ID = "client-req-42"
 SENSITIVE_SAMPLE = "sample-sensitive-value-1234567890"
 REDACTED = "[REDACTED]"
 BEARER_VALUE = "Bearer token-123"
-PAIRING_CODE = "ABC123"
+PAIRING_CODE = "ABC234"
 LOCAL_OPERATOR_ONLY_MESSAGE = "[local operator message omitted]"
 
 

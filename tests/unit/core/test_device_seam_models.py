@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from relab_rpi_cam_models import (
+    PAIRING_CODE_ALPHABET,
+    PAIRING_CODE_LENGTH,
+    PAIRING_CODE_PATTERN,
     DeviceImageUploadAck,
     DevicePreviewThumbnailAck,
     DevicePublicKeyJWK,
     LocalAccessInfo,
     PairingClaimedBootstrap,
+    PairingCode,
     PairingPollResponse,
     PairingRegisterRequest,
     PairingRegisterResponse,
@@ -29,12 +33,30 @@ PAIRING_WS_URL = "wss://backend.example/v1/plugins/rpi-cam/ws/connect"
 BACKEND_OWNED_RELAY_METHOD = "CONNECT"
 BACKEND_OWNED_RELAY_PATH = "relative path checked by runtime"
 RELAY_GET_METHOD = "GET"
+EXPECTED_PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+EXPECTED_PAIRING_CODE_PATTERN = r"^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$"
+VALID_PAIRING_CODE = "ABC234"
+
+
+def test_pairing_code_contract_is_public_and_validates_unambiguous_codes() -> None:
+    """The shared package should be the source of truth for pairing-code validation."""
+    assert PAIRING_CODE_ALPHABET == EXPECTED_PAIRING_CODE_ALPHABET
+    assert PAIRING_CODE_LENGTH == 6
+    assert PAIRING_CODE_PATTERN == EXPECTED_PAIRING_CODE_PATTERN
+    assert TypeAdapter(PairingCode).validate_python(VALID_PAIRING_CODE) == VALID_PAIRING_CODE
+
+
+@pytest.mark.parametrize("code", ["abc234", "ABC230", "ABC23O", "ABC23I", "ABC231", "ABC23", "ABC2345"])
+def test_pairing_code_contract_rejects_ambiguous_or_malformed_codes(code: str) -> None:
+    """The public PairingCode type should reject hard-to-read and malformed codes."""
+    with pytest.raises(ValidationError):
+        TypeAdapter(PairingCode).validate_python(code)
 
 
 def test_pairing_register_request_round_trips() -> None:
     """Pairing register payloads should serialize cleanly across repos."""
     request = PairingRegisterRequest(
-        code="ABC123",
+        code="ABC234",
         rpi_fingerprint="fingerprint-123",
         public_key_jwk=DevicePublicKeyJWK(
             kty="EC",
@@ -49,6 +71,18 @@ def test_pairing_register_request_round_trips() -> None:
     restored = PairingRegisterRequest.model_validate_json(request.model_dump_json())
 
     assert restored == request
+
+
+@pytest.mark.parametrize("code", ["abc234", "ABC230", "ABC23O", "ABC23I", "ABC231", "ABC23", "ABC2345"])
+def test_pairing_register_request_rejects_ambiguous_or_malformed_codes(code: str) -> None:
+    """Pairing codes should stay six friendly, unambiguous characters."""
+    with pytest.raises(ValidationError):
+        PairingRegisterRequest(
+            code=code,
+            rpi_fingerprint="fingerprint-123",
+            public_key_jwk=DevicePublicKeyJWK(kty="EC", crv="P-256", x="x-value", y="y-value", kid="kid-12345"),
+            key_id="kid-12345",
+        )
 
 
 def test_pairing_poll_response_from_claimed_bootstrap() -> None:
@@ -252,7 +286,13 @@ def test_relay_command_envelope_rejects_unbounded_params_and_headers(payload: di
     "payload",
     [
         {"code": "abc123", "expires_in": 600},
-        {"code": "ABC123", "expires_in": 0},
+        {"code": "ABC230", "expires_in": 600},
+        {"code": "ABC23O", "expires_in": 600},
+        {"code": "ABC23I", "expires_in": 600},
+        {"code": "ABC231", "expires_in": 600},
+        {"code": "ABC23", "expires_in": 600},
+        {"code": "ABC2345", "expires_in": 600},
+        {"code": "ABC234", "expires_in": 0},
     ],
 )
 def test_pairing_register_response_rejects_invalid_fields(payload: dict[str, object]) -> None:
