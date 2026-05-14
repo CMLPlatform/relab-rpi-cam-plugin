@@ -40,21 +40,24 @@ Feature packages own their routers, schemas, dependencies, exceptions, and servi
 
 Code that runs outside a request, such as pairing and relay startup, accesses the active runtime through `app/core/runtime_context.py`.
 
+Architecture rewrites should keep this boundary explicit: `Settings` is static bootstrap input, `RuntimeState` is active mutable credential/auth state, and `AppRuntime` owns long-lived services, workers, and task lifecycles. A service should move into `AppRuntime` only when it is process-owned rather than request-local.
+
 ## Lifespan And Bootstrap
 
 Startup is coordinated through `app/core/lifespan.py`, `app/core/bootstrap.py`, and `app/core/settings.py`:
 
 1. Load env-backed `Settings`.
-1. Apply persisted relay credentials from `~/.config/relab/relay_credentials.json`.
+1. Build `AppRuntime` with a `RuntimeState` seeded from settings.
+1. Apply persisted relay credentials from `~/.config/relab/relay_credentials.json` if static relay credentials are absent.
 1. Ensure local and relay-local API keys exist where needed.
-1. Build `AppRuntime` and register it as the active runtime.
+1. Register `AppRuntime` as the active runtime.
 1. Start managed background workers, pairing, and relay tasks according to config.
 
 Shutdown cancels managed tasks and closes camera, relay, and observability resources.
 
 ## Configuration And Runtime State
 
-`Settings` is static operator configuration loaded from `.env`. `RuntimeState` stores values that are generated, persisted, or mutable at runtime, such as relay credentials, local API keys, relay connection state, and derived authorized key snapshots.
+`Settings` is static operator configuration loaded from `.env`. `RuntimeState` stores values that are generated, persisted, or mutable at runtime, such as relay credentials, local API keys, and derived authorized key snapshots. `RelayRuntimeState` is separate and tracks relay connection/activity, not credentials.
 
 Configuration precedence at startup is:
 
