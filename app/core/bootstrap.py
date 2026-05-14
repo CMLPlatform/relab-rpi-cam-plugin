@@ -5,7 +5,6 @@ import logging
 import os
 import secrets
 import tempfile
-from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
 
@@ -29,18 +28,6 @@ _LOCAL_API_KEY_BYTES = 32
 
 def _is_running_in_container() -> bool:
     return Path("/.dockerenv").exists()
-
-
-def _set_authorized_api_keys(runtime_state: RuntimeState, keys: Iterable[str]) -> None:
-    """Replace authorized API keys on runtime state."""
-    runtime_state.replace_authorized_api_keys(set(dict.fromkeys(keys)))
-
-
-def _add_authorized_api_key(runtime_state: RuntimeState, key: str) -> None:
-    """Atomically add an authorized API key to runtime state."""
-    if key in runtime_state.authorized_api_keys:
-        return
-    _set_authorized_api_keys(runtime_state, {*runtime_state.authorized_api_keys, key})
 
 
 def apply_relay_credentials(runtime_state: RuntimeState) -> None:
@@ -151,7 +138,7 @@ def apply_local_mode(runtime_state: RuntimeState, app_settings: Settings = setti
 
     runtime_state.set_local_api_key(local_api_key)
     if app_settings.local_mode_enabled:
-        _add_authorized_api_key(runtime_state, local_api_key)
+        runtime_state.add_authorized_api_key(local_api_key)
         logger.info("Local mode active — direct connection API key loaded")
     else:
         logger.info("Local API key loaded (local_mode_enabled=False — direct auth disabled)")
@@ -182,7 +169,7 @@ def set_runtime_relay_credentials(
         relay_key_id=relay_key_id,
         relay_private_key_pem=relay_private_key_pem,
     )
-    _add_authorized_api_key(runtime_state, runtime_state.local_relay_api_key)
+    runtime_state.add_authorized_api_key(runtime_state.local_relay_api_key)
 
 
 def bootstrap_runtime_state(runtime_state: RuntimeState, app_settings: Settings = settings) -> None:

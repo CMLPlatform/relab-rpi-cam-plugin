@@ -225,9 +225,9 @@ class TestSettingsDefaults:
         assert s.camera_device_num == 0
 
     def test_default_relay_disabled(self) -> None:
-        """By default, the relay should be disabled since it requires explicit configuration to work securely."""
+        """By default, static config should not include relay credentials."""
         s = Settings()
-        assert s.relay_enabled is False
+        assert s.has_static_relay_credentials is False
 
     def test_observability_disabled_by_default(self) -> None:
         """Tracing should stay opt-in by default."""

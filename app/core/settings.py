@@ -202,7 +202,8 @@ class Settings(BaseSettings):
     def _parse_local_origins(cls, v: object) -> list[str]:
         return _parse_list_env(v)
 
-    # WebSocket relay (auto-enabled when all three fields are set)
+    # WebSocket relay bootstrap seed. Runtime-owned relay credentials may later
+    # come from the persisted credentials file instead.
     relay_backend_url: str = ""  # wss://your-backend/v1/plugins/rpi-cam/ws/connect
     relay_camera_id: str = ""
     relay_auth_scheme: str = "device_assertion"
@@ -222,8 +223,8 @@ class Settings(BaseSettings):
     max_capture_file_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
 
     @property
-    def relay_enabled(self) -> bool:
-        """Relay is enabled when the platform device credential is configured."""
+    def has_static_relay_credentials(self) -> bool:
+        """Return whether env/static config contains a complete relay credential."""
         return bool(
             self.relay_backend_url
             and self.relay_camera_id

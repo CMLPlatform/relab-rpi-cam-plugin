@@ -6,7 +6,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from app.core.bootstrap import _add_authorized_api_key, apply_relay_credentials, set_runtime_relay_credentials
+from app.core.bootstrap import apply_relay_credentials, set_runtime_relay_credentials
 from app.core.runtime_state import RuntimeState
 from app.core.settings import Settings
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL
@@ -34,13 +34,13 @@ RELAY_PRIVATE_KEY_PEM = fresh_p256_pem()
 ENV_RELAY_PRIVATE_KEY_PEM = fresh_p256_pem()
 
 
-class TestRelayEnabledProperty:
-    """Test for the  `Settings.relay_enabled` property."""
+class TestStaticRelayCredentialsProperty:
+    """Test the static relay bootstrap credential helper."""
 
     def test_disabled_by_default(self) -> None:
         """Relay should be disabled if no fields are set."""
         s = Settings()
-        assert s.relay_enabled is False
+        assert s.has_static_relay_credentials is False
 
     def test_enabled_when_all_fields_set(self) -> None:
         """Relay should be enabled if all required fields are set."""
@@ -51,7 +51,7 @@ class TestRelayEnabledProperty:
             relay_key_id=RELAY_KEY_ID,
             relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
-        assert s.relay_enabled is True
+        assert s.has_static_relay_credentials is True
 
     def test_disabled_when_partial(self) -> None:
         """Partial relay bootstrap config should be rejected."""
@@ -214,7 +214,7 @@ class TestAuthorizedApiKeysMutation:
         runtime_state = RuntimeState(authorized_api_keys=frozenset({"one", "two"}))
         original_keys = runtime_state.authorized_api_keys
 
-        _add_authorized_api_key(runtime_state, "three")
+        runtime_state.add_authorized_api_key("three")
 
         assert runtime_state.authorized_api_keys == frozenset({"one", "two", "three"})
         assert runtime_state.authorized_api_keys is not original_keys
@@ -224,6 +224,6 @@ class TestAuthorizedApiKeysMutation:
         runtime_state = RuntimeState(authorized_api_keys=frozenset({"one", "two"}))
         original_keys = runtime_state.authorized_api_keys
 
-        _add_authorized_api_key(runtime_state, "two")
+        runtime_state.add_authorized_api_key("two")
 
         assert runtime_state.authorized_api_keys is original_keys
