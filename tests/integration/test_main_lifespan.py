@@ -66,6 +66,7 @@ class TestLifespan:
         self,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
+        runtime: AppRuntime,
     ) -> None:
         """The startup banner should not advertise a container-looking mDNS hostname."""
         app = FastAPI()
@@ -84,6 +85,8 @@ class TestLifespan:
         assert STARTUP_BANNER_SETUP_URL in caplog.text
         assert STARTUP_BANNER_PAIRING_NOTE not in caplog.text
         assert LOCAL_DNS_SUFFIX not in caplog.text
+        assert cast("FakePairingService", runtime.pairing_service).run_calls == 0
+        assert cast("FakeRelayService", runtime.relay_service).run_calls == 0
 
     async def test_relay_enabled_starts_relay_and_cleans_up(
         self,
@@ -117,6 +120,8 @@ class TestLifespan:
         await _run_lifespan_once(app)
 
         assert setup_calls == [settings.image_path]
+        assert cast("FakeRelayService", runtime.relay_service).run_calls == 1
+        assert cast("FakePairingService", runtime.pairing_service).run_calls == 0
         assert {task.get_name() for task in runtime.background_tasks | runtime.recurring_tasks} == set()
         camera_manager = cast("StubCameraManager", runtime.camera_manager)
         assert camera_manager.cleanup_calls == [True]
@@ -151,6 +156,8 @@ class TestLifespan:
         assert PAIRING_MODE_LOG in caplog.text
         assert STARTUP_BANNER_PAIRING_NOTE in caplog.text
         pairing_service = cast("FakePairingService", runtime.pairing_service)
+        assert pairing_service.run_calls == 1
+        assert cast("FakeRelayService", runtime.relay_service).run_calls == 1
         camera_manager = cast("StubCameraManager", runtime.camera_manager)
         assert pairing_service.log_calls == 1
         assert camera_manager.cleanup_calls == [True]
