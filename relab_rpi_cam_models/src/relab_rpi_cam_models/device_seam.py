@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from http import HTTPMethod
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 from urllib.parse import unquote
@@ -178,24 +177,26 @@ RELAY_WS_TEXT_FRAME_LIMIT_BYTES = 64 * 1024
 RELAY_COMMAND_FORBIDDEN_DETAIL = "Relay command is not allowed."
 """Canonical detail returned when a relay command is outside the allowlist."""
 
-_RELAY_ALLOWED_PATHS_BY_METHOD: dict[HTTPMethod, frozenset[str]] = {
-    HTTPMethod.DELETE: frozenset({"/pairing", "/streams/youtube"}),
-    HTTPMethod.GET: frozenset(
-        {
-            "/camera",
-            "/camera/controls",
-            "/streams/youtube",
-            "/system/local-access",
-            "/system/telemetry",
-        }
-    ),
-    HTTPMethod.PATCH: frozenset({"/camera/controls"}),
-    HTTPMethod.POST: frozenset({"/captures", "/preview/start", "/preview/stop", "/streams/youtube"}),
-    HTTPMethod.PUT: frozenset({"/camera/focus"}),
-}
+RELAY_ALLOWED_EXACT_COMMANDS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("DELETE", "/pairing"),
+        ("DELETE", "/streams/youtube"),
+        ("GET", "/camera"),
+        ("GET", "/camera/controls"),
+        ("GET", "/streams/youtube"),
+        ("GET", "/system/local-access"),
+        ("GET", "/system/telemetry"),
+        ("PATCH", "/camera/controls"),
+        ("POST", "/captures"),
+        ("POST", "/preview/start"),
+        ("POST", "/preview/stop"),
+        ("POST", "/streams/youtube"),
+        ("PUT", "/camera/focus"),
+    }
+)
 """Exact HTTP-like relay commands permitted across the backend<->Pi seam."""
 
-_RELAY_ALLOWED_PATH_PREFIXES_BY_METHOD: dict[HTTPMethod, tuple[str, ...]] = {HTTPMethod.GET: ("/preview/hls/",)}
+RELAY_ALLOWED_PREFIX_COMMANDS: frozenset[tuple[str, str]] = frozenset({("GET", "/preview/hls/")})
 """Prefix-based relay commands. Prefixes must end in '/' to avoid sibling matches."""
 
 
@@ -250,16 +251,13 @@ def relay_command_is_allowed(method: str, path: str) -> bool:
     if normalized_path is None:
         return False
 
-    try:
-        normalized_method = HTTPMethod(method.upper())
-    except ValueError:
-        return False
-    if normalized_path in _RELAY_ALLOWED_PATHS_BY_METHOD.get(normalized_method, frozenset()):
+    method = method.upper()
+    if (method, normalized_path) in RELAY_ALLOWED_EXACT_COMMANDS:
         return True
 
     return any(
-        normalized_path.startswith(prefix)
-        for prefix in _RELAY_ALLOWED_PATH_PREFIXES_BY_METHOD.get(normalized_method, ())
+        method == allowed_method and normalized_path.startswith(prefix)
+        for allowed_method, prefix in RELAY_ALLOWED_PREFIX_COMMANDS
     )
 
 

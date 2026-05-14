@@ -50,8 +50,8 @@ The supported public API is intentionally small:
 - `StreamView`
 - `StreamMetadata`
 - `ImageCaptureResponse`
-- private backend\<->plugin device seam models for pairing, relay, local access,
-  and upload acknowledgements
+- private backend\<->plugin device seam models and relay allowlist policy for
+  pairing, relay, local access, and upload acknowledgements
 - image metadata DTOs used inside those responses
 
 This package does not own:

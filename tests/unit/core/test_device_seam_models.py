@@ -9,6 +9,8 @@ from relab_rpi_cam_models import (
     PAIRING_CODE_ALPHABET,
     PAIRING_CODE_LENGTH,
     PAIRING_CODE_PATTERN,
+    RELAY_ALLOWED_EXACT_COMMANDS,
+    RELAY_ALLOWED_PREFIX_COMMANDS,
     DeviceImageUploadAck,
     DevicePreviewThumbnailAck,
     DevicePublicKeyJWK,
@@ -36,6 +38,11 @@ RELAY_GET_METHOD = "GET"
 EXPECTED_PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 EXPECTED_PAIRING_CODE_PATTERN = r"^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$"
 VALID_PAIRING_CODE = "ABC234"
+
+ALLOWED_RELAY_COMMAND_EXAMPLES = sorted(
+    RELAY_ALLOWED_EXACT_COMMANDS
+    | frozenset((method, f"{prefix}cam-preview/index.m3u8") for method, prefix in RELAY_ALLOWED_PREFIX_COMMANDS)
+)
 
 
 def test_pairing_code_contract_is_public_and_validates_unambiguous_codes() -> None:
@@ -156,20 +163,16 @@ def test_relay_helpers_build_envelopes_and_filter_safe_headers() -> None:
 
 @pytest.mark.parametrize(
     ("method", "path"),
-    [
-        ("GET", "/camera"),
-        ("GET", "/camera/controls"),
-        ("PATCH", "/camera/controls"),
-        ("PUT", "/camera/focus"),
-        ("POST", "/preview/start"),
-        ("POST", "/preview/stop"),
-        ("GET", "/camera%2Fcontrols"),
-        ("GET", "/preview/hls/cam-preview/index.m3u8"),
-    ],
+    ALLOWED_RELAY_COMMAND_EXAMPLES,
 )
 def test_relay_command_policy_accepts_shared_allowlist(method: str, path: str) -> None:
     """Backend and Pi should agree on every relay command that may cross the seam."""
     assert relay_command_is_allowed(method, path)
+
+
+def test_relay_command_policy_decodes_paths_before_allowlist_check() -> None:
+    """Encoded paths should normalize before matching the shared allowlist."""
+    assert relay_command_is_allowed("GET", "/camera%2Fcontrols")
 
 
 @pytest.mark.parametrize(
