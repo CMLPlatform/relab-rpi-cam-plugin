@@ -418,7 +418,7 @@ class TestPairingState:
         """Endpoint should return the current pairing state from the runtime."""
         resp = await unauthed_client.get("/pairing/state")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "waiting", "relay_enabled": False}
+        assert resp.json() == {"status": "waiting", "mode": "pairing"}
 
     async def test_reflects_paired_state(self, unauthed_client: AsyncClient) -> None:
         """When the pairing service reports paired, the endpoint should reflect that."""
@@ -431,7 +431,7 @@ class TestPairingState:
             relay_private_key_pem="pem",
         )
         resp = await unauthed_client.get("/pairing/state")
-        assert resp.json() == {"status": "paired", "relay_enabled": True}
+        assert resp.json() == {"status": "paired", "mode": "paired"}
 
 
 class TestUnpair:

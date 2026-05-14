@@ -275,7 +275,7 @@ function setupPairingStatePolling() {
   if (!stateEl) {
     return;
   }
-  const initialRelayEnabled = stateEl.dataset.initialRelayEnabled === "true";
+  const initialMode = stateEl.dataset.initialMode || "";
   const initialStatus = stateEl.dataset.initialPairingStatus || "";
 
   let reloading = false;
@@ -297,7 +297,7 @@ function setupPairingStatePolling() {
         return;
       }
       const data = await resp.json();
-      if (data.relay_enabled !== initialRelayEnabled || data.status !== initialStatus) {
+      if (data.mode !== initialMode || data.status !== initialStatus) {
         reload();
       }
     } catch {

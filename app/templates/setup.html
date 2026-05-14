@@ -24,7 +24,7 @@
 <main
   class="setup-shell"
   data-pairing-state
-  data-initial-relay-enabled="{{ 'true' if relay_enabled else 'false' }}"
+  data-initial-mode="{{ mode }}"
   data-initial-pairing-status="{{ pairing.status }}"
 >
   <section class="setup-hero">
@@ -35,7 +35,7 @@
 
   <section class="setup-status">
     <div class="setup-status-grid">
-      {% if relay_enabled or pairing.status == status_paired %}
+      {% if mode == 'paired' or pairing.status == status_paired %}
       <div class="status-chip status-chip--success">Paired</div>
       {% elif pairing.status in ('waiting', 'registering') and pairing.code %}
       <div class="status-chip status-chip--live">Pairing ready</div>
@@ -47,7 +47,7 @@
 
       <h2>Connection status</h2>
 
-      {% if relay_enabled %}
+      {% if mode == 'paired' %}
       <div class="setup-state-banner setup-state-banner--success">
         <div class="setup-state-banner__copy">
           <p class="online">Paired and online.</p>
@@ -167,7 +167,7 @@
               {% endif %}
               {% if pairing.status == status_error %}
               <span class="setup-debug__hint">{{ pairing.error or 'Backend reachable, but pairing is failing.' }}</span>
-              {% elif not relay_enabled and pairing_backend_reachable %}
+              {% elif mode != 'paired' and pairing_backend_reachable %}
               <span class="setup-debug__hint">Backend responds, so pairing should start automatically.</span>
               {% endif %}
             </span>
@@ -195,10 +195,8 @@
         <summary>
           <div class="setup-advanced__summary-main">
             <span>
-              {% if local_mode_enabled and has_local_api_key %}
+              {% if local_auth_enabled %}
               <span class="status-chip status-chip--live">Local access</span>
-              {% elif local_mode_enabled %}
-              <span class="status-chip status-chip--muted">Local access</span>
               {% else %}
               <span class="status-chip status-chip--muted">Local access disabled</span>
               {% endif %}
@@ -206,7 +204,7 @@
             <span class="setup-advanced__summary-copy">Direct LAN access for browser, app, and scripts.</span>
           </div>
           <span class="setup-advanced__summary">
-            {% if local_mode_enabled %}
+            {% if local_auth_enabled %}
             Available
             {% else %}
             Unavailable
