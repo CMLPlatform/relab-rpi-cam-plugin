@@ -543,20 +543,32 @@ class TestConfigBootstrapHelpers:
         assert runtime_state.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL_UNSECURE
         assert runtime_state.relay_enabled is True
 
-    def test_bootstrap_runtime_state_logs_warnings_for_disabled_local_mode_and_loopback_pairing_backend(
+    def test_bootstrap_runtime_state_logs_warning_for_disabled_local_mode(
         self,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Bootstrap should emit the operator-facing warnings for risky-but-valid setups."""
+        """Bootstrap should warn when direct local auth is disabled but the key still exists."""
         runtime_state = RuntimeState(local_api_key="existing-key")
-        app_settings = Settings(local_mode_enabled=False, pairing_backend_url="http://localhost:8000")
+        app_settings = Settings(local_mode_enabled=False)
         monkeypatch.setattr(config_mod, "apply_relay_credentials", lambda _state: None)
         monkeypatch.setattr(config_mod, "apply_local_mode", lambda _state, _settings: None)
-        monkeypatch.setattr(config_mod, "_is_running_in_container", lambda: True)
 
         with caplog.at_level("WARNING"):
             config_mod.bootstrap_runtime_state(runtime_state, app_settings)
 
         assert LOCAL_MODE_DISABLED_WARNING in caplog.text
-        assert PAIRING_LOOPBACK_WARNING in caplog.text
+
+    def test_bootstrap_runtime_state_rejects_production_loopback_pairing_backend_in_container(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Production containers should fail clearly instead of rewriting loopback URLs."""
+        runtime_state = RuntimeState()
+        app_settings = Settings(pairing_backend_url="http://localhost:8000")
+        monkeypatch.setattr(config_mod, "apply_relay_credentials", lambda _state: None)
+        monkeypatch.setattr(config_mod, "apply_local_mode", lambda _state, _settings: None)
+        monkeypatch.setattr(config_mod, "_is_running_in_container", lambda: True)
+
+        with pytest.raises(RuntimeError, match=PAIRING_LOOPBACK_WARNING):
+            config_mod.bootstrap_runtime_state(runtime_state, app_settings)

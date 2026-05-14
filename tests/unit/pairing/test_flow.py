@@ -54,6 +54,9 @@ PAIRING_READ_WARNING = "Failed to read"
 PAIRING_DELETE_WARNING = "Failed to delete relay credentials file"
 HTTP_502 = "HTTP 502"
 HTML_DOCTYPE_TAG = "<!DOCTYPE html>"
+APP_ENV_DEVELOPMENT = "development"
+APP_ENV_PRODUCTION = "production"
+PAIRING_LOOPBACK_ERROR = "PAIRING_BACKEND_URL uses loopback inside a container"
 
 
 class FakeResponse:
@@ -395,7 +398,8 @@ class TestRunPairing:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Loopback pairing backends should target the Docker host when containerized."""
+        """Development loopback pairing backends should target the Docker host when containerized."""
+        monkeypatch.setattr(settings, "app_env", APP_ENV_DEVELOPMENT)
         monkeypatch.setattr(settings, "pairing_backend_url", "http://localhost:8011")
         monkeypatch.setattr(pairing_mod, "_is_running_in_container", lambda: True)
         seen: list[str] = []
@@ -414,6 +418,18 @@ class TestRunPairing:
         await service.run_forever(AsyncMock())
 
         assert seen == ["http://host.docker.internal:8011"]
+
+    async def test_rejects_production_loopback_backend_in_container(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Production should fail closed instead of silently rewriting loopback backends."""
+        monkeypatch.setattr(settings, "app_env", APP_ENV_PRODUCTION)
+        monkeypatch.setattr(settings, "pairing_backend_url", "http://localhost:8011")
+        monkeypatch.setattr(pairing_mod, "_is_running_in_container", lambda: True)
+
+        with pytest.raises(RuntimeError, match=PAIRING_LOOPBACK_ERROR):
+            await pairing_mod.PairingService().run_forever(AsyncMock())
 
     async def test_retries_after_http_status_error(
         self,

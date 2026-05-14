@@ -28,6 +28,10 @@ IMAGE_SINK_S3 = "s3"
 DEFAULT_PAIRING_BACKEND_URL = "https://api.cml-relab.org"
 APP_ENV_DEVELOPMENT = "development"
 APP_ENV_PRODUCTION = "production"
+PAIRING_LOOPBACK_CONTAINER_ERROR = (
+    "PAIRING_BACKEND_URL uses loopback inside a container. "
+    "Set APP_ENV=development for the host.docker.internal rewrite, or configure a reachable backend URL."
+)
 SECURE_SESSION_COOKIE_PREFIX = "__Host-"
 type HttpFieldName = Annotated[
     str,

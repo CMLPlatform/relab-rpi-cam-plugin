@@ -10,9 +10,11 @@ from pathlib import Path
 
 from app.core.runtime_state import RuntimeState
 from app.core.settings import (
+    APP_ENV_DEVELOPMENT,
     IMAGE_SINK_AUTO,
     IMAGE_SINK_BACKEND,
     IMAGE_SINK_S3,
+    PAIRING_LOOPBACK_CONTAINER_ERROR,
     Settings,
     is_loopback_url,
     settings,
@@ -174,18 +176,20 @@ def set_runtime_relay_credentials(
 
 def bootstrap_runtime_state(runtime_state: RuntimeState, app_settings: Settings = settings) -> None:
     """Apply runtime bootstrap precedence and emit startup-facing config logs."""
+    if (
+        app_settings.pairing_backend_url
+        and is_loopback_url(app_settings.pairing_backend_url)
+        and _is_running_in_container()
+    ):
+        if app_settings.app_env != APP_ENV_DEVELOPMENT:
+            raise RuntimeError(PAIRING_LOOPBACK_CONTAINER_ERROR)
+        logger.warning(
+            "PAIRING_BACKEND_URL uses loopback inside a container; pairing will rewrite it to host.docker.internal."
+        )
     apply_relay_credentials(runtime_state)
     apply_local_mode(runtime_state, app_settings)
     logger.info("Image sink resolved to %s", resolve_image_sink_choice(app_settings))
     if not app_settings.local_mode_enabled and runtime_state.local_api_key:
         logger.warning(
             "LOCAL_MODE_ENABLED=false but a local API key exists; the key remains available for relay bootstrap only."
-        )
-    if (
-        app_settings.pairing_backend_url
-        and is_loopback_url(app_settings.pairing_backend_url)
-        and _is_running_in_container()
-    ):
-        logger.warning(
-            "PAIRING_BACKEND_URL uses loopback inside a container; pairing will rewrite it to host.docker.internal."
         )

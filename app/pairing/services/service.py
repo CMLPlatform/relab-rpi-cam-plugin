@@ -28,8 +28,8 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.core.bootstrap import set_runtime_relay_credentials
 from app.core.runtime_context import get_active_runtime
+from app.core.settings import APP_ENV_DEVELOPMENT, PAIRING_LOOPBACK_CONTAINER_ERROR, validate_relay_backend_url
 from app.core.settings import settings as app_settings
-from app.core.settings import validate_relay_backend_url
 from app.observability.logging import build_log_extra
 from app.pairing.services.client import PairingClient
 from app.pairing.services.credentials import (
@@ -250,6 +250,8 @@ def _normalize_pairing_backend_base_url(base_url: str) -> str:
     parsed = urlparse(base_url)
     if parsed.hostname not in _LOOPBACK_HOSTS or not _is_running_in_container():
         return base_url
+    if app_settings.app_env != APP_ENV_DEVELOPMENT:
+        raise RuntimeError(PAIRING_LOOPBACK_CONTAINER_ERROR)
 
     rewritten = parsed._replace(netloc=parsed.netloc.replace(parsed.hostname, _DOCKER_HOST_ALIAS, 1))
     normalized = urlunparse(rewritten)
