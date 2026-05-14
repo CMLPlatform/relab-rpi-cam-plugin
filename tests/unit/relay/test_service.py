@@ -25,7 +25,7 @@ from app.relay.service import (
     _send_error,
 )
 from app.relay.state import RelayRuntimeState
-from relab_rpi_cam_models import RELAY_WS_TEXT_FRAME_LIMIT_BYTES
+from relab_rpi_cam_models import RELAY_COMMAND_FORBIDDEN_DETAIL, RELAY_WS_TEXT_FRAME_LIMIT_BYTES
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
 if TYPE_CHECKING:
@@ -56,7 +56,7 @@ PREVIEW_HLS_SEGMENT_PATH = "/preview/hls/cam-preview/seg.mp4"
 BLOCKED_RELAY_PATH = "/auth/login"
 BLOCKED_RELATIVE_RELAY_PATH = "auth/login"
 BLOCKED_RELAY_METHOD = "POST"
-BLOCKED_RELAY_DETAIL = "Relay command is not allowed."
+BLOCKED_RELAY_DETAIL = RELAY_COMMAND_FORBIDDEN_DETAIL
 SECURITY_RELAY_FORBIDDEN_EVENT = "relay.command.forbidden"
 SECURITY_RELAY_MALFORMED_EVENT = "relay.command.malformed"
 SECURITY_RELAY_RATE_LIMIT_EVENT = "relay.command.rate_limit"
