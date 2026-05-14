@@ -146,6 +146,8 @@ Pairing rotation replaces the active code without deleting existing relay creden
 
 New relay-reachable routes should be intentionally added to the allowlist and covered by tests.
 
+The relay allowlist is part of the private backend-to-plugin protocol. It belongs in the shared contract package (`relab_rpi_cam_models`) with the relay envelopes, not duplicated in plugin runtime code. Breaking relay protocol changes are allowed when they simplify the seam, but they require a shared package version bump and coordinated backend/plugin updates.
+
 ## Camera, Preview, And Capture
 
 `app/camera/services/manager.py` coordinates camera operations behind a lock. The active backend is selected through the camera backend interface; production uses Picamera2/libcamera and tests use fakes.
@@ -181,4 +183,4 @@ Tracing setup lives in `app/observability/tracing.py`; logging and request-id co
 
 ## Shared Contract Package
 
-`relab_rpi_cam_models` contains the backend-to-plugin device DTOs. It validates pairing bootstrap payloads, local access bootstrap data, upload acknowledgements, and relay command wire shape. Command authorization policy and Pi receiver allowlists live in the main platform backend. Plugin runtime logic stays in `app/`; frontend code consumes backend OpenAPI rather than importing device DTOs directly.
+`relab_rpi_cam_models` contains the backend-to-plugin device DTOs. It validates pairing bootstrap payloads, local access bootstrap data, upload acknowledgements, relay command wire shape, and the shared relay command allowlist. Backend and plugin runtime code enforce that shared policy; frontend code consumes backend OpenAPI rather than importing device DTOs directly.
