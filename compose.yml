@@ -20,6 +20,11 @@ x-runtime-hardening: &runtime-hardening
     - no-new-privileges:true
   cap_drop:
     - ALL
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
 
 services:
   app:
@@ -41,11 +46,6 @@ services:
     env_file:
       - path: .env
         required: false
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "3"
     # Host networking lets the app reach MediaMTX (RTSP :8554, HLS :8888,
     # control API :9997) over loopback, keeping those listeners localhost-only
     # without any ``host.docker.internal`` bridge gymnastics. Port 8018 is bound
@@ -82,11 +82,6 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "3"
     network_mode: host
 
   alloy:
@@ -135,11 +130,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "3"
     profiles:
       - standalone
 
