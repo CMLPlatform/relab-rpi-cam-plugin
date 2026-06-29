@@ -168,9 +168,7 @@ Capture requests produce image bytes and bounded metadata, then pass them to the
 
 `IMAGE_SINK=auto` infers the sink from config. Explicit sink configuration fails loudly when required fields are missing. The upload queue is sink-agnostic: failed synchronous uploads are persisted to disk, retried with exponential backoff, and dead-lettered after exhaustion. Queue capacity and dead-letter retention settings are the single retention policy for failed local captures.
 
-Capture IDs and filenames are generated internally. Current captures are `.jpg` / `image/jpeg`, bounded by `MAX_CAPTURE_PIXELS` and `MAX_CAPTURE_FILE_BYTES` before upload or queueing. Persisted queue and thumbnail files are validated before retry or serving.
-
-Captured images, queue entries, dead letters, and cached preview thumbnails are sensitive device data. Successful captures remove their temporary local JPEG after upload; runtime cleanup also covers cached preview thumbnails. Standalone S3 public URL generation depends on operator-controlled bucket and proxy policy, so public object URLs are an explicit standalone storage choice rather than a backend-paired privacy boundary.
+Capture IDs and filenames are generated internally. Current captures are `.jpg` / `image/jpeg`, bounded by `MAX_CAPTURE_PIXELS` and `MAX_CAPTURE_FILE_BYTES` before upload or queueing. Persisted queue and thumbnail files are validated before retry or serving. See [Sensitive Data](#sensitive-data) for retention and privacy boundaries.
 
 ## Observability
 

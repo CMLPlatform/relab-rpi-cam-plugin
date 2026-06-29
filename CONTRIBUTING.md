@@ -155,11 +155,6 @@ Direct dev logs:
 just dev
 ```
 
-Helpful local surfaces:
-
-- Swagger UI: `http://localhost:8018/docs`
-- setup page: `http://localhost:8018/setup`
-
 Common debugging settings:
 
 - `DEBUG=true`

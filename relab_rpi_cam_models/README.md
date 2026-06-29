@@ -65,12 +65,6 @@ This package does not own:
 
 Treat anything outside the documented DTOs as private and subject to change.
 
-In practical terms:
-
-- backend OpenAPI remains the public/frontend contract
-- `relab_rpi_cam_models` owns only the private backend\<->plugin device seam
-- frontend code should consume backend-generated types, not these private DTOs
-
 ## License
 
 AGPL-3.0-or-later
