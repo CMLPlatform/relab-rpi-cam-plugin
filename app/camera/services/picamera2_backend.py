@@ -37,6 +37,7 @@ from app.observability.logging import build_log_extra
 if TYPE_CHECKING:
     # libcamera's `controls` module isn't available to the typechecker
     # in all environments; treat it as Any for static checks.
+    from PIL.Image import Image as PilImage
     from relab_rpi_cam_models.stream import StreamMode
 
     controls: Any
@@ -89,6 +90,11 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
         """The live Picamera2 instance, or ``None`` if not yet opened."""
         return self._camera
 
+    @property
+    def is_open(self) -> bool:
+        """Whether the camera pipeline has been initialised."""
+        return self._camera is not None
+
     async def open(self, mode: CameraMode) -> None:
         """Initialise the persistent pipeline on first call; idempotent thereafter."""
         if self._camera is None:
@@ -138,6 +144,38 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
             camera_properties=camera.camera_properties,
             capture_metadata=capture_metadata,
         )
+
+    async def capture_preview_frame(self) -> PilImage:
+        """Tap the running main stream for a low-cost preview frame.
+
+        Opens VIDEO mode first if the camera isn't up yet (idempotent when running).
+        """
+        await self.open(CameraMode.VIDEO)
+        camera = self._require_camera()
+        return await asyncio.to_thread(camera.capture_image, "main")
+
+    async def start_lores_encoder(self, encoder: object, output: object) -> None:
+        """Attach ``encoder`` to the lores stream and wait for it to start."""
+        camera = self._require_camera()
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(camera.start_encoder, encoder, output, name="lores"),
+                timeout=30.0,
+            )
+        except TimeoutError as exc:
+            msg = "Preview pipeline ffmpeg startup timeout"
+            raise RuntimeError(msg) from exc
+        except (OSError, RuntimeError) as exc:
+            msg = f"Preview pipeline failed to start: {exc}"
+            raise RuntimeError(msg) from exc
+
+    async def stop_lores_encoder(self, encoder: object) -> None:
+        """Detach the lores encoder."""
+        camera = self._require_camera()
+        try:
+            await asyncio.to_thread(camera.stop_encoder, encoder)
+        except (OSError, RuntimeError) as exc:
+            logger.warning("Preview pipeline stop had a non-fatal error: %s", exc, extra=build_log_extra())
 
     async def start_stream(
         self,

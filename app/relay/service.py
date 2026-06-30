@@ -156,8 +156,6 @@ async def _iter_websocket_connections(url: str) -> AsyncIterator[ClientConnectio
             )
             await asyncio.sleep(delay)
             continue
-        else:
-            delays = None
 
 
 async def _receive_loop(
@@ -342,7 +340,7 @@ async def _handle_command(ws: ClientConnection, http: httpx.AsyncClient, msg: di
     if response.status_code == 403:
         logger.warning("Relay received 403 from local API — check that local_relay_api_key is set correctly")
 
-    content_type = response.headers.get("content-type", "")
+    content_type = response.headers.get("content-type")
     if relay_content_type_is_binary(content_type):
         # Send JSON header first, then binary frame
         header = RelayResponseEnvelope(

@@ -96,12 +96,12 @@ async def _wake_preview_encoder(
     if not hls_path.startswith(_PREVIEW_HLS_PREFIX) or pipeline.is_running:
         return
 
-    camera = camera_manager.backend.camera
-    if camera is None:
+    backend = camera_manager.backend
+    if not backend.is_open:
         return
 
     try:
-        await pipeline.start(camera)
+        await pipeline.start(backend)
     except RuntimeError as exc:
         # Leave the response path to report MediaMTX's current state. The next
         # playlist poll will retry after the sleeper has seen the HLS activity.
@@ -131,11 +131,11 @@ async def start_preview(
             ),
         )
         raise HTTPException(status_code=403, detail="Preview control is only available from the local network")
-    camera = camera_manager.backend.camera
-    if camera is None:
+    backend = camera_manager.backend
+    if not backend.is_open:
         raise HTTPException(status_code=503, detail="Camera not ready")
     try:
-        await pipeline.start(camera)
+        await pipeline.start(backend)
     except RuntimeError as exc:
         logger.warning("Failed to start preview encoder: %s", exc, extra=build_log_extra())
         raise HTTPException(status_code=503, detail=client_error_detail("Preview encoder failed to start")) from exc
@@ -163,10 +163,10 @@ async def stop_preview(
             ),
         )
         raise HTTPException(status_code=403, detail="Preview control is only available from the local network")
-    camera = camera_manager.backend.camera
-    if camera is not None and pipeline.is_running:
+    backend = camera_manager.backend
+    if backend.is_open and pipeline.is_running:
         try:
-            await pipeline.stop(camera)
+            await pipeline.stop(backend)
         except RuntimeError as exc:
             logger.warning("Failed to stop preview encoder: %s", exc, extra=build_log_extra())
     await thumbnail_worker.refresh_once(reason="preview-stop", upload=False)

@@ -51,7 +51,7 @@ def governor(pipeline: MagicMock) -> ThermalGovernor:
         sustain_drop_s=0.0,
         sustain_restore_s=0.0,
     )
-    gov._camera_getter = MagicMock
+    gov._backend = MagicMock(is_open=True)
     return gov
 
 
@@ -145,7 +145,7 @@ class TestTick:
 class TestLifecycle:
     """Runtime-owned lifecycle should be clean and cancellable."""
 
-    async def test_run_forever_requires_camera_getter(
+    async def test_run_forever_requires_configure(
         self,
         pipeline: MagicMock,
     ) -> None:
@@ -164,7 +164,7 @@ class TestLifecycle:
         monkeypatch.setattr(thermal_governor_mod, "collect_telemetry", AsyncMock(return_value=_snapshot(50.0)))
 
         gov = ThermalGovernor(pipeline, poll_interval_s=0.01, sustain_drop_s=0.0, sustain_restore_s=0.0)
-        gov.configure(camera_getter=MagicMock())
+        gov.configure(backend=MagicMock(is_open=True))
         task = asyncio.create_task(gov.run_forever())
 
         await asyncio.sleep(0.05)

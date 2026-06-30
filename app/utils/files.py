@@ -1,6 +1,7 @@
 """Temporary file utilities."""
 
 import asyncio
+import contextlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -32,6 +33,12 @@ async def clear_directory(path: Path, *, time_to_live_s: int | None = None) -> N
             file.unlink()
 
     await asyncio.to_thread(_clear)
+
+
+def unlink_quiet(path: Path) -> None:
+    """Unlink a file, ignoring FileNotFoundError."""
+    with contextlib.suppress(FileNotFoundError):
+        path.unlink()
 
 
 async def cleanup_images() -> None:

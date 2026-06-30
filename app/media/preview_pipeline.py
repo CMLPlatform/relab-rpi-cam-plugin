@@ -26,13 +26,14 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Protocol, cast
 
-from app.camera.services.hardware_protocols import Picamera2Like
 from app.camera.services.hardware_stubs import FfmpegOutputStub, H264EncoderStub
 from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:
     from picamera2.encoders import H264Encoder
     from picamera2.outputs import FfmpegOutput
+
+    from app.camera.services.backend import CameraBackend
 else:
     try:
         from picamera2.encoders import H264Encoder
@@ -85,19 +86,19 @@ class PreviewPipelineManager:
         """Whether the encoder is attached to the lores stream."""
         return self._encoder is not None
 
-    async def start(self, camera: Picamera2Like) -> None:
+    async def start(self, backend: CameraBackend) -> None:
         """Start the always-on lores preview encoder. Idempotent."""
         async with self._lock:
             if self._encoder is None:
-                await self._start(camera)
+                await self._start(backend)
 
-    async def stop(self, camera: Picamera2Like) -> None:
+    async def stop(self, backend: CameraBackend) -> None:
         """Stop the lores preview encoder (used on cleanup/shutdown)."""
         async with self._lock:
             if self._encoder is not None:
-                await self._stop(camera)
+                await self._stop(backend)
 
-    async def set_bitrate(self, camera: Picamera2Like, bitrate: int) -> None:
+    async def set_bitrate(self, backend: CameraBackend, bitrate: int) -> None:
         """Swap the active encoder with one at a new bitrate.
 
         Used by the thermal governor: when the Pi runs hot, drop the preview
@@ -110,19 +111,16 @@ class PreviewPipelineManager:
             if self._encoder is None:
                 return
             logger.info("Reconfiguring lores preview encoder to %d bps", bitrate, extra=build_log_extra())
-            await self._stop(camera)
-            await self._start(camera)
+            await self._stop(backend)
+            await self._start(backend)
 
-    async def _start(self, camera: Picamera2Like) -> None:
+    async def _start(self, backend: CameraBackend) -> None:
         logger.info(
             "Starting lores preview pipeline → %s @ %d bps",
             self._target_url,
             self._bitrate,
             extra=build_log_extra(),
         )
-        # The runtime H264Encoder sometimes accepts a bitrate kwarg, but the
-        # bundled typing stubs don't expose that parameter. Create the encoder
-        # without kwargs and set a runtime attribute for callers that expect it.
         encoder = H264Encoder()
         # Best-effort: the encoder may not expose an attribute setter. Cast
         # the runtime encoder to a Protocol exposing `bitrate` so type-checkers
@@ -130,23 +128,14 @@ class PreviewPipelineManager:
         with contextlib.suppress(Exception):
             cast("_EncoderWithBitrate", encoder).bitrate = self._bitrate
         output = _build_ffmpeg_output(self._target_url)
-        try:
-            await asyncio.wait_for(
-                asyncio.to_thread(camera.start_encoder, encoder, output, name="lores"),
-                timeout=30.0,
-            )
-        except TimeoutError as exc:
-            msg = "Preview pipeline ffmpeg startup timeout"
-            raise RuntimeError(msg) from exc
-        except (OSError, RuntimeError) as exc:
-            msg = f"Preview pipeline failed to start: {exc}"
-            raise RuntimeError(msg) from exc
+        await backend.start_lores_encoder(encoder, output)
         self._encoder = encoder
 
-    async def _stop(self, camera: Picamera2Like) -> None:
+    async def _stop(self, backend: CameraBackend) -> None:
         logger.info("Stopping lores preview pipeline", extra=build_log_extra())
+        encoder = self._encoder
+        self._encoder = None
         try:
-            await asyncio.to_thread(camera.stop_encoder, self._encoder)
+            await backend.stop_lores_encoder(encoder)
         except (OSError, RuntimeError) as exc:
             logger.warning("Preview pipeline stop had a non-fatal error: %s", exc, extra=build_log_extra())
-        self._encoder = None

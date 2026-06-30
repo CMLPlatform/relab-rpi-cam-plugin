@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI, Request
@@ -53,6 +53,7 @@ class FakeBackend:
         self.stop_stream: Any = AsyncMock()
         self.open: Any = AsyncMock(side_effect=self._open)
         self.capture_image: Any = AsyncMock()
+        self.capture_preview_frame: Any = AsyncMock(return_value=Image.new("RGB", (640, 480)))
         self.start_stream: Any = AsyncMock()
         self.get_stream_metadata: Any = AsyncMock(return_value=({"Model": "mock-camera"}, {"FrameDuration": 33_333}))
         # Optional controllable-backend hooks. Declare them as attributes so
@@ -65,9 +66,15 @@ class FakeBackend:
         self.set_focus: Callable[[FocusControlRequest], Awaitable[CameraControlsView]] | None = None
 
     @property
-    def camera(self) -> None:
-        """Return None for fake backend (no hardware camera)."""
-        return None
+    def is_open(self) -> bool:
+        """Return True when the fake backend has been opened."""
+        return self.current_mode is not None
+
+    async def start_lores_encoder(self, encoder: object, output: object) -> None:
+        """No-op."""
+
+    async def stop_lores_encoder(self, encoder: object) -> None:
+        """No-op."""
 
     async def _open(self, mode: CameraMode) -> None:
         self.current_mode = mode
@@ -778,20 +785,14 @@ class TestPreviewThumbnailCapture:
     async def test_returns_jpeg_bytes_from_backend_capture(self) -> None:
         """When idle, the manager should derive a JPEG preview thumbnail from the backend image."""
         backend = FakeBackend()
-        backend.capture_image = AsyncMock(
-            return_value=CaptureResult(
-                image=Image.new("RGB", (1280, 720), color="blue"),
-                camera_properties={"Model": MOCK_CAMERA},
-                capture_metadata={"FrameDuration": 33_333},
-            )
-        )
+        backend.capture_preview_frame = AsyncMock(return_value=Image.new("RGB", (1280, 720), color="blue"))
         manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
 
         result = await manager.capture_preview_thumbnail_jpeg()
 
         assert result is not None
         assert result.startswith(b"\xff\xd8")
-        backend.capture_image.assert_awaited_once()
+        backend.capture_preview_frame.assert_awaited_once()
 
     async def test_returns_none_when_camera_lock_is_busy(self) -> None:
         """A busy camera lock should cause the best-effort thumbnail capture to skip cleanly."""
@@ -810,25 +811,19 @@ class TestPreviewThumbnailCapture:
     async def test_preview_encoder_running_uses_lock_free_fast_path(self) -> None:
         """When the encoder owns the lores buffer, tap it without touching the camera lock."""
         backend = FakeBackend()
-        hw_camera = MagicMock()
-        hw_camera.capture_image.return_value = Image.new("RGB", (640, 480), color="red")
-        backend_camera = PropertyMock(return_value=hw_camera)
-        type(backend).camera = backend_camera  # type: ignore[misc]
+        backend.capture_preview_frame = AsyncMock(return_value=Image.new("RGB", (640, 480), color="red"))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
+
+        await manager.lock.acquire()  # lock is held; fast path must ignore it
         try:
-            manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
-
-            await manager.lock.acquire()  # lock is held; fast path must ignore it
-            try:
-                result = await manager.capture_preview_thumbnail_jpeg(lock_timeout_s=0.01, preview_encoder_running=True)
-            finally:
-                manager.lock.release()
-
-            assert result is not None
-            assert result.startswith(b"\xff\xd8")
-            hw_camera.capture_image.assert_called_once_with("main")
-            backend.open.assert_not_awaited()
+            result = await manager.capture_preview_thumbnail_jpeg(lock_timeout_s=0.01, preview_encoder_running=True)
         finally:
-            del type(backend).camera  # type: ignore[misc]
+            manager.lock.release()
+
+        assert result is not None
+        assert result.startswith(b"\xff\xd8")
+        backend.capture_preview_frame.assert_awaited_once()
+        backend.open.assert_not_awaited()
 
 
 class TestStreamService:

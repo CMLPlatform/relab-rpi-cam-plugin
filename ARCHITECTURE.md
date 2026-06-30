@@ -153,9 +153,11 @@ The relay allowlist is part of the private backend-to-plugin protocol. It belong
 
 ## Camera, Preview, And Capture
 
-`app/camera/services/manager.py` coordinates camera operations behind a lock. The active backend is selected through the camera backend interface; production uses Picamera2/libcamera and tests use fakes.
+`app/camera/services/manager.py` coordinates camera operations behind a lock. All hardware access goes through `CameraBackend` in `app/camera/services/backend.py`; production uses `Picamera2Backend` and tests use fakes. No code outside `picamera2_backend.py` touches the raw hardware handle.
 
-Preview uses a local MediaMTX sidecar and LL-HLS. Worker-owned hibernation stops the low-resolution encoder after relay idleness and restarts it on demand. The thumbnail worker keeps the setup UI preview current while preview is active.
+`CameraBackend` owns the full preview encoder lifecycle: `is_open` reports hardware readiness; `start_lores_encoder` / `stop_lores_encoder` attach and detach the H264 encoder; `capture_preview_frame` taps the lores buffer without acquiring the capture lock. Workers and routers call only these protocol methods.
+
+Preview publishes to a local MediaMTX sidecar over RTSP; browsers consume the stream via LL-HLS. Worker-owned hibernation (`PreviewSleeper`) stops the encoder after relay idleness and restarts it on the next HLS request. The `ThermalGovernor` drops the encoder bitrate when the SoC runs hot. The thumbnail worker keeps the setup UI preview current while preview is active.
 
 Capture requests produce image bytes and bounded metadata, then pass them to the configured `ImageSink`.
 

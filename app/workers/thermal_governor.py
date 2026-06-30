@@ -23,17 +23,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from relab_rpi_cam_models.telemetry import ThermalState
 
-from app.camera.services.hardware_protocols import Picamera2Like
+from app.camera.services.backend import CameraBackend
 from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.logging import build_log_extra
 from app.observability.telemetry import collect_telemetry
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -81,26 +77,21 @@ class ThermalGovernor:
         self._high_bitrate = high_bitrate
         self._low_bitrate = low_bitrate
         self._state = GovernorState()
-        self._camera_getter: Callable[[], Picamera2Like | None] | None = None
+        self._backend: CameraBackend | None = None
 
     @property
     def is_throttled(self) -> bool:
         """Whether the governor currently holds the encoder at the low bitrate."""
         return self._state.throttled
 
-    def configure(self, *, camera_getter: Callable[[], Picamera2Like | None]) -> None:
-        """Bind the live camera getter used by the governor loop.
-
-        ``camera_getter`` is a zero-arg callable returning the live Picamera2
-        handle (or None if the camera isn't initialised). Calling a getter
-        avoids stashing a Camera reference that might go stale on cleanup.
-        """
-        self._camera_getter = camera_getter
+    def configure(self, *, backend: CameraBackend) -> None:
+        """Bind the camera backend used by the governor loop."""
+        self._backend = backend
 
     async def run_forever(self) -> None:
         """Run the governor until the owning runtime cancels it."""
-        if self._camera_getter is None:
-            err_msg = "ThermalGovernor requires configure(camera_getter=...) before run_forever()"
+        if self._backend is None:
+            err_msg = "ThermalGovernor requires configure(backend=...) before run_forever()"
             raise RuntimeError(err_msg)
         await self._run()
 
@@ -161,9 +152,6 @@ class ThermalGovernor:
         self._state.below_threshold_since = None
 
     async def _apply_bitrate(self, bitrate: int) -> None:
-        if self._camera_getter is None:
+        if self._backend is None or not self._backend.is_open:
             return
-        camera = self._camera_getter()
-        if camera is None:
-            return
-        await self._pipeline.set_bitrate(camera, bitrate)
+        await self._pipeline.set_bitrate(self._backend, bitrate)

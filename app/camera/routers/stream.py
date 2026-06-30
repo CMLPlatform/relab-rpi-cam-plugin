@@ -44,7 +44,7 @@ async def start_stream(
 @router.get("", summary="Get active stream")
 async def get_stream_status(camera_manager: CameraManagerDependency) -> StreamView:
     """Get current stream status."""
-    if (stream_info := await camera_manager.get_stream_view()) is None:
+    if (stream_info := await camera_manager.get_stream_info()) is None:
         raise HTTPException(404, "No stream active")
     return stream_info
 

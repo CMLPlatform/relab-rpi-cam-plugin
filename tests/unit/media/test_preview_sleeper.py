@@ -23,11 +23,11 @@ def pipeline() -> MagicMock:
 
 
 @pytest.fixture
-def camera_getter() -> MagicMock:
-    """A mock camera getter that returns a dummy camera object."""
-    getter = MagicMock()
-    getter.return_value = MagicMock(name="camera")
-    return getter
+def backend() -> MagicMock:
+    """A mock CameraBackend that reports as open."""
+    b = MagicMock()
+    b.is_open = True
+    return b
 
 
 @pytest.fixture
@@ -171,7 +171,7 @@ class TestTick:
     async def test_tick_starts_encoder_when_desired_and_not_running(
         self,
         pipeline: MagicMock,
-        camera_getter: MagicMock,
+        backend: MagicMock,
         relay_state: RelayRuntimeState,
     ) -> None:
         """Transition asleep → awake calls ``pipeline.start``."""
@@ -182,17 +182,17 @@ class TestTick:
         sleeper = PreviewSleeper(
             pipeline=pipeline, relay_state=relay_state, relay_enabled_getter=lambda: True, hibernate_after_s=300
         )
-        sleeper._camera_getter = camera_getter
+        sleeper._backend = backend
 
         await sleeper._tick()
 
-        pipeline.start.assert_awaited_once_with(camera_getter.return_value)
+        pipeline.start.assert_awaited_once_with(backend)
         pipeline.stop.assert_not_called()
 
     async def test_tick_stops_encoder_when_not_desired_and_running(
         self,
         pipeline: MagicMock,
-        camera_getter: MagicMock,
+        backend: MagicMock,
         relay_state: RelayRuntimeState,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -205,21 +205,21 @@ class TestTick:
         sleeper = PreviewSleeper(
             pipeline=pipeline, relay_state=relay_state, relay_enabled_getter=lambda: True, hibernate_after_s=300
         )
-        sleeper._camera_getter = camera_getter
+        sleeper._backend = backend
 
         await sleeper._tick()
 
-        pipeline.stop.assert_awaited_once_with(camera_getter.return_value)
+        pipeline.stop.assert_awaited_once_with(backend)
         pipeline.start.assert_not_called()
 
-    async def test_tick_is_noop_when_no_camera(
+    async def test_tick_is_noop_when_camera_not_open(
         self,
         pipeline: MagicMock,
         relay_state: RelayRuntimeState,
     ) -> None:
-        """No camera primed yet — skip the tick without touching the pipeline."""
+        """Camera not ready yet — skip the tick without touching the pipeline."""
         sleeper = PreviewSleeper(pipeline=pipeline, relay_state=relay_state, hibernate_after_s=0)
-        sleeper._camera_getter = lambda: None
+        sleeper._backend = MagicMock(is_open=False)
 
         await sleeper._tick()
 
@@ -229,7 +229,7 @@ class TestTick:
     async def test_tick_swallows_start_runtime_errors(
         self,
         pipeline: MagicMock,
-        camera_getter: MagicMock,
+        backend: MagicMock,
         relay_state: RelayRuntimeState,
     ) -> None:
         """A RuntimeError from pipeline.start is logged, not propagated."""
@@ -241,7 +241,7 @@ class TestTick:
         sleeper = PreviewSleeper(
             pipeline=pipeline, relay_state=relay_state, relay_enabled_getter=lambda: True, hibernate_after_s=300
         )
-        sleeper._camera_getter = camera_getter
+        sleeper._backend = backend
 
         # Should not raise — the sleeper absorbs encoder errors so the
         # background task keeps polling.
@@ -251,7 +251,7 @@ class TestTick:
     async def test_tick_swallows_stop_runtime_errors(
         self,
         pipeline: MagicMock,
-        camera_getter: MagicMock,
+        backend: MagicMock,
         relay_state: RelayRuntimeState,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -264,7 +264,7 @@ class TestTick:
         sleeper = PreviewSleeper(
             pipeline=pipeline, relay_state=relay_state, relay_enabled_getter=lambda: True, hibernate_after_s=300
         )
-        sleeper._camera_getter = camera_getter
+        sleeper._backend = backend
 
         await sleeper._tick()
         pipeline.stop.assert_awaited_once()
@@ -273,7 +273,7 @@ class TestTick:
 class TestRunLifecycle:
     """Runtime-owned preview sleeper lifecycle behavior."""
 
-    async def test_run_forever_requires_camera_getter(
+    async def test_run_forever_requires_configure(
         self,
         pipeline: MagicMock,
         relay_state: RelayRuntimeState,
@@ -291,7 +291,7 @@ class TestRunCancelCleanup:
     async def test_cancel_stops_encoder_when_running(
         self,
         pipeline: MagicMock,
-        camera_getter: MagicMock,
+        backend: MagicMock,
         relay_state: RelayRuntimeState,
     ) -> None:
         """Cancelling the loop with a running encoder calls ``pipeline.stop``."""
@@ -306,7 +306,7 @@ class TestRunCancelCleanup:
             hibernate_after_s=0,
             poll_interval_s=10.0,
         )
-        sleeper.configure(camera_getter=camera_getter)
+        sleeper.configure(backend=backend)
         task = asyncio.create_task(sleeper.run_forever())
         # Yield so the task enters ``_run`` and hits the ``await asyncio.sleep``
         # point inside the try block — otherwise a cancel on a pending task
@@ -321,7 +321,7 @@ class TestRunCancelCleanup:
     async def test_cancel_cleanup_tolerates_stop_error(
         self,
         pipeline: MagicMock,
-        camera_getter: MagicMock,
+        backend: MagicMock,
         relay_state: RelayRuntimeState,
     ) -> None:
         """If the cleanup ``pipeline.stop`` raises, cancel still exits cleanly."""
@@ -337,7 +337,7 @@ class TestRunCancelCleanup:
             hibernate_after_s=0,
             poll_interval_s=10.0,
         )
-        sleeper.configure(camera_getter=camera_getter)
+        sleeper.configure(backend=backend)
         task = asyncio.create_task(sleeper.run_forever())
         await asyncio.sleep(0)
 
@@ -345,19 +345,19 @@ class TestRunCancelCleanup:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    async def test_cancel_skips_pipeline_stop_when_no_camera(
+    async def test_cancel_skips_pipeline_stop_when_camera_not_open(
         self,
         pipeline: MagicMock,
         relay_state: RelayRuntimeState,
     ) -> None:
-        """Cancel with no camera getter skips the pipeline cleanup path."""
+        """Cancel with a closed backend skips the pipeline cleanup path."""
         sleeper = PreviewSleeper(
             pipeline=pipeline,
             relay_state=relay_state,
             hibernate_after_s=0,
             poll_interval_s=10.0,
         )
-        sleeper.configure(camera_getter=lambda: None)
+        sleeper.configure(backend=MagicMock(is_open=False))
         task = asyncio.create_task(sleeper.run_forever())
         await asyncio.sleep(0)
 

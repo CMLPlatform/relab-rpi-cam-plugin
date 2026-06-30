@@ -55,9 +55,15 @@ class FakeBackend:
         self.controls: dict[str, JsonValue] = {}
 
     @property
-    def camera(self) -> None:
-        """Return None for fake backend (no real camera handle)."""
-        return None
+    def is_open(self) -> bool:
+        """Return True when the fake backend has been opened."""
+        return self.current_mode is not None
+
+    async def start_lores_encoder(self, encoder: object, output: object) -> None:
+        """No-op lores encoder start for the fake backend."""
+
+    async def stop_lores_encoder(self, encoder: object) -> None:
+        """No-op lores encoder stop for the fake backend."""
 
     async def open(self, mode: CameraMode) -> None:
         """Open the fake backend."""
@@ -71,6 +77,10 @@ class FakeBackend:
             camera_properties=self.camera_properties,
             capture_metadata=self.capture_metadata,
         )
+
+    async def capture_preview_frame(self) -> Image.Image:
+        """Return a low-cost preview frame from the fake backend."""
+        return self.image
 
     async def start_stream(
         self,
@@ -213,9 +223,9 @@ class FakePreviewSleeper(PreviewSleeper):
         self.configure_calls = 0
         self.run_calls = 0
 
-    def configure(self, *, camera_getter: Callable[[], object | None]) -> None:
+    def configure(self, *, backend: object) -> None:  # type: ignore[override]
         """Record sleeper configuration without spawning background work."""
-        del camera_getter
+        del backend
         self.configure_calls += 1
 
     async def run_forever(self) -> None:
@@ -232,9 +242,9 @@ class FakeThermalGovernor(ThermalGovernor):
         self.configure_calls = 0
         self.run_calls = 0
 
-    def configure(self, *, camera_getter: Callable[[], object | None]) -> None:
+    def configure(self, *, backend: object) -> None:  # type: ignore[override]
         """Record governor configuration without spawning background work."""
-        del camera_getter
+        del backend
         self.configure_calls += 1
 
     async def run_forever(self) -> None:

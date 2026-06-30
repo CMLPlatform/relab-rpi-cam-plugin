@@ -48,9 +48,9 @@ def _patch_httpx(response: _Response | Exception) -> AbstractContextManager[Magi
     return patch.object(hls_mod.httpx, "AsyncClient", return_value=client)
 
 
-def _camera_manager(camera: MagicMock | None = None) -> MagicMock:
+def _camera_manager(*, is_open: bool = True) -> MagicMock:
     manager = MagicMock()
-    manager.backend.camera = camera or MagicMock(name="camera")
+    manager.backend.is_open = is_open
     return manager
 
 
@@ -119,7 +119,7 @@ class TestProxyHLS:
     async def test_preview_request_wakes_sleeping_encoder(self) -> None:
         """A local preview request starts the encoder before proxying to MediaMTX."""
         response = _Response(200, content=b"#EXTM3U\n", headers={"content-type": HLS_M3U8_CONTENT_TYPE})
-        camera = MagicMock(name="camera")
+        camera_manager = _camera_manager()
         pipeline = _pipeline(running=False)
 
         with _patch_httpx(response):
@@ -127,12 +127,12 @@ class TestProxyHLS:
             await proxy_hls(
                 request=_request(),
                 hls_path="cam-preview/index.m3u8",
-                camera_manager=_camera_manager(camera),
+                camera_manager=camera_manager,
                 pipeline=pipeline,
                 relay_state=relay_state,
             )
 
-        pipeline.start.assert_awaited_once_with(camera)
+        pipeline.start.assert_awaited_once_with(camera_manager.backend)
 
     async def test_non_preview_hls_request_does_not_wake_encoder(self) -> None:
         """Only the managed preview path controls the preview encoder."""
@@ -183,7 +183,6 @@ class TestProxyHLS:
 
     async def test_404_with_running_pipeline_does_not_recycle(self) -> None:
         """The proxy is pure — 404 is surfaced verbatim, recycle is the user's job via /preview/stop."""
-        camera = MagicMock(name="camera")
         pipeline = _pipeline(running=True)
         relay_state = RelayRuntimeState()
 
@@ -191,7 +190,7 @@ class TestProxyHLS:
             await proxy_hls(
                 request=_request(),
                 hls_path="cam-preview/index.m3u8",
-                camera_manager=_camera_manager(camera),
+                camera_manager=_camera_manager(),
                 pipeline=pipeline,
                 relay_state=relay_state,
             )
@@ -244,15 +243,15 @@ class TestPreviewStart:
         rather than waiting for the first request to trigger startup and then waiting again for the first video segment
         to be generated before anything shows up in the preview.
         """
-        camera = MagicMock(name="camera")
+        camera_manager = _camera_manager()
         pipeline = _pipeline(running=False)
         resp = await start_preview(
             request=_request(),
-            camera_manager=_camera_manager(camera),
+            camera_manager=camera_manager,
             pipeline=pipeline,
         )
         assert resp.status_code == 204
-        pipeline.start.assert_awaited_once_with(camera)
+        pipeline.start.assert_awaited_once_with(camera_manager.backend)
 
     async def test_start_rejects_remote_client(self) -> None:
         """Test that starting the preview rejects remote clients."""
@@ -264,28 +263,26 @@ class TestPreviewStart:
             )
         assert excinfo.value.status_code == 403
 
-    async def test_start_returns_503_when_camera_missing(self) -> None:
-        """Test that starting the preview returns 503 if the camera is missing from the manager backend."""
-        manager = MagicMock()
-        manager.backend.camera = None
+    async def test_start_returns_503_when_camera_not_open(self) -> None:
+        """Test that starting the preview returns 503 if the camera backend is not open."""
         with pytest.raises(HTTPException) as excinfo:
             await start_preview(
                 request=_request(),
-                camera_manager=manager,
+                camera_manager=_camera_manager(is_open=False),
                 pipeline=_pipeline(running=False),
             )
         assert excinfo.value.status_code == 503
 
     async def test_start_runtime_error_returns_generic_503_detail(self) -> None:
         """Preview startup failures should not expose raw encoder exception text."""
-        camera = MagicMock(name="camera")
+        camera_manager = _camera_manager()
         pipeline = _pipeline(running=False)
         pipeline.start = AsyncMock(side_effect=RuntimeError("ffmpeg path /secret/bin failed"))
 
         with pytest.raises(HTTPException) as excinfo:
             await start_preview(
                 request=_request(),
-                camera_manager=_camera_manager(camera),
+                camera_manager=camera_manager,
                 pipeline=pipeline,
             )
 
@@ -298,17 +295,17 @@ class TestPreviewStop:
 
     async def test_stop_halts_pipeline_and_refreshes_thumbnail(self) -> None:
         """Stopping the preview should stop the encoder and trigger a thumbnail refresh even if the pipeline is idle."""
-        camera = MagicMock(name="camera")
+        camera_manager = _camera_manager()
         pipeline = _pipeline(running=True)
         worker = _thumbnail_worker()
         resp = await stop_preview(
             request=_request(),
-            camera_manager=_camera_manager(camera),
+            camera_manager=camera_manager,
             pipeline=pipeline,
             thumbnail_worker=worker,
         )
         assert resp.status_code == 204
-        pipeline.stop.assert_awaited_once_with(camera)
+        pipeline.stop.assert_awaited_once_with(camera_manager.backend)
         worker.refresh_once.assert_awaited_once()
 
     async def test_stop_refreshes_thumbnail_even_when_pipeline_idle(self) -> None:

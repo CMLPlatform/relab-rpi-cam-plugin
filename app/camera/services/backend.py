@@ -20,7 +20,6 @@ from app.camera.schemas import (
     JsonValue,
     YoutubeStreamConfig,
 )
-from app.camera.services.hardware_protocols import Picamera2Like
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PilImage
@@ -51,15 +50,25 @@ class CameraBackend(Protocol):
 
     current_mode: CameraMode | None
 
-    @property
-    def camera(self) -> Picamera2Like | None:
-        """The live hardware camera handle, or ``None`` if not yet opened."""
-
     async def open(self, mode: CameraMode) -> None:
         """Prepare the backend for the requested camera mode."""
 
     async def capture_image(self) -> CaptureResult:
         """Capture a full-resolution image and metadata."""
+
+    async def capture_preview_frame(self) -> PilImage:
+        """Capture a low-cost preview frame (no metadata, no lock, no mode switch required)."""
+
+    @property
+    def is_open(self) -> bool:
+        """Whether the camera has been opened and is ready for use."""
+        ...
+
+    async def start_lores_encoder(self, encoder: object, output: object) -> None:
+        """Attach the lores H264 encoder to the camera pipeline."""
+
+    async def stop_lores_encoder(self, encoder: object) -> None:
+        """Detach the lores H264 encoder from the camera pipeline."""
 
     async def cleanup(self) -> None:
         """Release backend resources."""

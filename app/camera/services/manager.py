@@ -29,7 +29,7 @@ from app.media.stream_service import StreamService
 from app.media.stream_state import ActiveStreamState
 from app.observability.logging import build_log_extra
 from app.upload.queue import UploadQueue, UploadQueueFullError
-from app.utils.files import cleanup_images
+from app.utils.files import cleanup_images, unlink_quiet
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
@@ -57,11 +57,6 @@ class CameraControlsNotSupportedError(RuntimeError):
         super().__init__(f"Backend {type(backend).__name__} does not support remote camera controls")
 
 
-def _unlink_quiet(path: Path) -> None:
-    with contextlib.suppress(FileNotFoundError):
-        path.unlink()
-
-
 def _encode_jpeg_atomic(
     image: PilImage,
     image_path: Path,
@@ -79,7 +74,7 @@ def _encode_jpeg_atomic(
         image_bytes = tmp_path.read_bytes()
         tmp_path.replace(image_path)
     except BaseException:
-        _unlink_quiet(tmp_path)
+        unlink_quiet(tmp_path)
         raise
     return image_bytes
 
@@ -210,7 +205,7 @@ class CameraManager:
             try:
                 JPEG_CAPTURE_POLICY.validate_size(image_bytes, max_bytes=settings.max_capture_file_bytes)
             except CaptureFileValidationError:
-                await asyncio.to_thread(_unlink_quiet, image_path)
+                await asyncio.to_thread(unlink_quiet, image_path)
                 raise
 
         capture_metadata_dict = img_metadata.model_dump(mode="json")
@@ -238,7 +233,7 @@ class CameraManager:
                     upload_metadata=upload_meta,
                 )
             except UploadQueueFullError:
-                await asyncio.to_thread(_unlink_quiet, image_path)
+                await asyncio.to_thread(unlink_quiet, image_path)
                 raise
             return ImageCaptureResponse(
                 image_id=image_id,
@@ -248,7 +243,7 @@ class CameraManager:
                 expires_at=None,
             )
 
-        await asyncio.to_thread(_unlink_quiet, image_path)
+        await asyncio.to_thread(unlink_quiet, image_path)
 
         if self._on_capture_uploaded is not None:
             try:
@@ -279,26 +274,19 @@ class CameraManager:
         unavailable for a cheap lores grab. This is intended for background cache
         maintenance only, never for request/response paths.
 
-        When ``preview_encoder_running`` is True, the lores ring buffer is already
-        active and owned by the encoder; tap it directly without acquiring the
-        camera-manager lock (the lock serialises reconfiguration, not reads).
+        When ``preview_encoder_running`` is True, the encoder owns the lores ring
+        buffer; tap it directly without the camera lock (the lock serialises
+        reconfiguration, not reads).
         """
-        backend_camera = self.backend.camera
-        if preview_encoder_running and backend_camera is not None:
-            frame = await asyncio.to_thread(backend_camera.capture_image, "main")
+        if preview_encoder_running:
+            frame = await self.backend.capture_preview_frame()
             return await asyncio.to_thread(encode_preview_jpeg, frame)
 
         try:
             async with self._locked(timeout_s=lock_timeout_s):
                 if self.stream.is_active:
                     return None
-
-                if backend_camera is not None:
-                    await self.backend.open(CameraMode.VIDEO)
-                    frame = await asyncio.to_thread(backend_camera.capture_image, "main")
-                else:
-                    result = await self.backend.capture_image()
-                    frame = result.image
+                frame = await self.backend.capture_preview_frame()
                 return await asyncio.to_thread(encode_preview_jpeg, frame)
         except RuntimeError:
             logger.debug("Preview thumbnail refresh skipped because the camera lock was busy")
@@ -401,10 +389,6 @@ class CameraManager:
         # Return empty stream view if no stream is active
         return None
 
-    async def get_stream_view(self) -> StreamView | None:
-        """Return the public stream view for the current state."""
-        return await self.get_stream_info()
-
     async def get_status(self) -> CameraStatusView:
         """Return the current camera status including active stream info."""
         stream_info = await self.get_stream_info()
@@ -413,6 +397,3 @@ class CameraManager:
             stream=stream_info if self.stream.is_active else None,
         )
 
-    async def get_camera_status(self) -> CameraStatusView:
-        """Return the public camera status view."""
-        return await self.get_status()

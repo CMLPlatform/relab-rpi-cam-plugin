@@ -29,6 +29,7 @@ from app.core.settings import settings
 from app.image_sinks.base import ImageSink, ImageSinkError
 from app.media.file_policy import JPEG_CAPTURE_POLICY, CaptureFileValidationError
 from app.observability.logging import build_log_extra
+from app.utils.files import unlink_quiet
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -181,8 +182,8 @@ class UploadQueue:
 
     async def mark_attempt_succeeded(self, entry: QueuedCapture) -> None:
         """Delete a successfully-uploaded entry from disk."""
-        await asyncio.to_thread(_unlink_quiet, entry.image_path)
-        await asyncio.to_thread(_unlink_quiet, entry.metadata_path)
+        await asyncio.to_thread(unlink_quiet, entry.image_path)
+        await asyncio.to_thread(unlink_quiet, entry.metadata_path)
         logger.info("Capture %s drained from queue", entry.image_id, extra=build_log_extra())
 
     async def drain_once(self) -> int:
@@ -272,7 +273,7 @@ class UploadQueue:
                 metadata_path,
                 extra=build_log_extra(),
             )
-            _unlink_quiet(metadata_path)
+            unlink_quiet(metadata_path)
             return None
         try:
             next_attempt_at = datetime.fromisoformat(payload.get("next_attempt_at", ""))
@@ -334,14 +335,8 @@ class UploadQueue:
         if self._dead_max_entries is None or len(entries) <= self._dead_max_entries:
             return
         for image_path, metadata_path, _mtime in entries[: len(entries) - self._dead_max_entries]:
-            _unlink_quiet(image_path)
-            _unlink_quiet(metadata_path)
-
-
-def _unlink_quiet(path: Path) -> None:
-    """Unlink a file, ignoring if it's already gone."""
-    with contextlib.suppress(FileNotFoundError):
-        path.unlink()
+            unlink_quiet(image_path)
+            unlink_quiet(metadata_path)
 
 
 def _is_valid_image_id(image_id: str) -> bool:
@@ -355,8 +350,8 @@ def _validate_image_id(image_id: str) -> None:
 
 
 def _unlink_queue_pair(metadata_path: Path) -> None:
-    _unlink_quiet(metadata_path)
-    _unlink_quiet(metadata_path.with_suffix(".jpg"))
+    unlink_quiet(metadata_path)
+    unlink_quiet(metadata_path.with_suffix(".jpg"))
 
 
 def _path_size(path: Path) -> int:
@@ -380,7 +375,7 @@ def _dead_letter_entries(dead_root: Path) -> list[tuple[Path, Path, float]]:
             continue
         image_path = dead_root / f"{metadata_path.stem}.jpg"
         if not image_path.exists():
-            _unlink_quiet(metadata_path)
+            unlink_quiet(metadata_path)
             continue
         mtime = min(_path_mtime(image_path), _path_mtime(metadata_path))
         entries.append((image_path, metadata_path, mtime))
@@ -420,10 +415,6 @@ class UploadQueueWorker:
 
     async def run_forever(self) -> None:
         """Drain the queue on a loop until the owning runtime cancels us."""
-        await self._run()
-
-    async def _run(self) -> None:
-        """Run the background worker loop, draining the queue at intervals."""
         while True:
             try:
                 await self._queue.drain_once()

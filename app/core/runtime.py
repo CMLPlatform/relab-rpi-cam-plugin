@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from inspect import isawaitable
 from typing import TYPE_CHECKING
 
-from app.camera.services.hardware_protocols import Picamera2Like
 from app.camera.services.manager import CameraManager
 from app.core.runtime_context import get_active_runtime, set_active_runtime
 from app.core.runtime_state import RuntimeState
@@ -164,12 +163,12 @@ class AppRuntime:
 
     def start_preview_sleeper(self) -> asyncio.Task[None]:
         """Start or replace the preview sleeper loop under runtime ownership."""
-        self.preview_sleeper.configure(camera_getter=self.camera_getter)
+        self.preview_sleeper.configure(backend=self.camera_manager.backend)
         return self.create_task(self.preview_sleeper.run_forever(), name="preview_sleeper")
 
     def start_thermal_governor(self) -> asyncio.Task[None]:
         """Start or replace the thermal governor loop under runtime ownership."""
-        self.thermal_governor.configure(camera_getter=self.camera_getter)
+        self.thermal_governor.configure(backend=self.camera_manager.backend)
         return self.create_task(self.thermal_governor.run_forever(), name="thermal_governor")
 
     def start_preview_thumbnail_worker(self) -> asyncio.Task[None]:
@@ -193,9 +192,6 @@ class AppRuntime:
             }
         )
 
-    def camera_getter(self) -> Picamera2Like | None:
-        """Return the live backend camera object for background services."""
-        return self.camera_manager.backend.camera
 
 
 def ensure_app_runtime(app: FastAPI) -> AppRuntime:
