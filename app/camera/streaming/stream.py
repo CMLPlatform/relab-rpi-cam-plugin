@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
-from urllib.parse import parse_qs, urlparse
 
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
@@ -34,8 +33,6 @@ else:
         FfmpegOutput = FfmpegOutputStub
 
 _DEFAULT_RTSP_PKT_SIZE = 1400
-_YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com"}
-_YOUTUBE_WATCH_PATH = "/watch"
 
 
 def build_rtsp_ffmpeg_output(target_url: str) -> object:
@@ -67,19 +64,3 @@ def validate_youtube_mode(mode: StreamMode, youtube_config: YoutubeStreamConfig 
 def get_broadcast_url(youtube_config: YoutubeStreamConfig) -> AnyUrl:
     """Get YouTube broadcast URL."""
     return AnyUrl(f"https://youtube.com/watch?v={youtube_config.broadcast_key.get_secret_value()}")
-
-
-def get_youtube_embed_url(broadcast_url: AnyUrl) -> str:
-    """Convert a public YouTube watch URL into an embeddable URL."""
-    parsed = urlparse(str(broadcast_url))
-    if parsed.hostname not in _YOUTUBE_HOSTS or parsed.path != _YOUTUBE_WATCH_PATH:
-        msg = "Expected a YouTube watch URL."
-        raise ValueError(msg)
-
-    video_ids = parse_qs(parsed.query).get("v", [])
-    video_id = video_ids[0] if video_ids else ""
-    if not video_id:
-        msg = "Expected a YouTube watch URL with a video id."
-        raise ValueError(msg)
-
-    return f"https://www.youtube.com/embed/{video_id}"

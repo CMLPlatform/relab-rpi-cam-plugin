@@ -28,7 +28,6 @@ EXAMPLE_RELAY_HTTPS_URL = "https://example.com"
 EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID = f"{EXAMPLE_RELAY_BACKEND_URL}?camera_id=cam-42"
 EXAMPLE_IMAGE_URL = f"{EXAMPLE_BACKEND_URL}/img.jpg"
 YOUTUBE_WATCH_URL_PREFIX = "https://youtube.com/watch?v="
-YOUTUBE_EMBED_URL_PREFIX = "https://www.youtube.com/embed/"
 
 # Sample image upload constants used in integration tests
 UPLOADED_STATUS = "uploaded"
@@ -114,7 +113,6 @@ PICAMERA2_STARTUP_TIMEOUT = "startup timeout"
 PICAMERA2_CAMERA_NOT_INITIALIZED = "Camera backend has not been initialized"
 YOUTUBE_TEST_BROADCAST_URL = f"{YOUTUBE_WATCH_URL_PREFIX}TEST_BROADCAST_KEY_123"
 YOUTUBE_WATCH_URL = f"{YOUTUBE_WATCH_URL_PREFIX}broadcast-key"
-YOUTUBE_EMBED_URL = f"{YOUTUBE_EMBED_URL_PREFIX}broadcast-key"
 YOUTUBE_PUBLIC_URL = f"{YOUTUBE_WATCH_URL_PREFIX}public-id"
 CAMERA_DEVICE_NOT_FOUND = "Camera device not found"
 
