@@ -44,6 +44,17 @@ function setPairingButtonFeedback(button, state, label, title) {
   button.setAttribute("title", title);
 }
 
+function restorePairingButton(button, label, title, delay = 1200) {
+  window.setTimeout(() => {
+    if (button.dataset.defaultHtml) {
+      button.innerHTML = button.dataset.defaultHtml;
+    }
+    button.dataset.feedbackState = "";
+    button.setAttribute("aria-label", label);
+    button.setAttribute("title", title);
+  }, delay);
+}
+
 function setPairingActionStatus(text, state) {
   const el = document.getElementById("pairing-action-status");
   if (!el) {
@@ -85,14 +96,7 @@ async function copyText(text, button) {
     const nextLabel = copied ? "Copied pairing code" : "Copy pairing code failed";
     setPairingButtonFeedback(button, copied ? "copied" : "failed", nextLabel, nextLabel);
     setPairingActionStatus(copied ? "Copied" : "Copy failed", copied ? "success" : "failed");
-    window.setTimeout(() => {
-      if (button.dataset.defaultHtml) {
-        button.innerHTML = button.dataset.defaultHtml;
-      }
-      button.dataset.feedbackState = "";
-      button.setAttribute("aria-label", previousLabel);
-      button.setAttribute("title", previousTitle);
-    }, 1200);
+    restorePairingButton(button, previousLabel, previousTitle);
   }
 }
 
@@ -112,14 +116,7 @@ async function refreshPairingCode(button) {
       if (button) {
         setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
         setPairingActionStatus("Refresh failed", "failed");
-        window.setTimeout(() => {
-          if (button.dataset.defaultHtml) {
-            button.innerHTML = button.dataset.defaultHtml;
-          }
-          button.dataset.feedbackState = "";
-          button.setAttribute("aria-label", previousLabel);
-          button.setAttribute("title", previousTitle);
-        }, 1200);
+        restorePairingButton(button, previousLabel, previousTitle);
       }
       alert(`Could not refresh the pairing code (${resp.status}).`);
       return;
@@ -127,28 +124,13 @@ async function refreshPairingCode(button) {
     if (button) {
       setPairingButtonFeedback(button, "success", "Pairing code refreshed", "Pairing code refreshed");
       setPairingActionStatus("Refreshed. Reloading page...", "success");
-      window.setTimeout(() => {
-        if (button.dataset.defaultHtml) {
-          button.innerHTML = button.dataset.defaultHtml;
-        }
-        button.dataset.feedbackState = "";
-        button.setAttribute("aria-label", previousLabel);
-        button.setAttribute("title", previousTitle);
-      }, 1200);
     }
     window.setTimeout(() => window.location.reload(), 700);
   } catch {
     if (button) {
       setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
       setPairingActionStatus("Refresh failed", "failed");
-      window.setTimeout(() => {
-        if (button.dataset.defaultHtml) {
-          button.innerHTML = button.dataset.defaultHtml;
-        }
-        button.dataset.feedbackState = "";
-        button.setAttribute("aria-label", previousLabel);
-        button.setAttribute("title", previousTitle);
-      }, 1200);
+      restorePairingButton(button, previousLabel, previousTitle);
     }
     alert("Could not refresh the pairing code. Check your connection.");
   } finally {

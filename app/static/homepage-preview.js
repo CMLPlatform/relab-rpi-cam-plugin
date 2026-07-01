@@ -34,6 +34,11 @@ function attachPlayer() {
     hls.loadSource(HLS_SRC);
     hls.attachMedia(video);
     hls.on(window.Hls.Events.MANIFEST_PARSED, () => video.play());
+    hls.on(window.Hls.Events.ERROR, (_evt, data) => {
+      if (data.fatal) {
+        stopPreview("Preview stream dropped — reload to retry.");
+      }
+    });
   } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
     video.src = HLS_SRC;
     video.play();
@@ -75,7 +80,7 @@ async function startPreview() {
   }
 }
 
-async function stopPreview() {
+async function stopPreview(message = "") {
   if (state === "idle") {
     return;
   }
@@ -100,7 +105,7 @@ async function stopPreview() {
   state = "idle";
   btn.disabled = false;
   btn.textContent = "Load Preview";
-  msg.textContent = "";
+  msg.textContent = message;
   setChip("muted", "Preview");
 }
 
