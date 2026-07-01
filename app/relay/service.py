@@ -172,6 +172,7 @@ async def _receive_loop(
     )
     pending_tasks: set[asyncio.Task[None]] = set()
     command_semaphore = asyncio.Semaphore(app_settings.relay_max_concurrent_commands)
+    send_lock = asyncio.Lock()
 
     def _on_task_done(task: asyncio.Task[None]) -> None:
         """Callback when a command task completes."""
@@ -197,6 +198,7 @@ async def _receive_loop(
                     pending_tasks,
                     _on_task_done,
                     command_semaphore,
+                    send_lock,
                     relay_state=relay_state,
                     max_pending_commands=app_settings.relay_max_pending_commands,
                 )
@@ -214,6 +216,7 @@ async def _handle_relay_message(
     pending_tasks: set[asyncio.Task[None]],
     on_task_done: Callable[[asyncio.Task[None]], None],
     command_semaphore: asyncio.Semaphore,
+    send_lock: asyncio.Lock | None = None,
     *,
     relay_state: RelayRuntimeState,
     max_pending_commands: int,
@@ -257,7 +260,7 @@ async def _handle_relay_message(
         if isinstance(msg_id, str) and msg_id:
             await _send_error(ws, msg_id, 429, "Too many pending relay commands.")
         return
-    task = asyncio.create_task(_run_command(ws, http, msg, command_semaphore))
+    task = asyncio.create_task(_run_command(ws, http, msg, command_semaphore, send_lock))
     pending_tasks.add(task)
     task.add_done_callback(on_task_done)
 
@@ -267,10 +270,11 @@ async def _run_command(
     http: httpx.AsyncClient,
     msg: dict,
     command_semaphore: asyncio.Semaphore,
+    send_lock: asyncio.Lock | None = None,
 ) -> None:
     """Run a relayed command with bounded concurrency."""
     async with command_semaphore:
-        await _handle_command(ws, http, msg)
+        await _handle_command(ws, http, msg, send_lock)
 
 
 async def _drain_pending_tasks(pending_tasks: set[asyncio.Task[None]], *, cancel: bool = False) -> None:
@@ -283,8 +287,13 @@ async def _drain_pending_tasks(pending_tasks: set[asyncio.Task[None]], *, cancel
     await asyncio.gather(*pending_tasks, return_exceptions=True)
 
 
-async def _handle_command(ws: ClientConnection, http: httpx.AsyncClient, msg: dict) -> None:
+async def _handle_command(
+    ws: ClientConnection, http: httpx.AsyncClient, msg: dict, send_lock: asyncio.Lock | None = None
+) -> None:
     """Dispatch a single command to the local API and send the response."""
+    # A shared per-connection lock is passed in production; a lone direct call
+    # gets its own (a single send never contends).
+    send_lock = send_lock or asyncio.Lock()
     try:
         envelope = RelayCommandEnvelope.model_validate(msg)
     except ValidationError:
@@ -344,17 +353,20 @@ async def _handle_command(ws: ClientConnection, http: httpx.AsyncClient, msg: di
     if response.status_code == 403:
         logger.warning("Relay received 403 from local API — check that local_relay_api_key is set correctly")
 
-    content_type = response.headers.get("content-type")
+    # `or None`: an empty content-type would fail the envelope's min_length=1.
+    content_type = response.headers.get("content-type") or None
     if relay_content_type_is_binary(content_type):
-        # Send JSON header first, then binary frame
         header = RelayResponseEnvelope(
             id=msg_id,
             status=response.status_code,
             content_type=content_type,
             has_binary=True,
         )
-        await ws.send(header.model_dump_json())
-        await ws.send(response.content)
+        # The header + binary body must reach the backend as an adjacent pair;
+        # concurrent command tasks share this ws, so serialize the two frames.
+        async with send_lock:
+            await ws.send(header.model_dump_json())
+            await ws.send(response.content)
     else:
         try:
             data = response.json()

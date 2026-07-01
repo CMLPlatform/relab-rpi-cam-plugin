@@ -389,6 +389,39 @@ class TestHandleCommand:
         assert header["content_type"] == HLS_SEGMENT_CONTENT_TYPE
         ws.send.assert_any_await(HLS_SEGMENT_BYTES)
 
+    async def test_concurrent_binary_responses_stay_adjacent(self) -> None:
+        """A shared send_lock must keep each binary header next to its own body."""
+
+        def _handler(request: httpx.Request) -> httpx.Response:
+            body = request.url.params["tag"].encode()
+            return httpx.Response(200, content=body, headers={"content-type": HLS_SEGMENT_CONTENT_TYPE})
+
+        sent: list[object] = []
+
+        class _YieldingConn:
+            async def send(self, frame: object) -> None:
+                sent.append(frame)
+                await asyncio.sleep(0)  # force a scheduling point between frames
+
+        lock = asyncio.Lock()
+        transport = httpx.MockTransport(_handler)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+            ws = cast("ClientConnection", _YieldingConn())
+
+            def _cmd(msg_id: str, tag: str) -> dict:
+                return {"id": msg_id, "method": "GET", "path": PREVIEW_HLS_SEGMENT_PATH, "params": {"tag": tag}}
+
+            await asyncio.gather(
+                _handle_command(ws, http, _cmd("a", "aaa"), lock),
+                _handle_command(ws, http, _cmd("b", "bbb"), lock),
+            )
+
+        # Every has_binary header must be immediately followed by its own bytes.
+        for i, frame in enumerate(sent):
+            if isinstance(frame, str) and json.loads(frame).get("has_binary"):
+                tag = json.loads(frame)["id"] * 3  # id "a" -> b"aaa"
+                assert sent[i + 1] == tag.encode()
+
     async def test_handles_text_response(self) -> None:
         """Should send text responses as JSON frames."""
 
