@@ -149,7 +149,7 @@ def _validate_json_value(
     depth: int,
 ) -> None:
     if depth > limits.max_depth:
-        msg = f"{limits.field_name} may be nested at most {limits.max_depth} levels"
+        msg = f"{limits.field_name} may be nested at most {limits.max_depth + 1} levels"
         raise ValueError(msg)
     if _is_json_scalar(value, limits):
         return
