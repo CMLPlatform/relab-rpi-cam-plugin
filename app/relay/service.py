@@ -21,8 +21,8 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from app.core.runtime_state import RuntimeState
 from app.core.settings import Settings, settings
-from app.device_jwt import build_device_assertion
 from app.observability.logging import build_log_extra, build_security_log_extra
+from app.relay.device_jwt import build_device_assertion
 from app.relay.state import RelayRuntimeState
 from relab_rpi_cam_models import (
     RELAY_COMMAND_FORBIDDEN_DETAIL,
@@ -325,6 +325,10 @@ async def _handle_command(ws: ClientConnection, http: httpx.AsyncClient, msg: di
         return
 
     try:
+        # Dispatch the raw `path`, but the allowlist above checked its fully
+        # unquoted form (repeated-unquote + `..` rejection) — the strictly
+        # more-decoded form Starlette also routes on. Keep the check at least as
+        # aggressive as request routing if the normalizer is ever loosened.
         response = await http.request(
             method,
             path,

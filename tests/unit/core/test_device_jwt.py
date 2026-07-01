@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.core.runtime import AppRuntime, set_active_runtime
-from app.device_jwt import (
+from app.relay.device_jwt import (
     DEVICE_ASSERTION_ALGORITHM,
     DEVICE_ASSERTION_AUDIENCE,
     DEVICE_ASSERTION_TTL_SECONDS,

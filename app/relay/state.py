@@ -30,6 +30,7 @@ class RelayRuntimeState:
         """Record local HLS activity."""
         self._last_hls_activity_monotonic = time.monotonic()
 
+    @property
     def is_connected(self) -> bool:
         """Whether the relay currently holds an open WebSocket."""
         return self._connected
@@ -46,8 +47,3 @@ class RelayRuntimeState:
             return None
         return time.monotonic() - self._last_hls_activity_monotonic
 
-    def reset(self) -> None:
-        """Reset activity state. Useful in tests and on app restarts."""
-        self._connected = False
-        self._last_activity_monotonic = None
-        self._last_hls_activity_monotonic = None
