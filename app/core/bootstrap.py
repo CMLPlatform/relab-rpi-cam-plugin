@@ -44,7 +44,7 @@ def apply_relay_credentials(runtime_state: RuntimeState) -> None:
         )
         return
     creds = load_relay_credentials()
-    if creds:
+    if creds and creds.get("relay_backend_url"):
         set_runtime_relay_credentials(
             runtime_state=runtime_state,
             relay_backend_url=str(creds.get("relay_backend_url", "")),
@@ -75,7 +75,9 @@ def _persist_local_api_key(key: str) -> None:
     existing: dict[str, object] = {}
     if _CREDENTIALS_FILE.exists():
         with suppress(json.JSONDecodeError, OSError):
-            existing = json.loads(_CREDENTIALS_FILE.read_text())
+            loaded = json.loads(_CREDENTIALS_FILE.read_text())
+            if isinstance(loaded, dict):
+                existing = loaded
     existing["local_api_key"] = key
     write_json_atomic(_CREDENTIALS_FILE, existing)
     logger.info("local_api_key persisted to %s", _CREDENTIALS_FILE)
