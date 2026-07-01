@@ -67,15 +67,12 @@ services:
     # ``-ffmpeg`` variant is required because ``runOnReady`` shells out to
     # ffmpeg and the default image doesn't ship it. Runs on the host network so
     # all three listeners (8554/8888/9997) are reachable from the app container.
-    image: relab-rpi-cam-plugin-mediamtx
-    build:
-      context: .
-      dockerfile: Dockerfile.mediamtx
+    image: bluenviron/mediamtx:1.17.1-ffmpeg@sha256:f648b6c98abbc02917d5598479e647b1b451dd13f8df265ab2afde060fd50f7f
     restart: unless-stopped
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
-    # Hit the control API on localhost:9997. Our wrapper image adds wget since
-    # the upstream image intentionally stays minimal.
+    # Hit the control API on localhost:9997 with the busybox wget the upstream
+    # image already ships.
     healthcheck:
       test: [ "CMD-SHELL", "wget -q -O /dev/null http://localhost:9997/v3/config/global/get || exit 1" ]
       interval: 30s

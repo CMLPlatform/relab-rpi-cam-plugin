@@ -36,7 +36,6 @@ jobs:
           filters: |
             container:
               - 'Dockerfile'
-              - 'Dockerfile.mediamtx'
               - 'pyproject.toml'
               - 'uv.lock'
 
