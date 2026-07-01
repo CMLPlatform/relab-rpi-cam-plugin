@@ -78,7 +78,12 @@ class PreviewSleeper:
             raise RuntimeError(err_msg)
         try:
             while True:
-                await self._tick()
+                try:
+                    await self._tick()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Preview sleeper tick failed; continuing", extra=build_log_extra())
                 await asyncio.sleep(self._poll_interval_s)
         except asyncio.CancelledError:
             # On cancel, stop the encoder if it's running so the app shutdown

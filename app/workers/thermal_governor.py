@@ -137,6 +137,8 @@ class ThermalGovernor:
         self._below_threshold_since = None
 
     async def _apply_bitrate(self, bitrate: int) -> None:
-        if self._backend is None or not self._backend.is_open:
+        if self._backend is None:
             return
+        # No is_open guard: set_bitrate remembers the bitrate and applies it on
+        # the next start(), so throttle state can't desync from the encoder.
         await self._pipeline.set_bitrate(self._backend, bitrate)
