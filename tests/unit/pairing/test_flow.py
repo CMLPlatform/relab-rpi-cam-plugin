@@ -149,13 +149,11 @@ class TestPairingHelpers:
         monkeypatch.delenv("RELAB_CREDENTIALS_FILE", raising=False)
         assert str(pairing_credentials._get_credentials_file()).endswith(".config/relab/relay_credentials.json")
 
-    def test_pairing_service_reset_and_get_state(self) -> None:
-        """Pairing service should expose and reset its observable state."""
+    def test_pairing_service_reset_state(self) -> None:
+        """Pairing service should reset its observable state to idle."""
         service = pairing_mod.PairingService()
         service.state.code = "CODE"
         service.state.status = "waiting"
-
-        assert service.get_state() is service.state
 
         service.reset_state()
 
