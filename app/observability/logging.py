@@ -46,7 +46,9 @@ _SENSITIVE_FIELD_RE = re.compile(
     re.IGNORECASE,
 )
 _BEARER_RE = re.compile(
-    r"(\bauthorization\s*[:=]\s*bearer\s+)[^\s,;)}\]]+",
+    # Tolerate JSON/dict quoting between the key, separator, and scheme
+    # ("authorization": "Bearer <token>") so the token after the space is redacted, not just "Bearer".
+    r"(\bauthorization\b[\"']?\s*[:=]\s*[\"']?\s*bearer\s+)[^\s\"',;)}\]]+",
     re.IGNORECASE,
 )
 _PRIVATE_KEY_RE = re.compile(
