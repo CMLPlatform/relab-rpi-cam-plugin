@@ -28,7 +28,7 @@ def _read_cpu_temp_c() -> float | None:
     """Return the SoC temperature in Celsius, or None if the sysfs node is unavailable."""
     try:
         raw = _THERMAL_ZONE.read_text().strip()
-    except (FileNotFoundError, PermissionError, OSError) as exc:
+    except OSError as exc:
         logger.debug("Thermal sysfs read failed: %s", exc)
         return None
     try:
