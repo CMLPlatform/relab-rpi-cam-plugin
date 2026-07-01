@@ -109,13 +109,13 @@ class S3CompatibleSink:
                 Body=image_bytes,
                 ContentType="image/jpeg",
             )
+            public_url = AnyUrl(self._build_public_url(key))
         except Exception as exc:
             msg = f"S3 upload failed for key {key!r}: {exc}"
             raise ImageSinkError(msg) from exc
 
-        public_url = self._build_public_url(key)
         logger.info("Uploaded capture %s to S3 bucket %s (%s)", image_id, self._bucket, key, extra=build_log_extra())
-        return StoredImage(image_id=image_id, image_url=AnyUrl(public_url))
+        return StoredImage(image_id=image_id, image_url=public_url)
 
     async def _get_client(self) -> Any:  # noqa: ANN401  # aioboto3 client is dynamically typed
         """Return the shared S3 client, creating it once and keeping the pool warm.
