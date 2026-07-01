@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, cast  # Any used in cast("Any", ...) below
 
 import pytest
 from fastapi import Request

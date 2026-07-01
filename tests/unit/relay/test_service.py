@@ -29,7 +29,7 @@ from relab_rpi_cam_models import RELAY_COMMAND_FORBIDDEN_DETAIL, RELAY_WS_TEXT_F
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
 if TYPE_CHECKING:
-    from websockets.asyncio.client import ClientConnection
+    from websockets.asyncio.client import ClientConnection  # used in cast("ClientConnection", ...) below
 
 RELAY_AUTH_SCHEME = "device_assertion"
 RELAY_KEY_ID = "key-1"

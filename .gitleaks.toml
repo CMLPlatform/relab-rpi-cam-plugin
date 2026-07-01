@@ -1,0 +1,8 @@
+# Run all default gitleaks rules, but allowlist the test suite's dummy API key
+# (not a real secret). Scoped to the exact literal so real leaks still fail.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Dummy credentials used in the test suite are not real secrets"
+regexes = ['''test-api-key-12345''']

@@ -1,7 +1,7 @@
 """Tests for client-safe unhandled error responses."""
 
 import logging
-from typing import Any, cast
+from typing import Any, cast  # Any used in cast("Any", ...) below
 
 import pytest
 from fastapi import FastAPI

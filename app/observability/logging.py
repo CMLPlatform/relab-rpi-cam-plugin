@@ -15,7 +15,7 @@ from uuid import uuid4
 from app.core.runtime_context import get_active_runtime_state
 
 if TYPE_CHECKING:
-    from fastapi import Request
+    from fastapi import Request  # used in the "Request | None" annotation on build_security_log_extra
 
     from app.core.settings import Settings
 

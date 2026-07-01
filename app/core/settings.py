@@ -24,13 +24,14 @@ RELAY_WSS_SCHEME = "wss"
 RELAY_WS_SCHEME = "ws"
 LOCALHOST_HOSTNAME = "localhost"
 RELAY_AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
-CAMERA_BACKEND_PICAMERA2 = "picamera2"
+CAMERA_BACKEND_PICAMERA2 = "picamera2"  # used in app/camera/services/manager.py
 IMAGE_SINK_AUTO = "auto"
 IMAGE_SINK_BACKEND = "backend"
 IMAGE_SINK_S3 = "s3"
 DEFAULT_PAIRING_BACKEND_URL = "https://api.cml-relab.org"
 APP_ENV_DEVELOPMENT = "development"
 APP_ENV_PRODUCTION = "production"
+# used in core/bootstrap.py and pairing/services/service.py
 PAIRING_LOOPBACK_CONTAINER_ERROR = (
     "PAIRING_BACKEND_URL uses loopback inside a container. "
     "Set APP_ENV=development for the host.docker.internal rewrite, or configure a reachable backend URL."
