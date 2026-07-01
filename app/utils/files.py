@@ -30,11 +30,12 @@ async def clear_directory(path: Path, *, time_to_live_s: int | None = None) -> N
             return
         now = time.time()
         for file in path.glob("*"):
-            if not file.is_file():
-                continue
-            if time_to_live_s and (now - file.stat().st_mtime) < time_to_live_s:
-                continue
-            file.unlink()
+            with contextlib.suppress(FileNotFoundError):
+                if not file.is_file():
+                    continue
+                if time_to_live_s and (now - file.stat().st_mtime) < time_to_live_s:
+                    continue
+                file.unlink()
 
     await asyncio.to_thread(_clear)
 
@@ -58,6 +59,11 @@ def write_json_atomic(path: Path, data: dict[str, object]) -> None:
             os.fchmod(tmp.fileno(), 0o600)
             os.fsync(tmp.fileno())
         tmp_path.replace(path)
+        dir_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
     except OSError:
         if tmp_path is not None:
             with contextlib.suppress(OSError):

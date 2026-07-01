@@ -49,7 +49,7 @@ class CaptureFilePolicy:
                 image.verify()
             with Image.open(BytesIO(data)) as image:
                 self.validate_dimensions(image.size, max_pixels=max_pixels)
-        except (OSError, UnidentifiedImageError) as exc:
+        except (OSError, UnidentifiedImageError, Image.DecompressionBombError) as exc:
             msg = f"Capture file is not a valid {self.pillow_format} image."
             raise CaptureFileValidationError(msg) from exc
 

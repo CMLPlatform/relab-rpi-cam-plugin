@@ -61,6 +61,13 @@ def test_oversized_byte_payload_fails() -> None:
         JPEG_CAPTURE_POLICY.validate_persisted_bytes(_jpeg_bytes(), max_bytes=4, max_pixels=100)
 
 
+def test_decompression_bomb_is_converted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pillow's DecompressionBombError should surface as a capture validation error, not a 500."""
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1)
+    with pytest.raises(CaptureFileValidationError, match="valid JPEG"):
+        JPEG_CAPTURE_POLICY.validate_persisted_bytes(_jpeg_bytes(), max_bytes=1024, max_pixels=100)
+
+
 def test_oversized_pixel_dimensions_fail() -> None:
     """Pixel limits should reject image floods before upload or serving."""
     with pytest.raises(CaptureFileValidationError, match="pixels"):
