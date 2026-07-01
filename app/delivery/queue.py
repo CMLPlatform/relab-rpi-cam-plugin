@@ -159,7 +159,7 @@ class UploadQueue:
             )
             return True
 
-        backoff = _BACKOFF_SCHEDULE[attempts]
+        backoff = _BACKOFF_SCHEDULE[attempts - 1]
         next_attempt = datetime.now(UTC) + timedelta(seconds=backoff)
         payload = _metadata_payload(
             image_id=entry.image_id,
