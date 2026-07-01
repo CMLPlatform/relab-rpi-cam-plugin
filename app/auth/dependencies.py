@@ -37,7 +37,7 @@ class BrowserSession:
 _active_sessions: dict[str, BrowserSession] = {}
 
 
-def reload_authorized_hashes(runtime_state: RuntimeState | None = None) -> frozenset[str]:
+def reload_authorized_keys(runtime_state: RuntimeState | None = None) -> frozenset[str]:
     """Return the current immutable authorized-key snapshot used by auth checks."""
     active_state = runtime_state or get_active_runtime_state()
     return frozenset(active_state.authorized_api_keys)
@@ -52,7 +52,7 @@ def _is_authorized(api_key: str, authorized_api_keys: frozenset[str]) -> bool:
     matched = False
     api_key_bytes = api_key.encode()  # compare on bytes: compare_digest rejects non-ASCII str
     for candidate in authorized_api_keys:
-        if hmac.compare_digest(api_key, candidate):
+        if hmac.compare_digest(api_key_bytes, candidate.encode()):
             matched = True
     return matched
 
@@ -131,6 +131,9 @@ def verify_cookie_write_csrf(request: Request) -> None:
     if request.method.upper() in SAFE_METHODS:
         return
 
+    # Note: expected origin is the received scheme+Host. The reverse proxy must preserve Host
+    # and set X-Forwarded-Proto (Dockerfile trusts 127.0.0.1); add X-Forwarded-Host handling only
+    # if a host-rewriting proxy is ever introduced.
     expected_origin = f"{request.url.scheme}://{request.url.netloc}"
     if origin := request.headers.get("Origin"):
         if _same_origin(origin, expected_origin):
@@ -155,7 +158,7 @@ async def verify_request(
     x_api_key_header: Annotated[str | None, Security(api_key_header)] = None,
 ) -> str:
     """Verify API access using a valid API key header or browser session."""
-    authorized_api_keys = reload_authorized_hashes(get_request_runtime(request).runtime_state)
+    authorized_api_keys = reload_authorized_keys(get_request_runtime(request).runtime_state)
     if x_api_key_header:
         if not _is_authorized(x_api_key_header, authorized_api_keys):
             logger.warning(

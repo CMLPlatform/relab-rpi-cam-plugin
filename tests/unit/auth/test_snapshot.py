@@ -25,17 +25,17 @@ class _FixedClock:
 class TestAuthorizedSnapshot:
     """Tests for immutable request-scoped auth snapshots."""
 
-    def test_reload_authorized_hashes_returns_immutable_snapshot(self) -> None:
+    def test_reload_authorized_keys_returns_immutable_snapshot(self) -> None:
         """Reload should return a stable snapshot that only changes when reloaded."""
         runtime_state = RuntimeState(authorized_api_keys=frozenset({SNAPSHOT_KEY_1}))
 
-        snapshot = auth_mod.reload_authorized_hashes(runtime_state)
+        snapshot = auth_mod.reload_authorized_keys(runtime_state)
         assert auth_mod._is_authorized(SNAPSHOT_KEY_1, snapshot) is True
 
         runtime_state.add_authorized_api_key(SNAPSHOT_KEY_2)
         assert auth_mod._is_authorized(SNAPSHOT_KEY_2, snapshot) is False
 
-        refreshed_snapshot = auth_mod.reload_authorized_hashes(runtime_state)
+        refreshed_snapshot = auth_mod.reload_authorized_keys(runtime_state)
         assert auth_mod._is_authorized(SNAPSHOT_KEY_2, refreshed_snapshot) is True
 
     def test_authorization_compares_every_candidate_before_returning(
@@ -44,9 +44,9 @@ class TestAuthorizedSnapshot:
     ) -> None:
         """API-key checks should not leak the matching candidate's position."""
         candidates = frozenset({"first-match", "second-key", "third-key"})
-        compared: list[str] = []
+        compared: list[bytes] = []
 
-        def _compare_digest(left: str, right: str) -> bool:
+        def _compare_digest(left: bytes, right: bytes) -> bool:
             del left
             compared.append(right)
             return True
@@ -54,7 +54,7 @@ class TestAuthorizedSnapshot:
         monkeypatch.setattr(auth_mod.hmac, "compare_digest", _compare_digest)
 
         assert auth_mod._is_authorized("first-match", candidates) is True
-        assert set(compared) == candidates
+        assert set(compared) == {candidate.encode() for candidate in candidates}
         assert len(compared) == len(candidates)
 
 

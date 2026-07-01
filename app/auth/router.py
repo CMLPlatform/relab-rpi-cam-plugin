@@ -13,7 +13,7 @@ from app.auth.dependencies import (
     create_session,
     delete_session,
     has_valid_session,
-    reload_authorized_hashes,
+    reload_authorized_keys,
     verify_cookie_write_csrf,
 )
 from app.core.runtime import get_request_runtime
@@ -31,7 +31,9 @@ def _safe_local_redirect_target(redirect_url: str) -> str:
         return "/"
 
     path = parsed.path or "/"
-    if not path.startswith("/"):
+    # Browsers normalize backslashes to slashes, so "/\evil.com" becomes the
+    # protocol-relative "//evil.com". Reject both leading-slash escapes.
+    if not path.startswith("/") or path.startswith(("//", "/\\")):
         return "/"
 
     return urlunsplit(("", "", path, parsed.query, ""))
@@ -44,7 +46,7 @@ async def login(
     redirect_url: Annotated[str, Form()] = "/",
 ) -> RedirectResponse:
     """Validate an API key and create a browser session."""
-    authorized_api_keys = reload_authorized_hashes(get_request_runtime(request).runtime_state)
+    authorized_api_keys = reload_authorized_keys(get_request_runtime(request).runtime_state)
     if not _is_authorized(api_key, authorized_api_keys):
         logger.warning(
             "Security event: browser login failed",

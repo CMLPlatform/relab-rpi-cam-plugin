@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.auth.dependencies import reload_authorized_hashes, verify_request
+from app.auth.dependencies import reload_authorized_keys, verify_request
 from app.camera.services.manager import CameraManager
 from app.core.runtime import AppRuntime, set_active_runtime
 from app.main import app
@@ -58,7 +58,7 @@ def app_runtime(camera_manager: CameraManager) -> AppRuntime:
     """Return a runtime wired to the test camera manager."""
     runtime = build_test_runtime(camera_manager=camera_manager)
     runtime.runtime_state.add_authorized_api_key(TEST_API_KEY)
-    reload_authorized_hashes(runtime.runtime_state)
+    reload_authorized_keys(runtime.runtime_state)
     return runtime
 
 

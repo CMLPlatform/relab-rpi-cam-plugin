@@ -94,7 +94,7 @@ class TestApplyRelayCredentials:
         runtime_state = RuntimeState()
         with (
             patch("app.core.bootstrap.load_relay_credentials", return_value={}),
-            patch("app.auth.dependencies.reload_authorized_hashes"),
+            patch("app.auth.dependencies.reload_authorized_keys"),
         ):
             apply_relay_credentials(runtime_state)
         assert runtime_state.relay_backend_url == ""

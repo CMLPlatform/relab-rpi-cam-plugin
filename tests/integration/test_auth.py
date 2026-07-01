@@ -11,7 +11,7 @@ from app.auth.dependencies import (
     SESSION_COOKIE_MAX_AGE_SECONDS,
     create_session,
     has_valid_session,
-    reload_authorized_hashes,
+    reload_authorized_keys,
 )
 from app.core.runtime import AppRuntime
 from app.core.settings import settings
@@ -68,7 +68,7 @@ PUBLIC_ENDPOINTS: tuple[tuple[str, str], ...] = (
 def _set_test_api_key(app_runtime: AppRuntime) -> None:
     """Ensure a known API key is available for auth tests."""
     app_runtime.runtime_state.add_authorized_api_key(VALID_API_KEY)
-    reload_authorized_hashes(app_runtime.runtime_state)
+    reload_authorized_keys(app_runtime.runtime_state)
 
 
 def _log_record(caplog: pytest.LogCaptureFixture, event: str) -> Any:
@@ -432,6 +432,16 @@ class TestLoginEndpoint:
         )
         assert resp.status_code == 303
         assert resp.headers["location"] == LIVE_TAB_REDIRECT
+
+    async def test_login_rejects_backslash_protocol_relative_redirect(self, unauthed_client: AsyncClient) -> None:
+        """Backslash escapes browsers normalize to "//" must fall back to root."""
+        resp = await unauthed_client.post(
+            "/auth/login",
+            data={"api_key": VALID_API_KEY, "redirect_url": "/\\evil.example/phish"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == ROOT_REDIRECT
 
     async def test_login_rejects_non_absolute_local_paths(self, unauthed_client: AsyncClient) -> None:
         """Relative redirect targets without a leading slash should fall back to root."""
