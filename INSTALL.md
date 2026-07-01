@@ -84,6 +84,8 @@ To rotate relay credentials, unpair the camera and pair it again. Unpairing clea
 
 Docker Compose stores runtime credentials in a named volume mounted at `/home/rpicam/.config/relab`, so paired credentials survive container restarts.
 
+The relay signing key is stored in `relay_credentials.json` with `0o600` permissions. Against SD-card theft, use full-disk encryption (LUKS); to keep the key off disk entirely, skip pairing and inject `RELAY_PRIVATE_KEY_PEM` (with `RELAY_CAMERA_ID`, `RELAY_KEY_ID`, `RELAY_AUTH_SCHEME`) via env.
+
 The HTTPS-served RELab web frontend cannot auto-probe the Pi's plain-HTTP local API because browsers block mixed content. Use the native app for pairing and direct-mode setup.
 
 ## Standalone Mode
