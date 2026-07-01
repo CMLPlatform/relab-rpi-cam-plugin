@@ -48,7 +48,9 @@ def save_relay_credentials(
     existing: dict[str, object] = {}
     if _CREDENTIALS_FILE.exists():
         with suppress(json.JSONDecodeError, OSError):
-            existing = json.loads(_CREDENTIALS_FILE.read_text())
+            loaded = json.loads(_CREDENTIALS_FILE.read_text())
+            if isinstance(loaded, dict):
+                existing = loaded
     existing.update(
         {
             "relay_backend_url": relay_backend_url,

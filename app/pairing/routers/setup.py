@@ -19,7 +19,7 @@ from app.core.runtime_state import ConnectionMode, connection_mode
 from app.core.settings import DEFAULT_PAIRING_BACKEND_URL, settings
 from app.core.templates_config import templates
 from app.observability.logging import build_log_extra
-from app.pairing.routers.local_access import get_candidate_urls
+from app.pairing.routers.local_access import _API_PORT, get_candidate_urls
 from app.pairing.services.credentials import delete_relay_credentials
 from app.pairing.services.service import (
     PAIRING_CODE_TTL_SECONDS,
@@ -85,7 +85,7 @@ async def setup_page(request: Request) -> HTMLResponse:
     if operator_authenticated:
         candidate_urls = get_candidate_urls()
         # Strip scheme and port so the template can compose its own URLs.
-        lan_ips = [u.removeprefix("http://").removesuffix(":8018") for u in candidate_urls] or ["<this-ip>"]
+        lan_ips = [u.removeprefix("http://").removesuffix(f":{_API_PORT}") for u in candidate_urls] or ["<this-ip>"]
         connection_host = lan_ips[0]
         pairing_backend_reachable = mode is ConnectionMode.PAIRED or (
             mode is ConnectionMode.PAIRING and await _pairing_backend_reachable()
