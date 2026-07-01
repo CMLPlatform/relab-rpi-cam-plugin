@@ -14,7 +14,7 @@ import app.pairing.services.service as pairing_mod
 from app.core.runtime import AppRuntime
 from app.core.settings import settings
 from tests.constants import EXAMPLE_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL
-from tests.support.fakes import (
+from tests.fakes import (
     FakePairingService,
     FakePreviewSleeper,
     FakePreviewThumbnailWorker,

@@ -24,7 +24,7 @@ from tests.constants import (
     HEADER_CSP,
     HTML_CONTENT_TYPE,
 )
-from tests.support.fakes import FakePairingService, FakeRelayService, SpyRuntime
+from tests.fakes import FakePairingService, FakeRelayService, SpyRuntime
 
 SETUP_TITLE = "RPi Camera — Setup"
 SETUP_COPY_TEXT = "Pair, refresh, or unpair from this page."

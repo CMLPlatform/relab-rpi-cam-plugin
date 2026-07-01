@@ -12,7 +12,7 @@ from app.auth.dependencies import reload_authorized_keys, verify_request
 from app.camera.services.manager import CameraManager
 from app.core.runtime import AppRuntime, set_active_runtime
 from app.main import app
-from tests.support.fakes import build_test_runtime, make_camera_manager
+from tests.fakes import build_test_runtime, make_camera_manager
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator

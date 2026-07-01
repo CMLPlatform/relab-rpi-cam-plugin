@@ -36,6 +36,8 @@ if TYPE_CHECKING:
 
     from relab_rpi_cam_models.stream import StreamMode
 
+    from app.camera.services.backend import CameraBackend
+
 
 class FakeBackend:
     """Provider-neutral camera backend for test usage."""
@@ -220,7 +222,7 @@ class FakePreviewSleeper(PreviewSleeper):
         self.configure_calls = 0
         self.run_calls = 0
 
-    def configure(self, *, backend: object) -> None:  # type: ignore[override]
+    def configure(self, *, backend: CameraBackend) -> None:
         """Record sleeper configuration without spawning background work."""
         del backend
         self.configure_calls += 1
@@ -239,7 +241,7 @@ class FakeThermalGovernor(ThermalGovernor):
         self.configure_calls = 0
         self.run_calls = 0
 
-    def configure(self, *, backend: object) -> None:  # type: ignore[override]
+    def configure(self, *, backend: CameraBackend) -> None:
         """Record governor configuration without spawning background work."""
         del backend
         self.configure_calls += 1

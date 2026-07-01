@@ -3,14 +3,12 @@
 from unittest.mock import patch
 
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.core.bootstrap import apply_relay_credentials, set_runtime_relay_credentials
 from app.core.runtime_state import RuntimeState
 from app.core.settings import Settings
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL
-from tests.support.fakes import fresh_p256_pem
+from tests.fakes import fresh_p256_pem
 
 RELAY_CAMERA_ID = "cam-1"
 RELAY_AUTH_SCHEME = "device_assertion"
@@ -18,16 +16,6 @@ RELAY_KEY_ID = "key-1"
 ENV_RELAY_BACKEND_URL = "wss://env-backend/ws/connect"
 ENV_RELAY_CAMERA_ID = "env-cam"
 ENV_RELAY_KEY_ID = "env-key"
-
-
-def _fresh_rsa_pem() -> str:
-    """Mint a throwaway RSA private key in PEM form."""
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    return key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    ).decode()
 
 
 RELAY_PRIVATE_KEY_PEM = fresh_p256_pem()
@@ -146,7 +134,9 @@ class TestSetRuntimeRelayCredentials:
         assert runtime_state.relay_key_id == RELAY_KEY_ID
 
     def test_rejects_non_device_assertion_auth_scheme(self) -> None:
-        """Relay JWT signing credentials should only support device assertions."""
+        """Credential validation should be wired into the runtime boundary."""
+        # Detailed validation cases live in tests/unit/relay/test_credentials.py;
+        # this guards that set_runtime_relay_credentials actually invokes them.
         with pytest.raises(ValueError, match="device_assertion"):
             set_runtime_relay_credentials(
                 runtime_state=RuntimeState(),
@@ -155,54 +145,6 @@ class TestSetRuntimeRelayCredentials:
                 relay_auth_scheme="bearer",
                 relay_key_id=RELAY_KEY_ID,
                 relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
-            )
-
-    @pytest.mark.parametrize(
-        ("field_name", "relay_camera_id", "relay_key_id"),
-        [
-            ("relay_camera_id", "bad camera id", RELAY_KEY_ID),
-            ("relay_key_id", RELAY_CAMERA_ID, "bad key id!"),
-        ],
-    )
-    def test_rejects_malformed_relay_identifiers(
-        self,
-        field_name: str,
-        relay_camera_id: str,
-        relay_key_id: str,
-    ) -> None:
-        """Relay camera and key identifiers should stay bounded and URL-safe."""
-        with pytest.raises(ValueError, match=field_name):
-            set_runtime_relay_credentials(
-                runtime_state=RuntimeState(),
-                relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
-                relay_camera_id=relay_camera_id,
-                relay_auth_scheme=RELAY_AUTH_SCHEME,
-                relay_key_id=relay_key_id,
-                relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
-            )
-
-    def test_rejects_non_p256_private_key(self) -> None:
-        """Device assertions must be signed with an EC P-256 private key."""
-        with pytest.raises(ValueError, match="P-256"):
-            set_runtime_relay_credentials(
-                runtime_state=RuntimeState(),
-                relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
-                relay_camera_id=RELAY_CAMERA_ID,
-                relay_auth_scheme=RELAY_AUTH_SCHEME,
-                relay_key_id=RELAY_KEY_ID,
-                relay_private_key_pem=_fresh_rsa_pem(),
-            )
-
-    def test_rejects_invalid_private_key_pem(self) -> None:
-        """Malformed private key material should fail before runtime state changes."""
-        with pytest.raises(ValueError, match="private key"):
-            set_runtime_relay_credentials(
-                runtime_state=RuntimeState(),
-                relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
-                relay_camera_id=RELAY_CAMERA_ID,
-                relay_auth_scheme=RELAY_AUTH_SCHEME,
-                relay_key_id=RELAY_KEY_ID,
-                relay_private_key_pem="not a private key",
             )
 
 
