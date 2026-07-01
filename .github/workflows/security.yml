@@ -52,6 +52,7 @@ jobs:
         uses: gacts/gitleaks@c9a0338361dc45a01aa7ebaaa5330179f3c62873
         with:
           version: 8.30.1
+          config-path: .github/gitleaks.toml
 
   dependency-audit:
     name: Dependency Audit
