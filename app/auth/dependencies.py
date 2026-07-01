@@ -20,8 +20,7 @@ SESSION_INACTIVITY_TIMEOUT = timedelta(minutes=30)
 SESSION_ABSOLUTE_LIFETIME = timedelta(hours=12)
 SESSION_COOKIE_MAX_AGE_SECONDS = int(SESSION_ABSOLUTE_LIFETIME.total_seconds())
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-HTTP_SCHEME = "http"
-HTTPS_SCHEME = "https"
+_SCHEME_PORTS: dict[str, int] = {"http": 80, "https": 443}
 logger = logging.getLogger(__name__)
 
 api_key_header = APIKeyHeader(name=settings.auth_key_name, auto_error=False, description="API Key for API access.")
@@ -101,34 +100,24 @@ def has_valid_session(token: str | None) -> bool:
     return True
 
 
-def _browser_session_token(request: Request) -> str | None:
-    """Return the browser session token from the active cookie name."""
-    return request.cookies.get(settings.browser_session_cookie_name)
-
-
 def has_valid_browser_session(request: Request) -> bool:
     """Return whether the request carries a valid browser session cookie."""
-    return has_valid_session(_browser_session_token(request))
-
-
-def _default_port(scheme: str) -> int | None:
-    if scheme == HTTP_SCHEME:
-        return 80
-    if scheme == HTTPS_SCHEME:
-        return 443
-    return None
+    return has_valid_session(request.cookies.get(settings.browser_session_cookie_name))
 
 
 def _same_origin(left: str, right: str) -> bool:
     """Return whether two absolute URLs share scheme, host, and port."""
-    left_parsed = urlsplit(left)
-    right_parsed = urlsplit(right)
-    if not left_parsed.scheme or not left_parsed.hostname:
+    try:
+        left_parsed = urlsplit(left)
+        right_parsed = urlsplit(right)
+        if not left_parsed.scheme or not left_parsed.hostname:
+            return False
+        if not right_parsed.scheme or not right_parsed.hostname:
+            return False
+        left_port = left_parsed.port or _SCHEME_PORTS.get(left_parsed.scheme)
+        right_port = right_parsed.port or _SCHEME_PORTS.get(right_parsed.scheme)
+    except ValueError:
         return False
-    if not right_parsed.scheme or not right_parsed.hostname:
-        return False
-    left_port = left_parsed.port or _default_port(left_parsed.scheme)
-    right_port = right_parsed.port or _default_port(right_parsed.scheme)
     return (
         left_parsed.scheme == right_parsed.scheme
         and left_parsed.hostname == right_parsed.hostname

@@ -10,8 +10,8 @@ from relab_rpi_cam_models.stream import StreamMode
 from app.camera.exceptions import ActiveStreamError, YoutubeConfigRequiredError
 from app.camera.schemas import YoutubeStreamConfig
 from app.camera.services.manager import CameraManager
+from app.camera.streaming.stream_state import ActiveStreamState
 from app.main import app
-from app.media.stream_state import ActiveStreamState
 from tests.constants import YOUTUBE_WATCH_URL_PREFIX
 
 YOUTUBE_CONFIG_KEY = "youtube_config"

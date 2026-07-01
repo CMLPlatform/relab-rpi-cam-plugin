@@ -6,7 +6,8 @@ from typing import Self
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from httpx import AsyncClient
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from pydantic import HttpUrl
 
 from app.auth.dependencies import create_session
@@ -132,7 +133,7 @@ class TestSetupPage:
         self._pairing_backend_reachable = AsyncMock(return_value=True)
         self._get_candidate_urls = MagicMock(side_effect=list)
         monkeypatch.setattr(setup_router, "_pairing_backend_reachable", self._pairing_backend_reachable)
-        monkeypatch.setattr(setup_router, "_get_candidate_urls", self._get_candidate_urls)
+        monkeypatch.setattr(setup_router, "get_candidate_urls", self._get_candidate_urls)
         monkeypatch.setattr(setup_router, "get_request_runtime", lambda _request: runtime)
         self._runtime = runtime
         self._pairing_state = runtime.pairing_service.state
@@ -268,6 +269,21 @@ class TestSetupPage:
         assert COPY_PAIRING_CODE_LABEL in resp.text
         assert NEW_PAIRING_CODE_BUTTON not in resp.text
         assert PAIRED_TEXT not in resp.text
+
+    async def test_setup_page_hides_pairing_code_from_remote_visitors(
+        self,
+        test_app: FastAPI,
+    ) -> None:
+        """A non-local, unauthenticated visitor must not receive the pairing code."""
+        self._pairing_state.status = "waiting"
+        self._pairing_state.code = PAIRING_CODE
+        self._pairing_state.error = None
+        self._pairing_state.expires_at = datetime.now(UTC) + timedelta(minutes=10)
+        transport = ASGITransport(app=test_app, client=("8.8.8.8", 40000))
+        async with AsyncClient(transport=transport, base_url="http://test") as remote_client:
+            resp = await remote_client.get("/setup")
+        assert PAIRING_CODE not in resp.text
+        assert COPY_PAIRING_CODE_LABEL not in resp.text
 
     async def test_setup_page_shows_pairing_refresh_to_browser_sessions(
         self,
@@ -446,7 +462,6 @@ class TestUnpair:
         """Endpoint returns 204 No Content immediately."""
         with (
             patch("app.pairing.routers.setup.delete_relay_credentials"),
-            patch("app.pairing.routers.setup.clear_runtime_relay_credentials"),
             patch("app.pairing.routers.setup.asyncio.sleep"),
         ):
             resp = await client.delete("/pairing")
@@ -466,10 +481,7 @@ class TestUnpair:
 
         with (
             patch("app.pairing.routers.setup.delete_relay_credentials", side_effect=lambda: deleted.append(True)),
-            patch(
-                "app.pairing.routers.setup.clear_runtime_relay_credentials",
-                side_effect=lambda _runtime_state: cleared.append(True),
-            ),
+            patch.object(runtime.runtime_state, "clear_relay_credentials", side_effect=lambda: cleared.append(True)),
             patch("app.pairing.routers.setup.asyncio.sleep"),  # skip the 0.1s delay
             patch(
                 "app.pairing.routers.setup.get_request_runtime",

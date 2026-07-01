@@ -18,7 +18,7 @@ class _FixedClock:
     def __init__(self, fixed: datetime) -> None:
         self.fixed = fixed
 
-    def now(self, tz: Any = None) -> datetime:  # noqa: ARG002
+    def now(self, tz: Any = None) -> datetime:  # noqa: ARG002 # Unused `tz` argument is part of the datetime API.
         return self.fixed
 
 

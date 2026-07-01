@@ -9,11 +9,11 @@ import secrets
 from io import BytesIO
 from typing import TYPE_CHECKING
 
+from PIL import ImageOps
 from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
 from relab_rpi_cam_models.images import ImageCaptureResponse, ImageCaptureStatus
 
 from app.backend.contract_adapters import build_image_metadata, image_metadata_to_exif
-from app.backend.factory import create_camera_backend
 from app.camera.exceptions import ActiveStreamError
 from app.camera.schemas import (
     CameraControlsPatch,
@@ -22,14 +22,14 @@ from app.camera.schemas import (
     YoutubeStreamConfig,
 )
 from app.camera.services.backend import CameraBackend, ControllableCameraBackend, StreamingCameraBackend
-from app.core.settings import settings
-from app.image_sinks import ImageSink, ImageSinkError, get_image_sink
-from app.media.file_policy import JPEG_CAPTURE_POLICY, CaptureFileValidationError
-from app.media.stream_service import StreamService
-from app.media.stream_state import ActiveStreamState
+from app.camera.services.picamera2_backend import Picamera2Backend
+from app.camera.streaming.stream_state import ActiveStreamState
+from app.core.settings import CAMERA_BACKEND_PICAMERA2, settings
+from app.delivery import ImageSink, ImageSinkError, get_image_sink
+from app.delivery.queue import UploadQueue, UploadQueueFullError
 from app.observability.logging import build_log_extra
-from app.upload.queue import UploadQueue, UploadQueueFullError
-from app.utils.files import cleanup_images, unlink_quiet
+from app.utils.file_policy import JPEG_CAPTURE_POLICY
+from app.utils.files import cleanup_images
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
@@ -57,32 +57,38 @@ class CameraControlsNotSupportedError(RuntimeError):
         super().__init__(f"Backend {type(backend).__name__} does not support remote camera controls")
 
 
-def _encode_jpeg_atomic(
-    image: PilImage,
-    image_path: Path,
-    exif: Exif,
-) -> bytes:
-    """Encode a PIL image to ``image_path`` atomically and return the bytes.
+def _encode_jpeg(image: PilImage, exif: Exif) -> bytes:
+    """Encode a PIL image to JPEG bytes in memory.
 
-    Writes to a sibling ``.tmp`` file first then ``os.replace``s it onto the final
-    name, so a disk-full, crash, or concurrent reader never sees a half-written JPEG.
-    Runs off the event loop via ``asyncio.to_thread``.
+    The happy path uploads these bytes directly and never touches disk; the file
+    is only persisted (via ``_write_bytes_atomic``) when the sink fails and the
+    capture has to fall back to the local upload queue. Runs off the event loop
+    via ``asyncio.to_thread``.
+    """
+    buffer = BytesIO()
+    image.save(buffer, exif=exif, format="JPEG", quality=90)
+    return buffer.getvalue()
+
+
+def _write_bytes_atomic(image_bytes: bytes, image_path: Path) -> None:
+    """Write ``image_bytes`` to ``image_path`` atomically for the upload-queue fallback.
+
+    Writes a sibling ``.tmp`` file first then ``os.replace``s it onto the final
+    name, so a disk-full or crash mid-write never leaves a half-written JPEG for
+    the queue to pick up. Runs off the event loop via ``asyncio.to_thread``.
     """
     tmp_path = image_path.with_suffix(image_path.suffix + ".tmp")
     try:
-        image.save(tmp_path, exif=exif, format="JPEG", quality=90)
-        image_bytes = tmp_path.read_bytes()
+        tmp_path.write_bytes(image_bytes)
         tmp_path.replace(image_path)
     except BaseException:
-        unlink_quiet(tmp_path)
+        tmp_path.unlink(missing_ok=True)
         raise
-    return image_bytes
 
 
 def encode_preview_jpeg(image: PilImage) -> bytes:
     """Encode a smaller JPEG suitable for cached preview thumbnails."""
-    frame = image.copy()
-    frame.thumbnail((640, 400))
+    frame = ImageOps.contain(image, (640, 400))
     buffer = BytesIO()
     frame.save(buffer, format="JPEG", quality=72, optimize=True)
     return buffer.getvalue()
@@ -97,7 +103,13 @@ class CameraManager:
         upload_queue: UploadQueue | None = None,
         sink: ImageSink | None = None,
     ) -> None:
-        self.backend = backend or create_camera_backend()
+        if backend is None:
+            if settings.camera_backend == CAMERA_BACKEND_PICAMERA2:
+                backend = Picamera2Backend()
+            else:
+                msg = f"Unsupported camera backend: {settings.camera_backend}"
+                raise ValueError(msg)
+        self.backend = backend
         # The image sink is resolved lazily on first ``capture_jpeg`` so that
         # instantiating a ``CameraManager`` (e.g. the module-level singleton
         # in ``dependencies/camera_management.py``) doesn't fire factory
@@ -106,7 +118,7 @@ class CameraManager:
         self._upload_queue_override = upload_queue
         self._upload_queue: UploadQueue | None = None
         self._on_capture_uploaded: Callable[[PilImage], Awaitable[None]] | None = None
-        self.stream_service = StreamService()
+        self._stream = ActiveStreamState()
         self.lock = asyncio.Lock()
         self.lock_timeout = 10
 
@@ -140,11 +152,7 @@ class CameraManager:
     @property
     def stream(self) -> ActiveStreamState:
         """Expose active stream state for existing callers."""
-        return self.stream_service.state
-
-    def has_active_stream(self) -> bool:
-        """Whether a stream is currently active."""
-        return self.stream.is_active
+        return self._stream
 
     @contextlib.asynccontextmanager
     async def _locked(self, timeout_s: float | None = None) -> AsyncIterator[None]:
@@ -182,9 +190,11 @@ class CameraManager:
         a successful synchronous upload the local file is deleted. On failure the
         file is moved into the upload queue for exponential-backoff retry.
 
-        The camera lock is held across the entire frame-to-disk path (capture, encode,
-        atomic rename) so a concurrent stream start cannot race the encoder or truncate
-        the JPEG on the way out.
+        The camera lock is held across capture and encode so a concurrent stream
+        start cannot race the encoder. Encoding goes straight to memory: on the
+        happy path the bytes are uploaded and disk is never touched, and the file
+        is only written (atomically) when the sink fails and we fall back to the
+        local upload queue.
         """
         upload_meta = upload_metadata or {}
 
@@ -197,16 +207,11 @@ class CameraManager:
             JPEG_CAPTURE_POLICY.validate_dimensions(result.image.size, max_pixels=settings.max_capture_pixels)
             img_metadata = build_image_metadata(result.image, result.camera_properties, result.capture_metadata)
             image_bytes = await asyncio.to_thread(
-                _encode_jpeg_atomic,
+                _encode_jpeg,
                 result.image,
-                image_path,
                 image_metadata_to_exif(img_metadata),
             )
-            try:
-                JPEG_CAPTURE_POLICY.validate_size(image_bytes, max_bytes=settings.max_capture_file_bytes)
-            except CaptureFileValidationError:
-                await asyncio.to_thread(unlink_quiet, image_path)
-                raise
+            JPEG_CAPTURE_POLICY.validate_size(image_bytes, max_bytes=settings.max_capture_file_bytes)
 
         capture_metadata_dict = img_metadata.model_dump(mode="json")
 
@@ -225,6 +230,7 @@ class CameraManager:
                 exc,
                 extra=build_log_extra(stream_mode=self.stream.mode),
             )
+            await asyncio.to_thread(_write_bytes_atomic, image_bytes, image_path)
             try:
                 await self.upload_queue.enqueue(
                     image_id=image_id,
@@ -233,7 +239,7 @@ class CameraManager:
                     upload_metadata=upload_meta,
                 )
             except UploadQueueFullError:
-                await asyncio.to_thread(unlink_quiet, image_path)
+                await asyncio.to_thread(image_path.unlink, missing_ok=True)
                 raise
             return ImageCaptureResponse(
                 image_id=image_id,
@@ -242,8 +248,6 @@ class CameraManager:
                 image_url=None,
                 expires_at=None,
             )
-
-        await asyncio.to_thread(unlink_quiet, image_path)
 
         if self._on_capture_uploaded is not None:
             try:
@@ -342,9 +346,9 @@ class CameraManager:
             try:
                 logger.info("Starting stream", extra=build_log_extra(stream_mode=mode))
                 result = await backend.start_stream(mode, youtube_config=youtube_config)
-                self.stream_service.start(result)
+                self._stream.start(result)
             except Exception:
-                self.stream_service.reset()
+                self._stream.reset()
                 raise
 
         if (stream_info := await self.get_stream_info()) is None:
@@ -362,7 +366,7 @@ class CameraManager:
                 raise RuntimeError(err_msg)
             logger.info("Stopping stream", extra=build_log_extra(stream_mode=self.stream.mode))
             await backend.stop_stream()
-            self.stream_service.reset()
+            self._stream.reset()
 
     async def cleanup(self, *, force: bool = False) -> None:
         """Clean up camera and streaming resources. If force is True, this happens even if there is an active stream."""
@@ -377,12 +381,22 @@ class CameraManager:
         async with self._locked():
             await self.backend.cleanup()
 
+        # Close the image sink's pooled connections if it holds any (the S3
+        # sink keeps a warm client alive for the process lifetime). Read the
+        # resolved instance directly so shutdown never lazily creates one.
+        aclose = getattr(self._sink, "aclose", None)
+        if aclose is not None:
+            try:
+                await aclose()
+            except Exception:
+                logger.exception("Image sink close had a non-fatal error")
+
     async def get_stream_info(self) -> StreamView | None:
         """Get stream information including metadata if active."""
         if self.stream.is_active:
             backend = self._require_streaming_backend()
             camera_properties, capture_metadata = await backend.get_stream_metadata()
-            return self.stream_service.build_view(
+            return self._stream.to_view(
                 camera_properties=camera_properties,
                 capture_metadata=capture_metadata,
             )
@@ -396,4 +410,3 @@ class CameraManager:
             current_mode=self.backend.current_mode,
             stream=stream_info if self.stream.is_active else None,
         )
-

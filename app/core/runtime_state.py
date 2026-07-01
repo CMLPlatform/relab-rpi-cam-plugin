@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -93,5 +94,26 @@ class RuntimeState:
         self.authorized_api_keys = frozenset({*self.authorized_api_keys, key})
 
     def is_authorized_api_key(self, api_key: str) -> bool:
-        """Return whether a key is authorized in the current runtime snapshot."""
-        return api_key in self.authorized_api_keys
+        """Return whether a key is authorized in the current runtime snapshot.
+
+        Uses a constant-time comparison per candidate key so a network attacker
+        cannot learn a valid key byte-by-byte from response timing.
+        """
+        return any(secrets.compare_digest(api_key, key) for key in self.authorized_api_keys)
+
+
+class ConnectionMode(StrEnum):
+    """High-level relay/pairing state derived from runtime credentials."""
+
+    PAIRED = "paired"
+    PAIRING = "pairing"
+    IDLE = "idle"
+
+
+def connection_mode(runtime_state: RuntimeState, app_settings: Settings) -> ConnectionMode:
+    """Derive the active connection mode from runtime credentials and pairing config."""
+    if runtime_state.relay_enabled:
+        return ConnectionMode.PAIRED
+    if app_settings.pairing_backend_url:
+        return ConnectionMode.PAIRING
+    return ConnectionMode.IDLE

@@ -11,9 +11,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
 from contextlib import suppress
 from pathlib import Path
+
+from app.utils.files import write_json_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -41,33 +42,23 @@ def save_relay_credentials(
 ) -> None:
     """Persist relay credentials atomically to the JSON credentials file.
 
-    Writes via a ``0600`` temp file + ``Path.replace`` so credentials are not
-    briefly world-readable and a power loss cannot leave a truncated file.
+    Merges into any existing content (preserving ``local_api_key`` and other
+    fields) then writes via ``write_json_atomic``.
     """
-    data = {
-        "relay_backend_url": relay_backend_url,
-        "relay_camera_id": camera_id,
-        "relay_auth_scheme": relay_auth_scheme,
-        "relay_key_id": key_id,
-        "relay_private_key_pem": private_key_pem,
-    }
-    _CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
-        ) as tmp:
-            tmp_path = Path(tmp.name)
-            tmp.write(json.dumps(data, indent=2))
-            tmp.flush()
-            os.fchmod(tmp.fileno(), 0o600)
-            os.fsync(tmp.fileno())
-        tmp_path.replace(_CREDENTIALS_FILE)
-    except OSError:
-        if tmp_path is not None:
-            with suppress(OSError):
-                tmp_path.unlink()
-        raise
+    existing: dict[str, object] = {}
+    if _CREDENTIALS_FILE.exists():
+        with suppress(json.JSONDecodeError, OSError):
+            existing = json.loads(_CREDENTIALS_FILE.read_text())
+    existing.update(
+        {
+            "relay_backend_url": relay_backend_url,
+            "relay_camera_id": camera_id,
+            "relay_auth_scheme": relay_auth_scheme,
+            "relay_key_id": key_id,
+            "relay_private_key_pem": private_key_pem,
+        }
+    )
+    write_json_atomic(_CREDENTIALS_FILE, existing)
     logger.info("Relay credentials saved to %s", _CREDENTIALS_FILE)
 
 

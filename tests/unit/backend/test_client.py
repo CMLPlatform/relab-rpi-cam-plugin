@@ -75,9 +75,7 @@ def _patch_async_client(response: MagicMock) -> AbstractContextManager[MagicMock
     client_instance = MagicMock()
     client_instance.post = AsyncMock(return_value=response)
     client_instance.delete = AsyncMock(return_value=response)
-    client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-    client_instance.__aexit__ = AsyncMock(return_value=None)
-    return patch.object(backend_client_mod.httpx, "AsyncClient", return_value=client_instance)
+    return patch.object(backend_client_mod, "_get_client", return_value=client_instance)
 
 
 class TestUploadImage:
@@ -203,11 +201,9 @@ class TestUploadImage:
         """An httpx transport error should surface as BackendUploadError."""
         client_instance = MagicMock()
         client_instance.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
-        client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-        client_instance.__aexit__ = AsyncMock(return_value=None)
 
         with (
-            patch.object(backend_client_mod.httpx, "AsyncClient", return_value=client_instance),
+            patch.object(backend_client_mod, "_get_client", return_value=client_instance),
             pytest.raises(BackendUploadError, match="Network error"),
         ):
             await upload_image(
@@ -385,11 +381,9 @@ class TestNotifySelfUnpair:
         """Transport failures should also stay best-effort and warning-only."""
         client_instance = MagicMock()
         client_instance.delete = AsyncMock(side_effect=httpx.ConnectError("refused"))
-        client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-        client_instance.__aexit__ = AsyncMock(return_value=None)
 
         with (
-            patch.object(backend_client_mod.httpx, "AsyncClient", return_value=client_instance),
+            patch.object(backend_client_mod, "_get_client", return_value=client_instance),
             caplog.at_level(logging.WARNING),
         ):
             await backend_client_mod.notify_self_unpair()

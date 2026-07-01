@@ -236,7 +236,10 @@ def _is_static_asset_path(path: str) -> bool:
 
 async def security_headers_middleware(request: Request, call_next: Callable) -> Response:
     """Attach baseline security headers to every HTTP response."""
-    request.state.csp_nonce = token_urlsafe(_CSP_NONCE_BYTES)
+    # Only the homepage/setup CSPs interpolate a script nonce, so generate one
+    # only for those paths — every other response discarded it unused.
+    needs_nonce = request.url.path in (_HOMEPAGE_PATH, _SETUP_PATH)
+    request.state.csp_nonce = token_urlsafe(_CSP_NONCE_BYTES) if needs_nonce else ""
     response = await call_next(request)
     if not _is_static_asset_path(request.url.path):
         response.headers.setdefault("Cache-Control", "no-store")

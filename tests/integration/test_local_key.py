@@ -5,10 +5,10 @@ from httpx import AsyncClient
 
 from app.core.runtime import AppRuntime
 from app.pairing.routers import local_key as local_key_router
+from tests.constants import NO_STORE_CACHE_CONTROL
 
 LOCAL_KEY_PATH = "/local-key"
 TEST_LOCAL_KEY = "test-local-api-key"
-NO_STORE_CACHE_CONTROL = "no-store"
 NO_CACHE_PRAGMA = "no-cache"
 EXPIRES_IMMEDIATELY = "0"
 

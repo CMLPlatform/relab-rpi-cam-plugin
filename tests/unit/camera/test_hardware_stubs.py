@@ -31,25 +31,6 @@ class TestPicamera2StubRaises:
             Picamera2Stub(1)
 
 
-class TestPicamera2StubConfigHelpers:
-    """Config factories are plain dict returns so production code can call them."""
-
-    def test_create_still_configuration_returns_empty_dict(self) -> None:
-        """``create_still_configuration`` returns ``{}`` for dev hosts."""
-        # Access via __new__ to bypass the guard in __init__.
-        stub = Picamera2Stub.__new__(Picamera2Stub)
-        assert stub.create_still_configuration() == {}
-
-    def test_create_video_configuration_returns_empty_dict(self) -> None:
-        """``create_video_configuration`` returns ``{}`` for dev hosts."""
-        stub = Picamera2Stub.__new__(Picamera2Stub)
-        assert stub.create_video_configuration() == {}
-
-    def test_create_preview_configuration_returns_empty_dict(self) -> None:
-        """``create_preview_configuration`` returns ``{}`` for dev hosts."""
-        stub = Picamera2Stub.__new__(Picamera2Stub)
-        assert stub.create_preview_configuration() == {}
-
 
 class TestH264EncoderStub:
     """Constructing the encoder stub should raise so misuse fails loudly."""

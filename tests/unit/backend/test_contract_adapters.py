@@ -12,7 +12,7 @@ from app.backend.contract_adapters import (
     build_stream_metadata,
     image_metadata_to_exif,
 )
-from app.media.stream_state import ActiveStreamState, StreamStateError
+from app.camera.streaming.stream_state import ActiveStreamState, StreamStateError
 from tests.constants import YOUTUBE_WATCH_URL_PREFIX
 
 MOCK_CAMERA_MODEL = "mock"

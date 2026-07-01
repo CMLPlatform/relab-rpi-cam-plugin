@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
+from functools import partial
+from typing import TYPE_CHECKING
 
 import httpx
 from fastapi import APIRouter, Request
@@ -11,24 +14,34 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app.auth.dependencies import has_valid_browser_session
 from app.backend.client import notify_self_unpair
-from app.core.access_mode import ConnectionMode, connection_mode
-from app.core.bootstrap import clear_runtime_relay_credentials
 from app.core.runtime import get_request_runtime
+from app.core.runtime_state import ConnectionMode, connection_mode
 from app.core.settings import DEFAULT_PAIRING_BACKEND_URL, settings
 from app.core.templates_config import templates
 from app.observability.logging import build_log_extra
-from app.pairing.routers.local_access import _get_candidate_urls
+from app.pairing.routers.local_access import get_candidate_urls
+from app.pairing.services.credentials import delete_relay_credentials
 from app.pairing.services.service import (
     PAIRING_CODE_TTL_SECONDS,
     STATUS_PAIRED,
-    _normalize_pairing_backend_base_url,
-    delete_relay_credentials,
+    normalize_pairing_backend_base_url,
 )
+from app.utils.network import is_local_client
+
+if TYPE_CHECKING:
+    from app.core.runtime import AppRuntime
 
 _STATUS_ERROR = "error"
 _PAIRING_BACKEND_REACHABILITY_TIMEOUT = httpx.Timeout(connect=1.5, read=1.5, write=1.5, pool=1.5)
 
 logger = logging.getLogger(__name__)
+
+
+async def _restart_relay_after_pairing(runtime: AppRuntime) -> None:
+    """Restart the WebSocket relay once (re-)pairing completes."""
+    runtime.create_task(runtime.relay_service.run_forever(), name="ws_relay")
+    logger.info("Re-paired — WebSocket relay restarted", extra=build_log_extra())
+
 
 public_router = APIRouter(tags=["setup"])
 router = APIRouter(tags=["setup"])
@@ -41,7 +54,7 @@ async def _pairing_backend_reachable() -> bool:
         return False
 
     try:
-        normalized_base_url = _normalize_pairing_backend_base_url(base_url)
+        normalized_base_url = normalize_pairing_backend_base_url(base_url)
         async with httpx.AsyncClient(timeout=_PAIRING_BACKEND_REACHABILITY_TIMEOUT, follow_redirects=False) as client:
             await client.get(normalized_base_url)
     except (RuntimeError, httpx.HTTPError):
@@ -55,8 +68,14 @@ async def setup_page(request: Request) -> HTMLResponse:
     runtime = get_request_runtime(request)
     base_url = str(settings.base_url).rstrip("/")
     pairing = runtime.pairing_service.get_state()
+    # The pairing code lets anyone claim this camera into their own account, so
+    # only expose it to local-network (or authenticated) visitors — not the
+    # fully public /setup surface a remote/relayed request could reach.
+    if not (operator_authenticated := has_valid_browser_session(request)) and not is_local_client(
+        request.client.host if request.client else None
+    ):
+        pairing = replace(pairing, code=None)
     pairing_expires_at_iso = pairing.expires_at.isoformat() if pairing.expires_at else ""
-    operator_authenticated = has_valid_browser_session(request)
     mode = connection_mode(runtime.runtime_state, settings)
     has_local_key = bool(runtime.runtime_state.local_api_key)
 
@@ -64,7 +83,7 @@ async def setup_page(request: Request) -> HTMLResponse:
     connection_host = ""
     pairing_backend_reachable = False
     if operator_authenticated:
-        candidate_urls = _get_candidate_urls()
+        candidate_urls = get_candidate_urls()
         # Strip scheme and port so the template can compose its own URLs.
         lan_ips = [u.removeprefix("http://").removesuffix(":8018") for u in candidate_urls] or ["<this-ip>"]
         connection_host = lan_ips[0]
@@ -125,10 +144,6 @@ async def unpair(request: Request) -> Response:
     """
     runtime = get_request_runtime(request)
 
-    async def _on_repaired() -> None:
-        runtime.create_task(runtime.relay_service.run_forever(), name="ws_relay")
-        logger.info("Re-paired — WebSocket relay restarted", extra=build_log_extra())
-
     async def _do_reset() -> None:
         # Small delay so the 204 response travels back through the relay WS
         # before the relay task receives its CancelledError.
@@ -141,11 +156,14 @@ async def unpair(request: Request) -> Response:
         await runtime.stop_tasks({"ws_relay", "pairing"})
 
         delete_relay_credentials()
-        clear_runtime_relay_credentials(runtime.runtime_state)
+        runtime.runtime_state.clear_relay_credentials()
         runtime.pairing_service.reset_state()
 
         if connection_mode(runtime.runtime_state, settings) is ConnectionMode.PAIRING:
-            runtime.create_task(runtime.pairing_service.run_forever(_on_repaired), name="pairing")
+            runtime.create_task(
+                runtime.pairing_service.run_forever(partial(_restart_relay_after_pairing, runtime)),
+                name="pairing",
+            )
             logger.info("Unpairing complete — pairing flow restarted", extra=build_log_extra())
         else:
             logger.info(
@@ -167,10 +185,6 @@ async def refresh_pairing_code(request: Request) -> Response:
     """
     runtime = get_request_runtime(request)
 
-    async def _on_paired() -> None:
-        runtime.create_task(runtime.relay_service.run_forever(), name="ws_relay")
-        logger.info("Re-paired — WebSocket relay restarted", extra=build_log_extra())
-
     async def _do_refresh() -> None:
         await asyncio.sleep(0.1)
 
@@ -179,7 +193,10 @@ async def refresh_pairing_code(request: Request) -> Response:
         await runtime.stop_tasks({"pairing"})
 
         if connection_mode(runtime.runtime_state, settings) is ConnectionMode.PAIRING:
-            runtime.create_task(runtime.pairing_service.run_forever(_on_paired), name="pairing")
+            runtime.create_task(
+                runtime.pairing_service.run_forever(partial(_restart_relay_after_pairing, runtime)),
+                name="pairing",
+            )
             logger.info("Pairing code refreshed — pairing flow restarted", extra=build_log_extra())
         else:
             logger.info("Pairing code refreshed — pairing flow not active", extra=build_log_extra())

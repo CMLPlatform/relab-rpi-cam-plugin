@@ -22,6 +22,7 @@ header-frame + binary-frame pair.
 from __future__ import annotations
 
 import logging
+from functools import cache
 from typing import Annotated
 
 import httpx
@@ -31,9 +32,9 @@ from pydantic import AfterValidator
 
 from app.camera.dependencies import CameraManagerDependency
 from app.camera.services.manager import CameraManager
-from app.core.http_errors import client_error_detail
+from app.camera.streaming.preview_pipeline import PreviewPipelineManager
+from app.core.headers import client_error_detail
 from app.core.runtime import get_request_runtime
-from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.logging import build_log_extra, build_security_log_extra
 from app.relay.state import RelayRuntimeState
 from app.utils.network import is_local_client
@@ -61,6 +62,24 @@ _HLS_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
 _PREVIEW_HLS_PREFIX = "cam-preview/"
 
 
+@cache
+def _get_hls_client() -> httpx.AsyncClient:
+    """Return the process-wide MediaMTX HLS client, created on first use.
+
+    LL-HLS clients poll the playlist and pull segments continuously, so a single
+    reused client keeps the keepalive pool alive across requests instead of
+    rebuilding it on every poll.
+    """
+    return httpx.AsyncClient(timeout=_HLS_TIMEOUT, limits=_HLS_LIMITS)
+
+
+async def aclose_hls_client() -> None:
+    """Close the shared HLS client. Called once at application shutdown."""
+    if _get_hls_client.cache_info().currsize:
+        await _get_hls_client().aclose()
+        _get_hls_client.cache_clear()
+
+
 def get_preview_pipeline(request: Request) -> PreviewPipelineManager:
     """Resolve the preview pipeline from the request runtime."""
     return get_request_runtime(request).preview_pipeline
@@ -79,11 +98,6 @@ def get_preview_thumbnail_worker(request: Request) -> PreviewThumbnailWorker:
 PreviewPipelineDependency = Annotated[PreviewPipelineManager, Depends(get_preview_pipeline)]
 RelayStateDependency = Annotated[RelayRuntimeState, Depends(get_relay_state)]
 PreviewThumbnailWorkerDependency = Annotated[PreviewThumbnailWorker, Depends(get_preview_thumbnail_worker)]
-
-
-def _is_local_client(host: str | None) -> bool:
-    """Return whether an unauthenticated HLS request came from a local network."""
-    return is_local_client(host)
 
 
 async def _wake_preview_encoder(
@@ -123,7 +137,7 @@ async def start_preview(
     pipeline: PreviewPipelineDependency,
 ) -> Response:
     """Explicitly start the preview pipeline. Idempotent."""
-    if not _is_local_client(request.client.host if request.client else None):
+    if not is_local_client(request.client.host if request.client else None):
         logger.warning(
             "Security event: preview start denied — not a local client",
             extra=build_security_log_extra(
@@ -155,7 +169,7 @@ async def stop_preview(
     thumbnail_worker: PreviewThumbnailWorkerDependency,
 ) -> Response:
     """Explicitly stop the preview pipeline and refresh the cached thumbnail."""
-    if not _is_local_client(request.client.host if request.client else None):
+    if not is_local_client(request.client.host if request.client else None):
         logger.warning(
             "Security event: preview stop denied — not a local client",
             extra=build_security_log_extra(
@@ -197,7 +211,7 @@ async def proxy_hls(
     relay_state: RelayStateDependency,
 ) -> Response:
     """Fetch an LL-HLS resource from the local MediaMTX and return it verbatim."""
-    if not _is_local_client(request.client.host if request.client else None):
+    if not is_local_client(request.client.host if request.client else None):
         logger.warning(
             "Security event: HLS access denied — not a local client",
             extra=build_security_log_extra(
@@ -215,8 +229,7 @@ async def proxy_hls(
     # the trusted constant, preventing any influence on the request destination.
     target_url = httpx.URL(_MEDIAMTX_HLS_BASE).copy_with(path=f"/{hls_path}")
     try:
-        async with httpx.AsyncClient(timeout=_HLS_TIMEOUT, limits=_HLS_LIMITS) as client:
-            response = await client.get(target_url)
+        response = await _get_hls_client().get(target_url)
     except httpx.HTTPError as exc:
         logger.warning("MediaMTX HLS unreachable: %s", exc, extra=build_log_extra())
         raise HTTPException(

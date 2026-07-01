@@ -15,6 +15,7 @@ from app.auth.dependencies import (
 )
 from app.core.runtime import AppRuntime
 from app.core.settings import settings
+from tests.constants import NO_STORE_CACHE_CONTROL
 
 VALID_API_KEY = "valid-key"
 BAD_API_KEY = "bad-key"
@@ -30,7 +31,6 @@ ALLOW_ORIGIN_HEADER = "access-control-allow-origin"
 ALLOW_PRIVATE_NETWORK_HEADER = "access-control-allow-private-network"
 WILDCARD_ORIGIN = "*"
 TRUE_HEADER_VALUE = "true"
-NO_STORE_CACHE_CONTROL = "no-store"
 NO_CACHE_PRAGMA = "no-cache"
 EXPIRES_IMMEDIATELY = "0"
 CLEAR_SITE_DATA_HEADER = "clear-site-data"

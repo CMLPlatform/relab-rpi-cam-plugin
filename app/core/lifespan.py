@@ -10,11 +10,13 @@ from urllib.parse import urlparse
 from relab_rpi_cam_models.camera import CameraMode
 
 from app.__version__ import version
+from app.backend.client import aclose_client as aclose_backend_client
 from app.camera.dependencies import check_stream_duration, check_stream_health
 from app.camera.exceptions import CameraInitializationError
-from app.core.access_mode import ConnectionMode, connection_mode
+from app.camera.routers.hls import aclose_hls_client
 from app.core.bootstrap import bootstrap_runtime_state
 from app.core.runtime import AppRuntime, ensure_app_runtime
+from app.core.runtime_state import ConnectionMode, connection_mode
 from app.core.settings import settings
 from app.observability.logging import configure_library_loggers
 from app.utils.files import cleanup_images, setup_directory
@@ -146,6 +148,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await runtime.wait_for_managed_tasks()
 
     await runtime.camera_manager.cleanup(force=True)
+    await aclose_backend_client()
+    await aclose_hls_client()
     if runtime.observability_handle is not None:
         runtime.observability_handle.shutdown(app)
     logger.info("Camera resources cleaned up")

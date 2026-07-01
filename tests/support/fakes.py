@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import tempfile
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from cryptography.hazmat.primitives import serialization
@@ -24,11 +22,10 @@ from app.camera.schemas import (
 from app.camera.services.backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.camera.services.manager import CameraManager
 from app.core.runtime import AppRuntime
-from app.image_sinks.base import ImageSink, StoredImage
+from app.delivery.base import ImageSink, StoredImage
 from app.pairing.services.service import PairingService, PairingState
 from app.relay.service import RelayService
 from app.relay.state import RelayRuntimeState
-from app.upload.queue import UploadQueue, UploadQueueWorker
 from app.workers.preview_sleeper import PreviewSleeper
 from app.workers.preview_thumbnail import PreviewThumbnailWorker
 from app.workers.thermal_governor import ThermalGovernor
@@ -262,20 +259,6 @@ class FakePreviewThumbnailWorker(PreviewThumbnailWorker):
             relay_state=RelayRuntimeState(),
             relay_enabled_getter=lambda: False,
         )
-        self.run_calls = 0
-
-    async def run_forever(self) -> None:
-        """Record worker startup and then idle until cancelled."""
-        self.run_calls += 1
-        await cast("asyncio.Future[None]", asyncio.Future())
-
-
-class FakeUploadQueueWorker(UploadQueueWorker):
-    """Upload queue worker double that records runtime-managed lifecycle."""
-
-    def __init__(self) -> None:
-        self._temp_dir = tempfile.TemporaryDirectory()
-        super().__init__(UploadQueue(Path(self._temp_dir.name), sink=_NoopImageSink()))
         self.run_calls = 0
 
     async def run_forever(self) -> None:

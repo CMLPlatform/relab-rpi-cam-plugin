@@ -22,15 +22,10 @@ if TYPE_CHECKING:
 
 TEST_API_KEY = "test-api-key-12345"
 _SLOW_TEST_FRAGMENTS = (
-    "tests/unit/test_upload_queue.py::TestUploadQueueWorker",
-    "tests/unit/test_thermal_governor.py::TestLifecycle",
+    "tests/unit/upload/test_queue.py::TestUploadQueueWorker",
+    "tests/unit/media/test_thermal_governor.py::TestLifecycle",
     "tests/integration/test_main_lifespan.py",
 )
-
-
-def _ensure_test_api_key() -> None:
-    """Make the standard test API key available to auth-protected routes."""
-    return
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -50,12 +45,6 @@ def pytest_collection_modifyitems(items: list[Item]) -> None:
             item.add_marker(pytest.mark.integration)
         if any(fragment in item.nodeid for fragment in _SLOW_TEST_FRAGMENTS):
             item.add_marker(pytest.mark.slow)
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _authorized_test_api_key() -> None:
-    """Seed the test auth key once for the whole suite."""
-    _ensure_test_api_key()
 
 
 @pytest.fixture

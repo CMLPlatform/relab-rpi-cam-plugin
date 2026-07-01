@@ -1,5 +1,7 @@
 """Pydantic settings for the Raspberry Pi API app."""
 
+from __future__ import annotations
+
 import json
 from collections.abc import Iterable
 from ipaddress import ip_address
@@ -22,6 +24,7 @@ RELAY_WSS_SCHEME = "wss"
 RELAY_WS_SCHEME = "ws"
 LOCALHOST_HOSTNAME = "localhost"
 RELAY_AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
+CAMERA_BACKEND_PICAMERA2 = "picamera2"
 IMAGE_SINK_AUTO = "auto"
 IMAGE_SINK_BACKEND = "backend"
 IMAGE_SINK_S3 = "s3"
@@ -287,7 +290,7 @@ class Settings(BaseSettings):
         return bool(v)
 
     @model_validator(mode="after")
-    def _validate_runtime_bootstrap_config(self) -> "Settings":
+    def _validate_runtime_bootstrap_config(self) -> Settings:
         validate_relay_backend_url(self.relay_backend_url, app_env=self.app_env)
         relay_fields = (
             self.relay_backend_url,

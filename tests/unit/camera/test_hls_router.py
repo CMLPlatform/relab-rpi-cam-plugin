@@ -10,8 +10,9 @@ import pytest
 from fastapi import HTTPException
 
 from app.camera.routers import hls as hls_mod
-from app.camera.routers.hls import _is_local_client, proxy_hls, start_preview, stop_preview
+from app.camera.routers.hls import proxy_hls, start_preview, stop_preview
 from app.relay.state import RelayRuntimeState
+from app.utils.network import is_local_client
 from tests.constants import HLS_M3U8_CONTENT_TYPE, HLS_MP4_CONTENT_TYPE, HLS_PREVIEW_ENCODER_FRAGMENT
 
 MEDIAMTX_UNAVAILABLE_DETAIL = {"message": "MediaMTX HLS is temporarily unavailable"}
@@ -43,9 +44,7 @@ def _patch_httpx(response: _Response | Exception) -> AbstractContextManager[Magi
         client.get = AsyncMock(side_effect=response)
     else:
         client.get = AsyncMock(return_value=response)
-    client.__aenter__ = AsyncMock(return_value=client)
-    client.__aexit__ = AsyncMock(return_value=None)
-    return patch.object(hls_mod.httpx, "AsyncClient", return_value=client)
+    return patch.object(hls_mod, "_get_hls_client", return_value=client)
 
 
 def _camera_manager(*, is_open: bool = True) -> MagicMock:
@@ -340,12 +339,12 @@ class TestLocalClientDetection:
     @pytest.mark.parametrize("host", ["127.0.0.1", "::1", "192.168.2.10", "10.0.0.5", "172.20.0.2", "169.254.1.2"])
     def test_local_addresses_are_allowed(self, host: str) -> None:
         """Loopback, private, and link-local addresses may use local preview."""
-        assert _is_local_client(host) is True
+        assert is_local_client(host) is True
 
     @pytest.mark.parametrize("host", ["8.8.8.8", "2001:4860:4860::8888", None])
     def test_public_or_missing_addresses_are_rejected(self, host: str | None) -> None:
         """Public and missing client addresses may not use local preview."""
-        assert _is_local_client(host) is False
+        assert is_local_client(host) is False
 
 
 class TestPreviewControlAuth:

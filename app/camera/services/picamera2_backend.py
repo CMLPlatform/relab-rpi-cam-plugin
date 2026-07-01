@@ -25,13 +25,13 @@ from app.camera.services.backend import (
 )
 from app.camera.services.hardware_protocols import Picamera2Like
 from app.camera.services.hardware_stubs import H264EncoderStub, Picamera2Stub
-from app.core.settings import settings
-from app.media.mediamtx_client import MediaMTXAPIError, MediaMTXClient
-from app.media.stream import (
+from app.camera.streaming.mediamtx_client import MediaMTXAPIError, MediaMTXClient
+from app.camera.streaming.stream import (
     build_hires_rtsp_output,
     get_broadcast_url,
     validate_youtube_mode,
 )
+from app.core.settings import settings
 from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:
@@ -196,10 +196,7 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
            keeps working.
         """
         validate_youtube_mode(mode, youtube_config)
-        if youtube_config is None:
-            msg = "youtube_config must be provided for YouTube mode"
-            raise RuntimeError(msg)
-
+        assert youtube_config is not None  # noqa: S101  # narrowed by validate_youtube_mode
         await self.open(CameraMode.VIDEO)
         camera = self._require_camera()
 
@@ -426,18 +423,18 @@ def _value_type(value: object) -> str | None:
         return None
     if hasattr(value, "name"):
         return "enum"
-    value_type = type(value).__name__
+    label: str
     match value:
         case bool():
-            value_type = "boolean"
+            label = "boolean"
         case int():
-            value_type = "integer"
+            label = "integer"
         case float():
-            value_type = "number"
+            label = "number"
         case str():
-            value_type = "string"
+            label = "string"
         case list() | tuple():
-            value_type = "array"
+            label = "array"
         case _:
-            value_type = type(value).__name__
-    return value_type
+            label = type(value).__name__
+    return label

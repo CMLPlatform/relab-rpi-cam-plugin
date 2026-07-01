@@ -2,8 +2,7 @@
 
 import pytest
 
-from app.core.access_mode import ConnectionMode, connection_mode
-from app.core.runtime_state import RuntimeState
+from app.core.runtime_state import ConnectionMode, RuntimeState, connection_mode
 from app.core.settings import Settings
 
 PAIRING_BACKEND_URL = "https://api.example"

@@ -260,6 +260,14 @@ class FocusControlRequest(BaseModel):
         return self
 
 
+def _validate_youtube_key(v: object, field: str) -> SecretStr:
+    raw = v.get_secret_value() if isinstance(v, SecretStr) else str(v)
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", raw):
+        msg = f"Invalid {field}: only URL-safe characters allowed"
+        raise ValueError(msg)
+    return SecretStr(raw)
+
+
 class YoutubeStreamConfig(BaseModel):
     """YouTube stream configuration passed to the stream start endpoint."""
 
@@ -269,24 +277,9 @@ class YoutubeStreamConfig(BaseModel):
     @field_validator("stream_key", mode="before")
     @classmethod
     def _validate_stream_key(cls, v: object) -> SecretStr:
-        """Ensure stream keys contain only URL-safe characters."""
-        raw = v.get_secret_value() if isinstance(v, SecretStr) else str(v)
-        if not re.fullmatch(r"[A-Za-z0-9_-]+", raw):
-            msg = "Invalid stream key: only URL-safe characters allowed"
-            raise ValueError(msg)
-        return SecretStr(raw)
+        return _validate_youtube_key(v, "stream key")
 
     @field_validator("broadcast_key", mode="before")
     @classmethod
     def _validate_broadcast_key(cls, v: object) -> SecretStr:
-        """Validate broadcast (watch) id shape conservatively.
-
-        YouTube watch IDs are typically URL-safe; enforce the same
-        conservative subset here to avoid passing unexpected characters
-        into downstream URL builders.
-        """
-        raw = v.get_secret_value() if isinstance(v, SecretStr) else str(v)
-        if not re.fullmatch(r"[A-Za-z0-9_-]+", raw):
-            msg = "Invalid broadcast key: only URL-safe characters allowed"
-            raise ValueError(msg)
-        return SecretStr(raw)
+        return _validate_youtube_key(v, "broadcast key")

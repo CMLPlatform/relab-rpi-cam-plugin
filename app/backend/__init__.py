@@ -1,1 +1,1 @@
-"""ReLab backend API client, contract adapters, and Picamera2-backed backend factory."""
+"""ReLab backend API client and contract adapters."""

@@ -9,15 +9,15 @@ from inspect import isawaitable
 from typing import TYPE_CHECKING
 
 from app.camera.services.manager import CameraManager
+from app.camera.streaming.preview_pipeline import PreviewPipelineManager
 from app.core.runtime_context import get_active_runtime, set_active_runtime
 from app.core.runtime_state import RuntimeState
 from app.core.settings import settings
-from app.media.preview_pipeline import PreviewPipelineManager
+from app.delivery.queue import run_upload_queue_worker
 from app.observability.tracing import ObservabilityHandle
 from app.pairing.services.service import PairingService
 from app.relay.service import RelayService
 from app.relay.state import RelayRuntimeState
-from app.upload.queue import UploadQueueWorker
 from app.workers.preview_sleeper import PreviewSleeper
 from app.workers.preview_thumbnail import PreviewThumbnailWorker
 from app.workers.thermal_governor import ThermalGovernor
@@ -33,11 +33,9 @@ __all__ = [
     "AppRuntime",
     "ensure_app_runtime",
     "get_active_runtime",
-    "get_app_runtime",
     "get_request_runtime",
     "set_active_runtime",
 ]
-
 
 @dataclass
 class AppRuntime:
@@ -52,7 +50,6 @@ class AppRuntime:
     preview_sleeper: PreviewSleeper = field(init=False)
     preview_thumbnail_worker: PreviewThumbnailWorker = field(init=False)
     thermal_governor: ThermalGovernor = field(init=False)
-    upload_queue_worker: UploadQueueWorker | None = None
     background_tasks: set[asyncio.Task[None]] = field(default_factory=set)
     recurring_tasks: set[asyncio.Task[None]] = field(default_factory=set)
     managed_tasks_by_name: dict[str, asyncio.Task[None]] = field(default_factory=dict)
@@ -177,9 +174,7 @@ class AppRuntime:
 
     def start_upload_queue_worker(self) -> asyncio.Task[None]:
         """Start or replace the upload queue worker under runtime ownership."""
-        if self.upload_queue_worker is None:
-            self.upload_queue_worker = UploadQueueWorker(self.camera_manager.upload_queue)
-        return self.create_task(self.upload_queue_worker.run_forever(), name="upload_queue_worker")
+        return self.create_task(run_upload_queue_worker(self.camera_manager.upload_queue), name="upload_queue_worker")
 
     async def stop_runtime_workers(self) -> None:
         """Stop runtime-owned long-lived worker loops in dependency order."""
@@ -193,7 +188,6 @@ class AppRuntime:
         )
 
 
-
 def ensure_app_runtime(app: FastAPI) -> AppRuntime:
     """Attach and return the runtime container for the given app."""
     runtime = getattr(app.state, "runtime", None)
@@ -204,11 +198,6 @@ def ensure_app_runtime(app: FastAPI) -> AppRuntime:
     app.state.runtime = runtime
     set_active_runtime(runtime)
     return runtime
-
-
-def get_app_runtime(app: FastAPI) -> AppRuntime:
-    """Return the app runtime, creating it lazily if needed."""
-    return ensure_app_runtime(app)
 
 
 def get_request_runtime(request: Request) -> AppRuntime:

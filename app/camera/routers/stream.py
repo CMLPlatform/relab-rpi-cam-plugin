@@ -57,7 +57,7 @@ async def get_stream_status(camera_manager: CameraManagerDependency) -> StreamVi
 )
 async def stop_stream(camera_manager: CameraManagerDependency) -> None:
     """Stop active YouTube stream."""
-    if not camera_manager.has_active_stream():
+    if not camera_manager.stream.is_active:
         raise HTTPException(404, "No stream active")
     try:
         return await camera_manager.stop_streaming()

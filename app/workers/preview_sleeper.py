@@ -32,8 +32,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from app.camera.services.backend import CameraBackend
+from app.camera.streaming.preview_pipeline import PreviewPipelineManager
 from app.core.settings import settings
-from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.logging import build_log_extra
 from app.relay.state import RelayRuntimeState
 
@@ -76,7 +76,20 @@ class PreviewSleeper:
         if self._backend is None:
             err_msg = "PreviewSleeper requires configure(backend=...) before run_forever()"
             raise RuntimeError(err_msg)
-        await self._run()
+        try:
+            while True:
+                await self._tick()
+                await asyncio.sleep(self._poll_interval_s)
+        except asyncio.CancelledError:
+            # On cancel, stop the encoder if it's running so the app shutdown
+            # path doesn't leave a dangling ffmpeg subprocess. Any errors are
+            # swallowed because we're already tearing down.
+            if self._backend is not None and self._backend.is_open and self._pipeline.is_running:
+                try:
+                    await self._pipeline.stop(self._backend)
+                except (OSError, RuntimeError):
+                    logger.debug("Preview sleeper cleanup error on cancel", exc_info=True)
+            raise
 
     def should_be_running(self) -> bool:
         """Decide whether the encoder should currently be running."""
@@ -96,7 +109,7 @@ class PreviewSleeper:
             # app-managed HLS proxy records a preview request.
             return False
 
-        if not self._relay_state.is_connected():
+        if not self._relay_state.is_connected:
             return False
 
         idle = self._relay_state.seconds_since_last_activity()
@@ -105,23 +118,6 @@ class PreviewSleeper:
             # encoder off until a user actually opens the mosaic.
             return False
         return idle <= self._hibernate_after_s
-
-    async def _run(self) -> None:
-        """Poll at ``_poll_interval_s`` and toggle the encoder to match."""
-        try:
-            while True:
-                await self._tick()
-                await asyncio.sleep(self._poll_interval_s)
-        except asyncio.CancelledError:
-            # On cancel, stop the encoder if it's running so the app shutdown
-            # path doesn't leave a dangling ffmpeg subprocess. Any errors are
-            # swallowed because we're already tearing down.
-            if self._backend is not None and self._backend.is_open and self._pipeline.is_running:
-                try:
-                    await self._pipeline.stop(self._backend)
-                except (OSError, RuntimeError):
-                    logger.debug("Preview sleeper cleanup error on cancel", exc_info=True)
-            raise
 
     async def _tick(self) -> None:
         if self._backend is None or not self._backend.is_open:

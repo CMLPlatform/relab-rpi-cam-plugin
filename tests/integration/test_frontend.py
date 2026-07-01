@@ -222,10 +222,8 @@ class TestHomepage:
 
         http_client = MagicMock()
         http_client.get = AsyncMock(return_value=upstream)
-        http_client.__aenter__ = AsyncMock(return_value=http_client)
-        http_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
+        with patch.object(hls_mod, "_get_hls_client", return_value=http_client):
             resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
 
         assert resp.status_code == 200
@@ -247,10 +245,8 @@ class TestHomepage:
 
         http_client = MagicMock()
         http_client.get = AsyncMock(return_value=upstream)
-        http_client.__aenter__ = AsyncMock(return_value=http_client)
-        http_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
+        with patch.object(hls_mod, "_get_hls_client", return_value=http_client):
             resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
 
         assert resp.headers["content-security-policy"] == DEFAULT_CSP
@@ -264,10 +260,8 @@ class TestHomepage:
 
         http_client = MagicMock()
         http_client.get = AsyncMock(return_value=upstream)
-        http_client.__aenter__ = AsyncMock(return_value=http_client)
-        http_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
+        with patch.object(hls_mod, "_get_hls_client", return_value=http_client):
             resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
 
         assert resp.headers[HEADER_CORP] == CORP_SAME_ORIGIN

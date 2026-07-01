@@ -15,9 +15,9 @@ from relab_rpi_cam_models.images import ImageCaptureResponse
 from app.camera.dependencies import CameraManagerDependency
 from app.camera.exceptions import ActiveStreamError
 from app.camera.schemas import CaptureUploadMetadata
-from app.core.http_errors import client_error_detail
+from app.core.headers import client_error_detail
+from app.delivery.queue import UploadQueueFullError
 from app.observability.logging import build_log_extra
-from app.upload.queue import UploadQueueFullError
 
 router = APIRouter(prefix="/captures", tags=["captures"])
 logger = logging.getLogger(__name__)

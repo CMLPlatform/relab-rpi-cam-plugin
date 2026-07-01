@@ -9,6 +9,7 @@ from pydantic import HttpUrl
 import app.core.bootstrap as config_mod
 from app.core.runtime_state import RuntimeState
 from app.core.settings import Settings, is_loopback_url
+from app.utils.files import is_running_in_container
 from tests.constants import (
     EXAMPLE_RELAY_BACKEND_URL,
     EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
@@ -402,9 +403,9 @@ class TestConfigBootstrapHelpers:
 
     def test_is_running_in_container_checks_dockerenv(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Container detection should be a thin /.dockerenv existence check."""
-        monkeypatch.setattr("app.core.bootstrap.Path.exists", lambda _self: True)
+        monkeypatch.setattr("app.utils.files.Path.exists", lambda _self: True)
 
-        assert config_mod._is_running_in_container() is True
+        assert is_running_in_container() is True
 
     def test_is_loopback_url_detects_loopback_and_empty(self) -> None:
         """Loopback detection should stay narrow and predictable."""
@@ -506,7 +507,7 @@ class TestConfigBootstrapHelpers:
         assert runtime_state.relay_enabled is True
         assert runtime_state.authorized_api_keys == frozenset({"relay-local-key"})
 
-        config_mod.clear_runtime_relay_credentials(runtime_state)
+        runtime_state.clear_relay_credentials()
         assert runtime_state.relay_enabled is False
 
     def test_set_runtime_relay_credentials_rejects_plaintext_in_production(self) -> None:
@@ -568,7 +569,7 @@ class TestConfigBootstrapHelpers:
         app_settings = Settings(pairing_backend_url="http://localhost:8000")
         monkeypatch.setattr(config_mod, "apply_relay_credentials", lambda _state: None)
         monkeypatch.setattr(config_mod, "apply_local_mode", lambda _state, _settings: None)
-        monkeypatch.setattr(config_mod, "_is_running_in_container", lambda: True)
+        monkeypatch.setattr(config_mod, "is_running_in_container", lambda: True)
 
         with pytest.raises(RuntimeError, match=PAIRING_LOOPBACK_WARNING):
             config_mod.bootstrap_runtime_state(runtime_state, app_settings)

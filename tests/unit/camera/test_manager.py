@@ -28,11 +28,11 @@ from app.camera.schemas import (
 from app.camera.services import manager as manager_mod
 from app.camera.services.backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.camera.services.manager import CameraControlsNotSupportedError, CameraManager
+from app.camera.streaming.stream_state import ActiveStreamState
 from app.core.runtime import AppRuntime
 from app.core.settings import settings
-from app.image_sinks.base import StoredImage
-from app.media.file_policy import CaptureFileValidationError
-from app.media.stream_service import StreamService
+from app.delivery.base import StoredImage
+from app.utils.file_policy import CaptureFileValidationError
 from tests.constants import EXAMPLE_IMAGE_URL, YOUTUBE_WATCH_URL_PREFIX
 
 if TYPE_CHECKING:
@@ -320,7 +320,6 @@ class TestCameraManagerStartStreaming:
         assert result.mode == StreamMode.YOUTUBE
         assert result.provider == YOUTUBE_PROVIDER
         assert manager.stream.is_active
-        assert manager.stream_service.state.is_active
         backend.start_stream.assert_awaited_once_with(StreamMode.YOUTUBE, youtube_config=youtube_config)
 
     async def test_stream_start_failure_resets_state(self) -> None:
@@ -379,14 +378,10 @@ class TestCameraManagerCapture:
             backend=cast("StreamingCameraBackend", backend),
             sink=_StubSink(),
         )
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
 
-        try:
-            response = await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        response = await manager.capture_jpeg()
 
         assert response.metadata.camera_properties.camera_model == MOCK_CAMERA
         assert response.image_id == stub_image_id
@@ -395,7 +390,9 @@ class TestCameraManagerCapture:
         assert _StubSink.put.await_args.kwargs["filename"] == f"{generated_image_id}.jpg"
         backend.capture_image.assert_awaited_once()
 
-    async def test_capture_invokes_capture_uploaded_hook_with_captured_frame(self, tmp_path: Path) -> None:
+    async def test_capture_invokes_capture_uploaded_hook_with_captured_frame(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A successful capture should invoke the registered hook with the PIL frame."""
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="red")
@@ -425,17 +422,15 @@ class TestCameraManagerCapture:
 
         manager.set_capture_uploaded_hook(_hook)
 
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
-        try:
-            await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        await manager.capture_jpeg()
 
         assert hook_calls == [image]
 
-    async def test_capture_hook_failure_does_not_break_capture(self, tmp_path: Path) -> None:
+    async def test_capture_hook_failure_does_not_break_capture(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A failing hook must be logged but must not propagate out of capture_jpeg."""
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="red")
@@ -464,17 +459,13 @@ class TestCameraManagerCapture:
 
         manager.set_capture_uploaded_hook(_hook)
 
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
-        try:
-            response = await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        response = await manager.capture_jpeg()
 
         assert response.status == ImageCaptureStatus.UPLOADED
 
-    async def test_capture_allows_active_youtube_stream(self, tmp_path: Path) -> None:
+    async def test_capture_allows_active_youtube_stream(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Normal still capture should remain allowed while a YouTube stream is active."""
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="purple")
@@ -500,19 +491,17 @@ class TestCameraManagerCapture:
         manager.stream.url = AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}active-broadcast")
         manager.stream.started_at = datetime.now(UTC)
 
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
 
-        try:
-            response = await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        response = await manager.capture_jpeg()
 
         assert response.status == ImageCaptureStatus.UPLOADED
         backend.capture_image.assert_awaited_once()
 
-    async def test_capture_allows_video_mode_preview_state(self, tmp_path: Path) -> None:
+    async def test_capture_allows_video_mode_preview_state(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Still capture should keep working while the backend is already in video mode."""
         backend = FakeBackend()
         backend.current_mode = CameraMode.VIDEO
@@ -536,25 +525,20 @@ class TestCameraManagerCapture:
             sink=_StubSink(),
         )
 
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
 
-        try:
-            response = await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        response = await manager.capture_jpeg()
 
         assert response.status == ImageCaptureStatus.UPLOADED
         backend.capture_image.assert_awaited_once()
 
-    async def test_capture_jpeg_writes_atomically(self, tmp_path: Path) -> None:
-        """capture_jpeg must not leave a partially-written JPEG if encoding fails.
+    async def test_capture_jpeg_writes_atomically(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """capture_jpeg must not leave any JPEG behind if encoding fails.
 
-        Regression guard: previously the encode-then-read-bytes sequence ran outside
-        the camera lock and used a non-atomic ``image.save`` call, so disk-full or a
-        racing reader could observe a truncated JPEG. The atomic tmp-rename path must
-        leave neither the ``.tmp`` nor the final file behind on failure.
+        Regression guard: encoding goes straight to memory and the file is only
+        persisted on the upload-queue fallback, so a failed encode must leave
+        neither a ``.tmp`` sidecar nor a final file on disk.
         """
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="blue")
@@ -567,27 +551,19 @@ class TestCameraManagerCapture:
         )
 
         manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
 
         def _raise_disk_full(*_args: object, **_kwargs: object) -> bytes:
             raise OSError(disk_full_msg)
 
-        try:
-            with pytest.MonkeyPatch.context() as monkeypatch:
-                monkeypatch.setattr(
-                    "app.camera.services.manager._encode_jpeg_atomic",
-                    _raise_disk_full,
-                )
-                with pytest.raises(OSError, match=disk_full_msg):
-                    await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        monkeypatch.setattr("app.camera.services.manager._encode_jpeg", _raise_disk_full)
+        with pytest.raises(OSError, match=disk_full_msg):
+            await manager.capture_jpeg()
 
         # Neither the target nor the .tmp sidecar should exist.
         leftover = list((tmp_path / "images").iterdir())
-        assert leftover == [], f"atomic encode leaked files: {leftover}"
+        assert leftover == [], f"failed encode leaked files: {leftover}"
 
     async def test_capture_rejects_frames_over_pixel_limit(
         self,
@@ -826,47 +802,47 @@ class TestPreviewThumbnailCapture:
         backend.open.assert_not_awaited()
 
 
-class TestStreamService:
-    """Tests for focused stream state orchestration."""
+class TestActiveStreamState:
+    """Tests for stream state transitions."""
 
     def test_start_populates_state(self) -> None:
         """Starting a stream should populate stream state."""
-        service = StreamService()
-        service.start(
+        state = ActiveStreamState()
+        state.start(
             StreamStartResult(
                 mode=StreamMode.YOUTUBE,
                 url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
             )
         )
 
-        assert service.state.is_active
-        assert service.state.mode == StreamMode.YOUTUBE
+        assert state.is_active
+        assert state.mode == StreamMode.YOUTUBE
 
     def test_reset_clears_state(self) -> None:
         """Reset should clear active stream state."""
-        service = StreamService()
-        service.start(
+        state = ActiveStreamState()
+        state.start(
             StreamStartResult(
                 mode=StreamMode.YOUTUBE,
                 url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
             )
         )
 
-        service.reset()
+        state.reset()
 
-        assert not service.state.is_active
+        assert not state.is_active
 
-    def test_build_view_returns_contract_view(self) -> None:
-        """The service should build the public stream view from runtime state."""
-        service = StreamService()
-        service.start(
+    def test_to_view_returns_contract_view(self) -> None:
+        """to_view should build the public stream view from runtime state."""
+        state = ActiveStreamState()
+        state.start(
             StreamStartResult(
                 mode=StreamMode.YOUTUBE,
                 url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
             )
         )
 
-        view = service.build_view({"Model": MOCK_CAMERA}, {"FrameDuration": 33_333})
+        view = state.to_view({"Model": MOCK_CAMERA}, {"FrameDuration": 33_333})
 
         assert view is not None
         assert view.mode == StreamMode.YOUTUBE

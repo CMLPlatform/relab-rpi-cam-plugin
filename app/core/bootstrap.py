@@ -2,11 +2,8 @@
 
 import json
 import logging
-import os
 import secrets
-import tempfile
 from contextlib import suppress
-from pathlib import Path
 
 from app.core.runtime_state import RuntimeState
 from app.core.settings import (
@@ -22,14 +19,11 @@ from app.core.settings import (
 )
 from app.pairing.services.credentials import _CREDENTIALS_FILE, load_relay_credentials
 from app.relay.credentials import validate_relay_credentials
+from app.utils.files import is_running_in_container, write_json_atomic
 
 logger = logging.getLogger(__name__)
 
 _LOCAL_API_KEY_BYTES = 32
-
-
-def _is_running_in_container() -> bool:
-    return Path("/.dockerenv").exists()
 
 
 def apply_relay_credentials(runtime_state: RuntimeState) -> None:
@@ -72,46 +66,18 @@ def resolve_image_sink_choice(app_settings: Settings = settings) -> str:
     return "unconfigured"
 
 
-def clear_runtime_relay_credentials(runtime_state: RuntimeState) -> None:
-    """Zero out all relay credential fields in runtime state."""
-    runtime_state.clear_relay_credentials()
-
-
 def _persist_local_api_key(key: str) -> None:
     """Add/update local_api_key in the shared credentials JSON file.
 
     Reads any existing content (relay creds, etc.) and merges the key in so
-    nothing else is overwritten. Writes atomically via a temp file in the same
-    directory, ``fchmod``s it to ``0o600`` before the rename, and ``fsync``s
-    both the file and the containing directory so the final path is never
-    briefly world-readable and is durable across a crash.
+    nothing else is overwritten.
     """
-    _CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
     existing: dict[str, object] = {}
     if _CREDENTIALS_FILE.exists():
         with suppress(json.JSONDecodeError, OSError):
             existing = json.loads(_CREDENTIALS_FILE.read_text())
     existing["local_api_key"] = key
-    payload = json.dumps(existing, indent=2)
-
-    tmp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
-        ) as tmp:
-            tmp_path = Path(tmp.name)
-            tmp.write(payload)
-            tmp.flush()
-            # Tighten permissions BEFORE the rename so the final path is
-            # never observable as world-readable, even if we crash right after.
-            os.fchmod(tmp.fileno(), 0o600)
-            os.fsync(tmp.fileno())
-        tmp_path.replace(_CREDENTIALS_FILE)
-    except OSError:
-        if tmp_path is not None:
-            with suppress(OSError):
-                tmp_path.unlink()
-        raise
+    write_json_atomic(_CREDENTIALS_FILE, existing)
     logger.info("local_api_key persisted to %s", _CREDENTIALS_FILE)
 
 
@@ -179,7 +145,7 @@ def bootstrap_runtime_state(runtime_state: RuntimeState, app_settings: Settings 
     if (
         app_settings.pairing_backend_url
         and is_loopback_url(app_settings.pairing_backend_url)
-        and _is_running_in_container()
+        and is_running_in_container()
     ):
         if app_settings.app_env != APP_ENV_DEVELOPMENT:
             raise RuntimeError(PAIRING_LOOPBACK_CONTAINER_ERROR)

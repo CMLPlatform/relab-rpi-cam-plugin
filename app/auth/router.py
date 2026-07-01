@@ -4,7 +4,7 @@ import logging
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Form, HTTPException, Request, Response
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from app.auth.dependencies import (
@@ -22,8 +22,6 @@ from app.observability.logging import build_security_log_extra
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
-_HEADER_CLEAR_SITE_DATA = "Clear-Site-Data"
-_VALUE_CLEAR_SITE_DATA_CACHE_STORAGE = '"cache", "storage"'
 
 
 def _safe_local_redirect_target(redirect_url: str) -> str:
@@ -42,7 +40,6 @@ def _safe_local_redirect_target(redirect_url: str) -> str:
 @router.post("/login")
 async def login(
     request: Request,
-    response: Response,
     api_key: Annotated[str, Form()],
     redirect_url: Annotated[str, Form()] = "/",
 ) -> RedirectResponse:
@@ -89,7 +86,6 @@ async def login(
 @router.post("/logout")
 async def logout(
     request: Request,
-    response: Response,
 ) -> RedirectResponse:
     """Invalidate the current browser session."""
     session_token = request.cookies.get(settings.browser_session_cookie_name)
@@ -99,7 +95,7 @@ async def logout(
     delete_session(session_token)
     response = RedirectResponse(url="/", status_code=303)
     response.delete_cookie(key=settings.browser_session_cookie_name, path="/", secure=settings.cookie_secure)
-    response.headers[_HEADER_CLEAR_SITE_DATA] = _VALUE_CLEAR_SITE_DATA_CACHE_STORAGE
+    response.headers["Clear-Site-Data"] = '"cache", "storage"'
     if valid_session:
         logger.info(
             "Security event: browser logout succeeded",
