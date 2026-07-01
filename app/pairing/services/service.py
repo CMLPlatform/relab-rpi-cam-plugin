@@ -24,7 +24,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.core.bootstrap import set_runtime_relay_credentials
-from app.core.runtime_context import get_active_runtime
+from app.core.runtime_context import get_active_runtime_state
 from app.core.settings import APP_ENV_DEVELOPMENT, PAIRING_LOOPBACK_CONTAINER_ERROR, validate_relay_backend_url
 from app.core.settings import settings as app_settings
 from app.observability.logging import build_log_extra
@@ -41,6 +41,8 @@ from relab_rpi_cam_models import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
+
+    from app.core.runtime_state import RuntimeState
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +81,9 @@ class PairingState:
 class PairingService:
     """Runtime-owned pairing orchestration and observable state."""
 
-    def __init__(self) -> None:
+    def __init__(self, runtime_state: RuntimeState | None = None) -> None:
         self.state = PairingState()
+        self._runtime_state = runtime_state
 
     def reset_state(self) -> None:
         """Clear the active pairing code and return to idle."""
@@ -161,7 +164,13 @@ class PairingService:
         registration = await _register_pairing_code_with_client(pairing_client, self.state)
         self.state.status = STATUS_WAITING
         poll_result = await _poll_pairing_status(pairing_client, registration.code, registration.fingerprint)
-        await _complete_pairing_state(self.state, poll_result, registration.private_key, on_paired)
+        await _complete_pairing_state(
+            self.state,
+            poll_result,
+            registration.private_key,
+            on_paired,
+            self._runtime_state or get_active_runtime_state(),
+        )
 
 
 @dataclass(frozen=True)
@@ -416,6 +425,7 @@ async def _complete_pairing_state(
     payload: PairingClaimedBootstrap,
     private_key: ec.EllipticCurvePrivateKey,
     on_paired: Callable[[], Coroutine[Any, Any, None]],
+    runtime_state: RuntimeState,
 ) -> None:
     camera_id = payload.camera_id
     relay_backend_url = str(payload.ws_url)
@@ -441,7 +451,7 @@ async def _complete_pairing_state(
         private_key_pem=private_key_pem,
     )
     set_runtime_relay_credentials(
-        get_active_runtime().runtime_state,
+        runtime_state,
         relay_backend_url=relay_backend_url,
         relay_camera_id=camera_id,
         relay_auth_scheme=relay_auth_scheme,

@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 
-from app.core.runtime import get_active_runtime, get_request_runtime
+from app.core.runtime import get_active_runtime_state, get_request_runtime
 from app.core.runtime_state import RuntimeState
 from app.core.settings import settings
 from app.observability.logging import build_security_log_extra
@@ -39,7 +39,7 @@ _active_sessions: dict[str, BrowserSession] = {}
 
 def reload_authorized_hashes(runtime_state: RuntimeState | None = None) -> frozenset[str]:
     """Return the current immutable authorized-key snapshot used by auth checks."""
-    active_state = runtime_state or get_active_runtime().runtime_state
+    active_state = runtime_state or get_active_runtime_state()
     return frozenset(active_state.authorized_api_keys)
 
 

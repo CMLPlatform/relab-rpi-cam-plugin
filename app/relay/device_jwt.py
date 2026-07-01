@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import jwt
 
-from app.core.runtime_context import get_active_runtime
+from app.core.runtime_context import get_active_runtime_state
 from app.relay.credentials import load_relay_signing_private_key
+
+if TYPE_CHECKING:
+    from app.core.runtime_state import RuntimeState
 
 DEVICE_ASSERTION_ALGORITHM = "ES256"
 DEVICE_ASSERTION_AUDIENCE = "relab-rpi-cam-relay"
@@ -24,9 +28,14 @@ DEVICE_ASSERTION_TTL_SECONDS = 120
 DEVICE_ASSERTION_JTI_BYTES = 24
 
 
-def build_device_assertion() -> str:
-    """Mint a fresh short-lived ES256 device assertion for the current camera."""
-    runtime_state = get_active_runtime().runtime_state
+def build_device_assertion(runtime_state: RuntimeState | None = None) -> str:
+    """Mint a fresh short-lived ES256 device assertion for the current camera.
+
+    Callers that hold a ``RuntimeState`` should pass it; the active-runtime
+    fallback exists only for context-free code with no handle to thread.
+    """
+    if runtime_state is None:
+        runtime_state = get_active_runtime_state()
     now = int(datetime.now(UTC).timestamp())
     issuer = f"{DEVICE_ASSERTION_ISSUER_PREFIX}{runtime_state.relay_camera_id}"
     payload = {

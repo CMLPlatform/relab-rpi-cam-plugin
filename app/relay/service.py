@@ -71,7 +71,7 @@ class RelayService:
 
         url = self.build_url()
 
-        async for ws in _iter_websocket_connections(url):
+        async for ws in _iter_websocket_connections(url, self._runtime_state):
             self._state.mark_connected()
             try:
                 logger.info("Relay connected to %s. Waiting for commands.", url, extra=build_log_extra())
@@ -124,7 +124,7 @@ def _relay_reconnect_delays() -> Iterator[float]:
         delay = min(delay * 2, _RELAY_RECONNECT_MAX_DELAY_S)
 
 
-async def _iter_websocket_connections(url: str) -> AsyncIterator[ClientConnection]:
+async def _iter_websocket_connections(url: str, runtime_state: RuntimeState) -> AsyncIterator[ClientConnection]:
     """Yield relay WebSocket connections, minting a fresh assertion for every handshake attempt."""
     delays = None
     while True:
@@ -134,7 +134,7 @@ async def _iter_websocket_connections(url: str) -> AsyncIterator[ClientConnectio
                 max_size=RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
                 max_queue=_RELAY_WS_MAX_QUEUE,
                 compression=None,
-                additional_headers={"Authorization": f"Bearer {build_device_assertion()}"},
+                additional_headers={"Authorization": f"Bearer {build_device_assertion(runtime_state)}"},
             ) as ws:
                 delays = None
                 yield ws

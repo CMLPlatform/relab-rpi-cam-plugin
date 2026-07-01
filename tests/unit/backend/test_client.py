@@ -12,7 +12,7 @@ import pytest
 
 from app.backend import client as backend_client_mod
 from app.backend.client import BackendUploadError, upload_image, upload_preview_thumbnail
-from app.core.runtime import AppRuntime, set_active_runtime
+from app.core.runtime import AppRuntime, get_active_runtime, set_active_runtime
 from app.core.settings import settings
 from tests.constants import BACKEND_IMAGE_URL, SAMPLE_SERVER_IMAGE_ID
 
@@ -42,7 +42,7 @@ ENCODED_UNSAFE_CAMERA_ID = "cam%2F..%2F42%3Fadmin%3Dtrue"
 def _relay_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Provide the static backend URL needed by the upload client."""
     monkeypatch.setattr(settings, "pairing_backend_url", "https://backend.example/")
-    monkeypatch.setattr(backend_client_mod, "build_device_assertion", lambda: "fake.jwt.token")
+    monkeypatch.setattr(backend_client_mod, "build_device_assertion", lambda *_: "fake.jwt.token")
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +109,7 @@ class TestUploadImage:
 
     async def test_upload_image_encodes_camera_id_path_segment(self) -> None:
         """Camera IDs must not be able to alter backend callback paths."""
-        runtime = backend_client_mod.get_active_runtime()
+        runtime = get_active_runtime()
         runtime.runtime_state.relay_camera_id = UNSAFE_CAMERA_ID
         response = _fake_response(
             200,
@@ -143,7 +143,7 @@ class TestUploadImage:
 
     async def test_preview_thumbnail_encodes_camera_id_path_segment(self) -> None:
         """Preview thumbnail callbacks should encode the camera ID path segment."""
-        runtime = backend_client_mod.get_active_runtime()
+        runtime = get_active_runtime()
         runtime.runtime_state.relay_camera_id = UNSAFE_CAMERA_ID
         response = _fake_response(200, {"preview_thumbnail_url": "/uploads/rpi-cam/previews/cam.jpg"})
 
@@ -267,7 +267,7 @@ class TestUploadImage:
 
         Clearing runtime relay credentials should make the upload fail fast.
         """
-        runtime = backend_client_mod.get_active_runtime()
+        runtime = get_active_runtime()
         runtime.runtime_state.clear_relay_credentials()
         with pytest.raises(BackendUploadError, match="unpaired"):
             await upload_image(
@@ -312,7 +312,7 @@ class TestNotifySelfUnpair:
 
     async def test_skips_when_relay_credentials_missing(self, caplog: pytest.LogCaptureFixture) -> None:
         """Without relay credentials, there is nothing meaningful to unpair."""
-        runtime = backend_client_mod.get_active_runtime()
+        runtime = get_active_runtime()
         runtime.runtime_state.clear_relay_credentials()
 
         with caplog.at_level(logging.DEBUG):
@@ -322,7 +322,7 @@ class TestNotifySelfUnpair:
 
     async def test_encodes_camera_id_path_segment(self) -> None:
         """Self-unpair callbacks should encode the camera ID path segment."""
-        runtime = backend_client_mod.get_active_runtime()
+        runtime = get_active_runtime()
         runtime.runtime_state.relay_camera_id = UNSAFE_CAMERA_ID
         response = _fake_response(204, {})
 

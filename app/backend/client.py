@@ -19,7 +19,7 @@ from urllib.parse import quote
 import httpx
 from pydantic import AnyUrl
 
-from app.core.runtime_context import get_active_runtime
+from app.core.runtime_context import get_active_runtime_state
 from app.core.settings import settings, validate_endpoint_transport
 from app.observability.logging import build_log_extra
 from app.relay.device_jwt import build_device_assertion
@@ -116,7 +116,7 @@ async def _post_file(
 
 async def _get_upload_context() -> tuple[str, str, str]:
     """Return (base_url, camera_id, assertion) ready for upload, or raise BackendUploadError."""
-    runtime_state = get_active_runtime().runtime_state
+    runtime_state = get_active_runtime_state()
     if not settings.pairing_backend_url:
         msg = "Backend upload requested but PAIRING_BACKEND_URL is not configured."
         raise BackendUploadError(msg)
@@ -125,7 +125,7 @@ async def _get_upload_context() -> tuple[str, str, str]:
         raise BackendUploadError(msg)
     base_url = settings.pairing_backend_url.rstrip("/")
     try:
-        assertion = build_device_assertion()
+        assertion = build_device_assertion(runtime_state)
     except (ValueError, TypeError) as exc:
         msg = f"Failed to mint device assertion: {exc}"
         raise BackendUploadError(msg) from exc
@@ -200,7 +200,7 @@ async def notify_self_unpair() -> None:
     Any error is logged as a warning, never raised, so the local unpair always
     completes regardless of backend connectivity.
     """
-    runtime_state = get_active_runtime().runtime_state
+    runtime_state = get_active_runtime_state()
     if not settings.pairing_backend_url:
         logger.debug("notify_self_unpair: no PAIRING_BACKEND_URL, skipping")
         return
@@ -213,7 +213,7 @@ async def notify_self_unpair() -> None:
     url = f"{base_url}{endpoint}"
 
     try:
-        assertion = build_device_assertion()
+        assertion = build_device_assertion(runtime_state)
     except (ValueError, TypeError) as exc:
         logger.warning("notify_self_unpair: could not mint device assertion: %s", exc, extra=build_log_extra())
         return

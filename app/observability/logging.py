@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from app.core.runtime_context import get_active_runtime
+from app.core.runtime_context import get_active_runtime_state
 
 if TYPE_CHECKING:
     from fastapi import Request
@@ -106,7 +106,7 @@ def build_log_extra(
     extra: dict[str, object] = {}
     runtime_camera_id: str | None = None
     try:
-        runtime_camera_id = get_active_runtime().runtime_state.relay_camera_id or None
+        runtime_camera_id = get_active_runtime_state().relay_camera_id or None
     except RuntimeError:
         runtime_camera_id = None
     resolved_camera_id = camera_id or runtime_camera_id

@@ -11,8 +11,9 @@ from unittest.mock import AsyncMock, Mock
 import httpx
 import pytest
 
-from app.auth.dependencies import reload_authorized_hashes
+from app.auth.dependencies import reload_authorized_keys
 from app.core.runtime import AppRuntime, set_active_runtime
+from app.core.runtime_state import RuntimeState
 from app.core.settings import settings
 from app.pairing.services import credentials as pairing_credentials
 from app.pairing.services import service as pairing_mod
@@ -328,6 +329,7 @@ class TestPairingHelpers:
                 ),
                 pairing_mod._generate_private_key(),
                 on_paired,
+                RuntimeState(),
             )
 
         save_credentials.assert_not_called()
@@ -543,7 +545,7 @@ class TestPairingCycle:
             app_runtime.runtime_state.clear_relay_credentials()
             app_runtime.runtime_state.local_relay_api_key = ""
             app_runtime.runtime_state.replace_authorized_api_keys(original_snapshot)
-            reload_authorized_hashes(app_runtime.runtime_state)
+            reload_authorized_keys(app_runtime.runtime_state)
 
     async def test_expired_code_rotates_without_error_stacktrace(
         self,
@@ -813,6 +815,7 @@ class TestPairingCycle:
             ),
             private_key,
             on_paired,
+            app_runtime.runtime_state,
         )
 
         assert state.status == pairing_mod.STATUS_PAIRED

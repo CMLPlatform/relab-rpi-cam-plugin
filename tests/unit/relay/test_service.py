@@ -165,16 +165,18 @@ class TestWebsocketConnect:
         with pytest.raises(asyncio.CancelledError):
             await service.run_forever()
 
-        iter_connections.assert_called_once_with(EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID.replace("cam-42", "cam-1"))
+        iter_connections.assert_called_once_with(
+            EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID.replace("cam-42", "cam-1"), runtime_state
+        )
 
     async def test_connection_iterator_builds_fresh_auth_headers(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Each outer connection iterator attempt should mint a fresh device assertion."""
         connect = MagicMock(side_effect=[_Connect(_Conn()), _Connect(_Conn())])
         assertions = iter(["jwt-1", "jwt-2"])
         monkeypatch.setattr(relay_mod, "websocket_connect", connect)
-        monkeypatch.setattr(relay_mod, "build_device_assertion", lambda: next(assertions))
+        monkeypatch.setattr(relay_mod, "build_device_assertion", lambda *_: next(assertions))
 
-        connections = _iter_websocket_connections(EXAMPLE_RELAY_BACKEND_URL)
+        connections = _iter_websocket_connections(EXAMPLE_RELAY_BACKEND_URL, RuntimeState())
 
         assert await anext(connections) is not None
         assert await anext(connections) is not None
@@ -194,12 +196,12 @@ class TestWebsocketConnect:
         connect = MagicMock(side_effect=[_HandshakeContextFailure(transient_response), _Connect(_Conn())])
         assertions = iter(["jwt-failed", "jwt-retry"])
         monkeypatch.setattr(relay_mod, "websocket_connect", connect)
-        monkeypatch.setattr(relay_mod, "build_device_assertion", lambda: next(assertions))
+        monkeypatch.setattr(relay_mod, "build_device_assertion", lambda *_: next(assertions))
         monkeypatch.setattr(relay_mod, "_relay_reconnect_delays", lambda: iter([0.0]))
         sleep = AsyncMock()
         monkeypatch.setattr(relay_mod.asyncio, "sleep", sleep)
 
-        connections = _iter_websocket_connections(EXAMPLE_RELAY_BACKEND_URL)
+        connections = _iter_websocket_connections(EXAMPLE_RELAY_BACKEND_URL, RuntimeState())
 
         assert await anext(connections) is not None
 
@@ -536,7 +538,9 @@ class TestRelayServiceRunForever:
         )
         service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
         response = Response(401, "Unauthorized", Headers(), b"unauthorized")
-        monkeypatch.setattr(relay_mod, "_iter_websocket_connections", lambda _url: _HandshakeIteratorFailure(response))
+        monkeypatch.setattr(
+            relay_mod, "_iter_websocket_connections", lambda _url, _state: _HandshakeIteratorFailure(response)
+        )
 
         with pytest.raises(InvalidStatus):
             await service.run_forever()

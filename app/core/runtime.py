@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from app.camera.services.manager import CameraManager
 from app.camera.streaming.preview_pipeline import PreviewPipelineManager
-from app.core.runtime_context import get_active_runtime, set_active_runtime
+from app.core.runtime_context import get_active_runtime, get_active_runtime_state, set_active_runtime
 from app.core.runtime_state import RuntimeState
 from app.core.settings import settings
 from app.delivery.queue import run_upload_queue_worker
@@ -33,6 +33,7 @@ __all__ = [
     "AppRuntime",
     "ensure_app_runtime",
     "get_active_runtime",
+    "get_active_runtime_state",
     "get_request_runtime",
     "set_active_runtime",
 ]
@@ -45,7 +46,7 @@ class AppRuntime:
     runtime_state: RuntimeState = field(default_factory=lambda: RuntimeState.from_settings(settings))
     preview_pipeline: PreviewPipelineManager = field(default_factory=PreviewPipelineManager)
     relay_state: RelayRuntimeState = field(default_factory=RelayRuntimeState)
-    pairing_service: PairingService = field(default_factory=PairingService)
+    pairing_service: PairingService = field(init=False)
     relay_service: RelayService = field(init=False)
     preview_sleeper: PreviewSleeper = field(init=False)
     preview_thumbnail_worker: PreviewThumbnailWorker = field(init=False)
@@ -56,6 +57,7 @@ class AppRuntime:
     observability_handle: ObservabilityHandle | None = None
 
     def __post_init__(self) -> None:
+        self.pairing_service = PairingService(runtime_state=self.runtime_state)
         self.relay_service = RelayService(state=self.relay_state, runtime_state=self.runtime_state)
         self.preview_sleeper = PreviewSleeper(
             pipeline=self.preview_pipeline,
