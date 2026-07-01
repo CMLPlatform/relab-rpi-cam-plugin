@@ -10,7 +10,7 @@ from app.auth.dependencies import verify_request
 from app.auth.router import router as auth_router
 from app.camera import router as camera
 from app.core.frontend_router import router as landing_router
-from app.observability import router as system
+from app.observability import router as observability
 from app.pairing import router as pairing
 
 router = APIRouter()
@@ -26,4 +26,4 @@ router.include_router(pairing.public_router)
 # bootstrap, system telemetry, and metrics.
 router.include_router(camera.router, dependencies=[Depends(verify_request)])
 router.include_router(pairing.router, dependencies=[Depends(verify_request)])
-router.include_router(system.router, dependencies=[Depends(verify_request)])
+router.include_router(observability.router, dependencies=[Depends(verify_request)])
