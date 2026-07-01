@@ -50,6 +50,7 @@ def _is_authorized(api_key: str, authorized_api_keys: frozenset[str]) -> bool:
     current request or explicit caller context.
     """
     matched = False
+    api_key_bytes = api_key.encode()  # compare on bytes: compare_digest rejects non-ASCII str
     for candidate in authorized_api_keys:
         if hmac.compare_digest(api_key, candidate):
             matched = True
