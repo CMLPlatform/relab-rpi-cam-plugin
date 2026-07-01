@@ -60,7 +60,7 @@ def _camera_endpoint(template: str, camera_id: str) -> str:
 
 
 def _resolve_backend_media_url(raw_url: str, *, base_url: str, field_name: str) -> AnyUrl:
-    if raw_url.startswith("/"):
+    if raw_url.startswith("/") and not raw_url.startswith("//"):
         raw_url = f"{base_url}{raw_url}"
     try:
         validate_endpoint_transport(raw_url, setting_name=field_name, app_env=settings.app_env)
