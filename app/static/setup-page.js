@@ -249,7 +249,12 @@ function setupCountdown() {
   };
 
   tick();
-  window.setInterval(tick, 1000);
+  const intervalId = window.setInterval(() => {
+    tick();
+    if (expiresAt.getTime() - Date.now() <= 0) {
+      window.clearInterval(intervalId);
+    }
+  }, 1000);
 }
 
 function setupPairingStatePolling() {
