@@ -159,6 +159,11 @@ LOCAL_MODE_ENABLED=false
 
 To rotate the local API key, stop the app, remove `local_api_key` from `~/.config/relab/relay_credentials.json` or delete the credentials file when you re-pair, then start the app again. Custom clients using the old key will need the new one.
 
+Transport security:
+
+- The local API is plain **HTTP** by design — the API key and setup data cross the LAN unencrypted, so keep port `8018` on a trusted network. Outbound traffic (backend, `wss://` relay, S3, OTLP) is always TLS.
+- For TLS, front the API with a reverse proxy and set `BASE_URL=https://<host>` (enables HSTS, silences the plaintext-LAN startup warning).
+
 Network notes:
 
 - Keep app port `8018` reachable only on trusted operator networks.
