@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.0 (2026-07-01)
+
+### Feat
+
+- Harden the plugin for production: enforce browser session lifetimes and ASVS-aligned cookies, require same-origin checks for cookie-auth writes, and add structured logging for auth, CSRF, and session events
+- Harden browser headers and CSP with per-request nonces, restrict CORS and private-network access, block HTTP TRACE, and limit static serving to css/js/ico/png
+- Enforce HTTPS transport policy for S3 and OTLP endpoints
+- Validate relay signing and assertion credentials at boundaries and at startup, allowlist backend relay commands, bound command inputs, and rate-limit sensitive device actions
+- Require authentication for local pairing actions, preview start/stop, and metrics scraping, and fail closed for production loopback pairing
+- Reject `DEBUG=true` in production, reveal the local API key on demand instead of embedding it in HTML, and apply restrictive permissions before atomic credential writes
+- Add a security CI workflow for container scanning and dependency audits, pin container inputs by digest and checksum, and default media and storage listeners to loopback
+- Add a pairing-state endpoint with client-side setup polling and a generic client-safe exception handler
+
+### Refactor
+
+- Reorganize the app into a feature-first layout: consolidate image sinks and upload into `delivery`, move streaming into `camera/streaming`, and move metrics into `observability`
+
 ## v0.3.0 (2026-04-21)
 
 ### Feat
