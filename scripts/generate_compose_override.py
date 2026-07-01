@@ -9,7 +9,7 @@ This enables Picamera2 hardware access without requiring privileged mode.
 import sys
 from pathlib import Path
 
-DEVICE_PATTERNS = ("/dev/media*", "/dev/video*", "/dev/v4l-subdev*", "/dev/dma_heap")
+DEVICE_PATTERNS = ("/dev/media*", "/dev/video*", "/dev/v4l-subdev*", "/dev/dma_heap/*")
 
 
 def discover_devices(patterns: tuple[str, ...] = DEVICE_PATTERNS) -> list[str]:
