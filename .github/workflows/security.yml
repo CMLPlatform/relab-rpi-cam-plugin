@@ -37,7 +37,6 @@ jobs:
             container:
               - 'Dockerfile'
               - 'Dockerfile.mediamtx'
-              - 'scripts/docker_entrypoint.sh'
               - 'pyproject.toml'
               - 'uv.lock'
 

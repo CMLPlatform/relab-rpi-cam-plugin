@@ -16,7 +16,7 @@ repos:
             args: [ "--markdown-linebreak-ext", "md" ] # Preserve Markdown hard line breaks.
 
     - repo: https://github.com/gitleaks/gitleaks # Detect secrets in commits.
-      rev: v8.30.0
+      rev: v8.30.1
       hooks:
           - id: gitleaks
 

@@ -41,7 +41,7 @@ jobs:
           filters: |
             models:
               - 'relab_rpi_cam_models/**'
-              - 'tests/unit/test_contract_package.py'
+              - 'tests/unit/core/test_contract_package.py'
               - '.github/workflows/models-check-reusable.yml'
               - 'pyproject.toml'
               - 'uv.lock'
