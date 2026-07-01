@@ -57,8 +57,8 @@ def runtime(monkeypatch: pytest.MonkeyPatch) -> AppRuntime:
     def _fake_start_upload_queue_worker() -> asyncio.Task[None]:
         return runtime.create_task(_fake_upload_worker_coro(), name="upload_queue_worker")
 
-    setattr(runtime, "start_upload_queue_worker", _fake_start_upload_queue_worker)  # noqa: B010
-    setattr(runtime, "_upload_worker_run_calls", lambda: upload_worker_run_calls)  # noqa: B010
+    monkeypatch.setattr(runtime, "start_upload_queue_worker", _fake_start_upload_queue_worker)
+    monkeypatch.setattr(runtime, "_upload_worker_run_calls", lambda: upload_worker_run_calls, raising=False)
 
     monkeypatch.setattr(lifespan_mod, "ensure_app_runtime", lambda _app: runtime)
     return runtime
@@ -142,7 +142,7 @@ class TestLifespan:
         assert cast("FakePreviewSleeper", runtime.preview_sleeper).configure_calls == 1
         assert cast("FakePreviewSleeper", runtime.preview_sleeper).run_calls == 1
         assert cast("FakePreviewThumbnailWorker", runtime.preview_thumbnail_worker).run_calls == 1
-        assert getattr(runtime, "_upload_worker_run_calls")() == 1  # noqa: B009
+        assert getattr(runtime, "_upload_worker_run_calls")() == 1  # noqa: B009 # synthetic test-only attr, not on AppRuntime
 
     async def test_pairing_mode_starts_relay_after_pairing(
         self,
