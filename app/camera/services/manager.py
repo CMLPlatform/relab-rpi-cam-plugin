@@ -347,13 +347,19 @@ class CameraManager:
                 logger.info("Starting stream", extra=build_log_extra(stream_mode=mode))
                 result = await backend.start_stream(mode, youtube_config=youtube_config)
                 self._stream.start(result)
+
+                # Fetch the initial stream view inside the same guard: if the
+                # backend metadata call fails right after start, tear the stream
+                # back down so we never leave a running encoder + MediaMTX egress
+                # behind a failed 500 response.
+                if (stream_info := await self.get_stream_info()) is None:
+                    err_msg = "Failed to get stream information"
+                    raise RuntimeError(err_msg)  # noqa: TRY301 — trips the teardown below
             except Exception:
+                with contextlib.suppress(Exception):
+                    await backend.stop_stream()
                 self._stream.reset()
                 raise
-
-        if (stream_info := await self.get_stream_info()) is None:
-            err_msg = "Failed to get stream information"
-            raise RuntimeError(err_msg)
 
         return stream_info
 
