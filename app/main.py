@@ -12,7 +12,7 @@ from starlette.types import Scope
 
 from app.__version__ import version
 from app.camera.exceptions import CameraInitializationError
-from app.core.http_errors import client_error_detail
+from app.core.headers import client_error_detail
 from app.core.lifespan import lifespan
 from app.core.middleware import register_middleware
 from app.core.runtime import ensure_app_runtime
