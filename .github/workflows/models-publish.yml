@@ -36,7 +36,6 @@ jobs:
     with:
       python_version: "3.13"
       upload_artifact: true
-      artifact_name: relab-rpi-cam-models-dist
 
   publish:
     name: Publish to PyPI

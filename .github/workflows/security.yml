@@ -19,10 +19,6 @@ concurrency:
 permissions:
   contents: read
 
-defaults:
-  run:
-    shell: bash
-
 jobs:
   changes:
     name: Detect Changes
@@ -40,7 +36,7 @@ jobs:
           filters: |
             container:
               - 'Dockerfile'
-              - 'docker/**'
+              - 'Dockerfile.mediamtx'
               - 'scripts/docker_entrypoint.sh'
               - 'pyproject.toml'
               - 'uv.lock'
