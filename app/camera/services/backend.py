@@ -62,7 +62,6 @@ class CameraBackend(Protocol):
     @property
     def is_open(self) -> bool:
         """Whether the camera has been opened and is ready for use."""
-        ...
 
     async def start_lores_encoder(self, encoder: object, output: object) -> None:
         """Attach the lores H264 encoder to the camera pipeline."""

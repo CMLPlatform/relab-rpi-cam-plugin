@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import re
 import time
 from hashlib import sha256
-from secrets import token_urlsafe
+from secrets import token_bytes, token_urlsafe
 from typing import TYPE_CHECKING, NamedTuple
 
 from fastapi import Request
@@ -167,8 +168,14 @@ class RateLimiter:
         return _hashed_bucket(f"{route_key}:ip", client_ip)
 
 
+# Per-process random salt so ephemeral bucket keys can't be correlated back to
+# raw credentials (e.g. from a memory dump) via a precomputed hash table.
+_BUCKET_SALT = token_bytes(32)
+
+
 def _hashed_bucket(prefix: str, value: str) -> str:
-    return f"{prefix}:{sha256(value.encode()).hexdigest()}"
+    digest = hmac.new(_BUCKET_SALT, value.encode(), sha256).hexdigest()
+    return f"{prefix}:{digest}"
 
 
 def _rate_limit_response() -> JSONResponse:

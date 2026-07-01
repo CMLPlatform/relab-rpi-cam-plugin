@@ -19,11 +19,13 @@ if TYPE_CHECKING:
 
 
 class _FastAPIInstrumentorProtocol(Protocol):
-    def uninstrument_app(self, app: FastAPI) -> None: ...
+    def uninstrument_app(self, app: FastAPI) -> None:
+        """Remove FastAPI instrumentation from the app."""
 
 
 class _HTTPXInstrumentorProtocol(Protocol):
-    def uninstrument(self) -> None: ...
+    def uninstrument(self) -> None:
+        """Remove HTTPX client instrumentation."""
 
 
 logger = logging.getLogger(__name__)
