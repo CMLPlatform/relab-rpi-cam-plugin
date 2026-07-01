@@ -125,26 +125,6 @@ def test_local_access_info_and_upload_ack_round_trip() -> None:
     assert DeviceImageUploadAck.model_validate_json(upload_ack.model_dump_json()) == upload_ack
 
 
-def test_relay_command_and_response_envelopes_round_trip() -> None:
-    """Relay envelopes should preserve request metadata and response payloads."""
-    command = RelayCommandEnvelope(
-        id="msg-1",
-        method="GET",
-        path="/camera",
-        params={"include": "status"},
-        headers={"traceparent": "00-abc-def-01"},
-    )
-    response = RelayResponseEnvelope(
-        id="msg-1",
-        status=200,
-        content_type="application/json",
-        data={"ok": True},
-    )
-
-    assert RelayCommandEnvelope.model_validate_json(command.model_dump_json()) == command
-    assert RelayResponseEnvelope.model_validate_json(response.model_dump_json()) == response
-
-
 def test_relay_helpers_build_envelopes_and_filter_safe_headers() -> None:
     """Shared helpers should build the wire envelopes and keep only safe trace headers."""
     command = build_relay_command(

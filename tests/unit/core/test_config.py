@@ -16,7 +16,7 @@ from tests.constants import (
     EXAMPLE_RELAY_HTTP_URL,
     EXAMPLE_RELAY_HTTPS_URL,
 )
-from tests.support.fakes import fresh_p256_pem
+from tests.fakes import fresh_p256_pem
 
 OTEL_SERVICE_NAME = "relab-rpi-cam-plugin"
 APP_ENV_DEVELOPMENT = "development"
@@ -135,7 +135,7 @@ class TestAuthorizedApiKeysValidation:
 
     def test_single_key_string(self) -> None:
         """A single key without brackets or commas should be wrapped in a list."""
-        s = Settings.model_validate({"authorized_api_keys": '["only-key"]'})
+        s = Settings.model_validate({"authorized_api_keys": "only-key"})
         assert s.authorized_api_keys == ["only-key"]
 
     def test_list_passthrough(self) -> None:
