@@ -312,9 +312,11 @@ class Settings(BaseSettings):
         if self.app_env == APP_ENV_PRODUCTION and self.debug:
             msg = "DEBUG=true is only allowed when APP_ENV=development."
             raise ValueError(msg)
-        if self.pairing_backend_url.startswith("http://") and not is_loopback_url(self.pairing_backend_url):
-            msg = "PAIRING_BACKEND_URL must use https unless it points at a loopback development host."
-            raise ValueError(msg)
+        validate_endpoint_transport(
+            self.pairing_backend_url,
+            setting_name="PAIRING_BACKEND_URL",
+            app_env=self.app_env,
+        )
         validate_endpoint_transport(
             self.s3_endpoint_url,
             setting_name="S3_ENDPOINT_URL",
