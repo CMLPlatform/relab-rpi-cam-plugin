@@ -390,6 +390,7 @@ class TestCameraManagerCapture:
         assert response.metadata.camera_properties.camera_model == MOCK_CAMERA
         assert response.image_id == stub_image_id
         assert str(response.image_url) == EXAMPLE_IMAGE_URL
+        assert _StubSink.put.await_args is not None
         assert _StubSink.put.await_args.kwargs["image_id"] == generated_image_id
         assert _StubSink.put.await_args.kwargs["filename"] == f"{generated_image_id}.jpg"
         backend.capture_image.assert_awaited_once()

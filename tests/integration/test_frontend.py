@@ -1,7 +1,6 @@
 """Tests for frontend routes (landing page)."""
 
 from io import BytesIO
-from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import AsyncClient
@@ -9,11 +8,9 @@ from PIL import Image
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
-from app.auth.dependencies import verify_request
 from app.camera.routers import hls as hls_mod
 from app.camera.services.manager import CameraManager
 from app.core.settings import settings
-from app.main import app
 from tests.constants import (
     COOP_SAME_ORIGIN,
     CORP_SAME_ORIGIN,
@@ -31,7 +28,6 @@ from tests.constants import (
 
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
-HLS_ROUTE_PATH = "/preview/hls/{hls_path:path}"
 DEFAULT_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 SETUP_CSP_INLINE = "'unsafe-inline'"
 SETUP_CSP_CDN = "https://cdn.jsdelivr.net"
@@ -213,8 +209,8 @@ class TestHomepage:
         finally:
             jpeg_path.unlink(missing_ok=True)
 
-    async def test_hls_preview_proxy_is_available_without_auth(self, unauthed_client: AsyncClient) -> None:
-        """Local preview HLS stays usable before pairing/login."""
+    async def test_hls_preview_proxy_response(self, unauthed_client: AsyncClient) -> None:
+        """HLS preview stays usable without auth, uses the tight CSP, and stays same-origin."""
         upstream = MagicMock()
         upstream.status_code = 200
         upstream.content = HLS_PLAYLIST.encode()
@@ -228,42 +224,7 @@ class TestHomepage:
 
         assert resp.status_code == 200
         assert resp.text == HLS_PLAYLIST
-
-    def test_hls_preview_route_does_not_require_api_auth(self) -> None:
-        """Regression test: HLS must stay available before pairing/login."""
-        hls_route = next(route for route in app.routes if getattr(route, "path", "") == HLS_ROUTE_PATH)
-        hls_route_any = cast("Any", hls_route)
-        dependency_calls = [dependency.call for dependency in hls_route_any.dependant.dependencies]
-        assert verify_request not in dependency_calls
-
-    async def test_hls_preview_route_sets_default_csp(self, unauthed_client: AsyncClient) -> None:
-        """API-style routes should use the tighter default CSP."""
-        upstream = MagicMock()
-        upstream.status_code = 200
-        upstream.content = HLS_PLAYLIST.encode()
-        upstream.headers = {"content-type": "application/vnd.apple.mpegurl"}
-
-        http_client = MagicMock()
-        http_client.get = AsyncMock(return_value=upstream)
-
-        with patch.object(hls_mod, "_get_hls_client", return_value=http_client):
-            resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
-
-        assert resp.headers["content-security-policy"] == DEFAULT_CSP
-
-    async def test_hls_preview_sets_same_origin_resource_policy(self, unauthed_client: AsyncClient) -> None:
-        """Browser-loadable preview media should be limited to same-origin embedding."""
-        upstream = MagicMock()
-        upstream.status_code = 200
-        upstream.content = HLS_PLAYLIST.encode()
-        upstream.headers = {"content-type": "application/vnd.apple.mpegurl"}
-
-        http_client = MagicMock()
-        http_client.get = AsyncMock(return_value=upstream)
-
-        with patch.object(hls_mod, "_get_hls_client", return_value=http_client):
-            resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
-
+        assert resp.headers[HEADER_CSP] == DEFAULT_CSP
         assert resp.headers[HEADER_CORP] == CORP_SAME_ORIGIN
 
     async def test_docs_route_is_not_exposed_in_production_mode(self, unauthed_client: AsyncClient) -> None:

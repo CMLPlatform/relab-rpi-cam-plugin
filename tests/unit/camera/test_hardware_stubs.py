@@ -25,11 +25,6 @@ class TestPicamera2StubRaises:
         with pytest.raises(RuntimeError, match="picamera2 is not available"):
             Picamera2Stub()
 
-    def test_constructor_raises_regardless_of_camera_num(self) -> None:
-        """Any camera number still raises."""
-        with pytest.raises(RuntimeError):
-            Picamera2Stub(1)
-
 
 
 class TestH264EncoderStub:

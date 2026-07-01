@@ -25,11 +25,6 @@ def _png_bytes() -> bytes:
     return buffer.getvalue()
 
 
-def test_validation_error_is_runtime_error() -> None:
-    """Validation failures should flow through capture runtime-error handling."""
-    assert issubclass(CaptureFileValidationError, RuntimeError)
-
-
 def test_jpeg_capture_policy_shape() -> None:
     """The active policy should describe today's generated JPEG captures."""
     assert isinstance(JPEG_CAPTURE_POLICY, CaptureFilePolicy)

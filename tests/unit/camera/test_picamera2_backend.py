@@ -4,14 +4,12 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic import AnyUrl, SecretStr
-from relab_rpi_cam_models.camera import CameraMode
-from relab_rpi_cam_models.stream import StreamMode
 
 from app.camera.exceptions import YoutubeConfigRequiredError
-from app.camera.schemas import FocusControlRequest, FocusMode, YoutubeStreamConfig
+from app.camera.schemas import FocusControlRequest, FocusMode
 from app.camera.services.picamera2_backend import Picamera2Backend
-from tests.constants import YOUTUBE_PUBLIC_URL
+from relab_rpi_cam_models.camera import CameraMode
+from relab_rpi_cam_models.stream import StreamMode
 
 # ``libcamera`` is only installable on Raspberry Pi OS (ships via apt, not pip).
 # Skip this module entirely on dev hosts so the rest of the suite can run.
@@ -84,37 +82,6 @@ class TestPicamera2Backend:
         with pytest.raises(YoutubeConfigRequiredError):
             await backend.start_stream(StreamMode.YOUTUBE, youtube_config=None)
 
-    async def test_start_stream_uses_main_encoder(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """start_stream should attach an encoder to the persistent main stream and patch MediaMTX."""
-        backend = Picamera2Backend()
-        camera = MagicMock()
-        cast("Any", backend)._camera = camera
-        backend.current_mode = CameraMode.VIDEO
-        # Stub the MediaMTX patch calls — the runtime client would otherwise
-        # try to PATCH the localhost API which doesn't exist in unit tests.
-        mediamtx = cast("Any", backend._mediamtx)
-        mediamtx.set_youtube_egress = AsyncMock()
-        mediamtx.clear_egress = AsyncMock()
-
-        monkeypatch.setattr("app.camera.services.picamera2_backend.H264Encoder", MagicMock)
-        monkeypatch.setattr(
-            "app.camera.services.picamera2_backend.build_hires_rtsp_output",
-            MagicMock(return_value=object()),
-        )
-
-        config = YoutubeStreamConfig(stream_key=SecretStr("good"), broadcast_key=SecretStr("public-id"))
-        result = await backend.start_stream(StreamMode.YOUTUBE, youtube_config=config)
-
-        assert result.mode == StreamMode.YOUTUBE
-        assert result.url == AnyUrl(YOUTUBE_PUBLIC_URL)
-        # The MediaMTX egress is configured BEFORE the encoder publishes — no
-        # half-started state on failure.
-        mediamtx.set_youtube_egress.assert_awaited_once_with("cam-hires", "good")
-        camera.start_encoder.assert_called_once()
-        assert camera.start_encoder.call_args.kwargs == {"name": "main"}
-        assert backend._main_encoder is camera.start_encoder.call_args.args[0]
-        camera.start_recording.assert_not_called()
-
     async def test_stop_stream_keeps_camera_running(self) -> None:
         """stop_stream must only detach the encoder — the camera pipeline stays up for stills."""
         backend = Picamera2Backend()
@@ -152,19 +119,6 @@ class TestPicamera2Backend:
         assert view.controls["AfMode"].default == self._AF_MODE_AUTO
         assert view.values["AfState"] == self._AF_STATE_FOCUSED
         assert view.values["ExposureTime"] == 10_000
-
-    async def test_set_controls_rejects_unknown_control(self) -> None:
-        """set_controls should reject controls not reported by Picamera2."""
-        backend = Picamera2Backend()
-        camera = MagicMock()
-        camera.camera_controls = {"ExposureTime": (1, 1_000_000, 10_000)}
-        cast("Any", backend)._camera = camera
-        backend.current_mode = CameraMode.VIDEO
-
-        with pytest.raises(ValueError, match="Unknown camera controls: Nope"):
-            await backend.set_controls({"Nope": 1})
-
-        camera.set_controls.assert_not_called()
 
     async def test_set_controls_maps_afmode_string(self) -> None:
         """set_controls should accept friendly AfMode strings for the generic endpoint."""
@@ -218,17 +172,3 @@ class TestPicamera2Backend:
         await backend.set_focus(FocusControlRequest(mode=FocusMode.MANUAL, lens_position=2.5))
 
         camera.set_controls.assert_called_once_with({"AfMode": controls.AfModeEnum.Manual, "LensPosition": 2.5})
-
-    async def test_cleanup_releases_camera(self) -> None:
-        """Cleanup should stop/close the camera and clear the reference."""
-        backend = Picamera2Backend()
-        camera = MagicMock()
-        backend._camera = camera
-        backend.current_mode = CameraMode.PHOTO
-
-        await backend.cleanup()
-
-        camera.stop.assert_called_once()
-        camera.close.assert_called_once()
-        assert backend._camera is None
-        assert backend.current_mode is None

@@ -53,22 +53,19 @@ class TestExplicitS3:
         result = get_image_sink(settings)
         assert isinstance(result, S3CompatibleSink)
 
-    def test_explicit_s3_missing_bucket_hard_errors(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """If the bucket name is missing from settings, the factory should raise an ImageSinkConfigError."""
+    @pytest.mark.parametrize(
+        ("field", "expected"),
+        [("s3_bucket", "S3_BUCKET"), ("s3_access_key_id", "S3_ACCESS_KEY_ID")],
+    )
+    def test_explicit_s3_missing_required_field_hard_errors(
+        self, monkeypatch: pytest.MonkeyPatch, field: str, expected: str
+    ) -> None:
+        """If a required S3 config field is missing, the factory should raise an ImageSinkConfigError."""
         monkeypatch.setattr(settings, "image_sink", "s3")
         _set_s3_config(monkeypatch)
-        monkeypatch.setattr(settings, "s3_bucket", "")
+        monkeypatch.setattr(settings, field, "")
 
-        with pytest.raises(ImageSinkConfigError, match="S3_BUCKET"):
-            get_image_sink(settings)
-
-    def test_explicit_s3_missing_access_key_hard_errors(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """If the access key ID is missing from settings, the factory should raise an ImageSinkConfigError."""
-        monkeypatch.setattr(settings, "image_sink", "s3")
-        _set_s3_config(monkeypatch)
-        monkeypatch.setattr(settings, "s3_access_key_id", "")
-
-        with pytest.raises(ImageSinkConfigError, match="S3_ACCESS_KEY_ID"):
+        with pytest.raises(ImageSinkConfigError, match=expected):
             get_image_sink(settings)
 
     def test_explicit_s3_rejects_remote_http_endpoint_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:

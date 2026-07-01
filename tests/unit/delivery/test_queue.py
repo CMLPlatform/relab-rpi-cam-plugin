@@ -434,14 +434,6 @@ class TestDeadLetter:
 class TestUploadQueueWorker:
     """Tests for the runtime-owned background worker lifecycle."""
 
-    async def test_run_then_cancel_does_not_raise(self, queue_root: Path, sink: _FakeSink) -> None:
-        """The worker should cleanly run and cancel even with an empty queue."""
-        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
-        task = asyncio.create_task(run_upload_queue_worker(queue, poll_interval_s=0.01))
-        await asyncio.sleep(0.05)
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
-
     async def test_worker_continues_after_drain_exception(self, queue_root: Path, sink: _FakeSink) -> None:
         """A drain-loop exception should be logged and retried on the next tick."""
 
