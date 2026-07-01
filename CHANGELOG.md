@@ -4,18 +4,25 @@
 
 ### Feat
 
-- Harden the plugin for production: enforce browser session lifetimes and ASVS-aligned cookies, require same-origin checks for cookie-auth writes, and add structured logging for auth, CSRF, and session events
-- Harden browser headers and CSP with per-request nonces, restrict CORS and private-network access, block HTTP TRACE, and limit static serving to css/js/ico/png
-- Enforce HTTPS transport policy for S3 and OTLP endpoints
-- Validate relay signing and assertion credentials at boundaries and at startup, allowlist backend relay commands, bound command inputs, and rate-limit sensitive device actions
-- Require authentication for local pairing actions, preview start/stop, and metrics scraping, and fail closed for production loopback pairing
-- Reject `DEBUG=true` in production, reveal the local API key on demand instead of embedding it in HTML, and apply restrictive permissions before atomic credential writes
-- Add a security CI workflow for container scanning and dependency audits, pin container inputs by digest and checksum, and default media and storage listeners to loopback
-- Add a pairing-state endpoint with client-side setup polling and a generic client-safe exception handler
+- Harden authentication and sessions: enforced lifetimes, ASVS-aligned cookies, same-origin checks for cookie writes, and structured auth, CSRF, and session logging
+- Harden browser security: per-request CSP nonces, restricted CORS and private-network access, blocked HTTP TRACE, and limited static file types
+- Enforce HTTPS transport for S3 and OTLP endpoints
+- Validate relay credentials at startup and boundaries, allowlist backend commands, bound inputs, and rate-limit sensitive actions
+- Require auth for pairing, preview, and metrics endpoints, and fail closed for production loopback pairing
+- Reject `DEBUG=true` in production and reveal the local API key on demand instead of embedding it in HTML
+- Add a security CI workflow, pin container images by digest, and default listeners to loopback
+- Add a pairing-state polling endpoint and a client-safe exception handler
+
+### Fix
+
+- Block backslash open-redirects, redact bearer tokens in auth headers, return 403 instead of 500 for non-ASCII API keys, and reject oversized preview thumbnails
+- Prevent startup crashes from malformed credential files, and harden capture validation and cleanup
+- Fix worker reliability: thermal-throttle desync, preview-sleeper loop death, and preview recovery on fatal HLS errors
+- Serialize capture timestamps as UTC-aware and relay binary frames correctly, warn on plain-HTTP base URLs in production, and map dma_heap nodes individually in Compose
 
 ### Refactor
 
-- Reorganize the app into a feature-first layout: consolidate image sinks and upload into `delivery`, move streaming into `camera/streaming`, and move metrics into `observability`
+- Reorganize into a feature-first layout: image sinks and upload into `delivery`, streaming into `camera/streaming`, metrics into `observability`
 
 ## v0.3.0 (2026-04-21)
 
