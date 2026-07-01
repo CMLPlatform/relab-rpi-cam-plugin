@@ -11,9 +11,6 @@
   "semanticCommitType": "chore",
   "semanticCommitScope": "deps",
   "automerge": false,
-  "pep621": {
-    "enabled": true
-  },
   "lockFileMaintenance": {
     "enabled": true,
     "automerge": false,
@@ -31,7 +28,6 @@
       "matchManagers": [
         "github-actions"
       ],
-      "pinDigests": true,
       "labels": [
         "github-actions",
         "manual-review",
@@ -44,7 +40,6 @@
         "dockerfile",
         "docker-compose"
       ],
-      "pinDigests": true,
       "labels": [
         "docker",
         "manual-review",
