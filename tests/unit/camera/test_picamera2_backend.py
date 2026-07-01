@@ -4,12 +4,12 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from relab_rpi_cam_models.camera import CameraMode
+from relab_rpi_cam_models.stream import StreamMode
 
 from app.camera.exceptions import YoutubeConfigRequiredError
 from app.camera.schemas import FocusControlRequest, FocusMode
 from app.camera.services.picamera2_backend import Picamera2Backend
-from relab_rpi_cam_models.camera import CameraMode
-from relab_rpi_cam_models.stream import StreamMode
 
 # ``libcamera`` is only installable on Raspberry Pi OS (ships via apt, not pip).
 # Skip this module entirely on dev hosts so the rest of the suite can run.

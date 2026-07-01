@@ -85,4 +85,3 @@ class TestPairingState:
         codes = {_generate_code_and_fingerprint()[0] for _ in range(20)}
         # With the unambiguous 32-character alphabet, collisions in 20 samples are very unlikely.
         assert len(codes) > 15
-

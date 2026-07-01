@@ -46,4 +46,3 @@ class RelayRuntimeState:
         if self._last_hls_activity_monotonic is None:
             return None
         return time.monotonic() - self._last_hls_activity_monotonic
-

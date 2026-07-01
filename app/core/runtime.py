@@ -38,6 +38,7 @@ __all__ = [
     "set_active_runtime",
 ]
 
+
 @dataclass
 class AppRuntime:
     """Own the process-wide runtime services and managed background tasks."""

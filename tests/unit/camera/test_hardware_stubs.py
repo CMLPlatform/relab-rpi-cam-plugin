@@ -26,7 +26,6 @@ class TestPicamera2StubRaises:
             Picamera2Stub()
 
 
-
 class TestH264EncoderStub:
     """Constructing the encoder stub should raise so misuse fails loudly."""
 

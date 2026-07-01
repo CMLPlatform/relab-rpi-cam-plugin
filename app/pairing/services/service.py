@@ -198,8 +198,6 @@ def _sanitize_log_value(value: object) -> str:
     return str(value).replace("\r", " ").replace("\n", " ")
 
 
-
-
 def _pairing_setup_location() -> str:
     """Return the best operator-facing setup location for pairing."""
     base_url = str(app_settings.base_url).rstrip("/")
