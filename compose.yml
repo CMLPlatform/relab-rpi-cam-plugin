@@ -70,7 +70,7 @@ services:
     image: relab-rpi-cam-plugin-mediamtx
     build:
       context: .
-      dockerfile: docker/mediamtx.Dockerfile
+      dockerfile: Dockerfile.mediamtx
     restart: unless-stopped
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
