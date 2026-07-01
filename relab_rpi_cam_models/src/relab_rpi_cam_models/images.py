@@ -23,8 +23,8 @@ _LIBCAMERA_ALIAS_CONFIG = ConfigDict(
 
 
 def serialize_datetime_with_z(dt: datetime) -> str:
-    """Serialize datetime to ISO 8601 format with 'Z' timezone."""
-    return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
+    """Serialize datetime to ISO 8601 UTC format with 'Z' timezone."""
+    return dt.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 class ImageProperties(BaseModel):
@@ -32,7 +32,7 @@ class ImageProperties(BaseModel):
 
     width: PositiveInt = Field(description="Image width in pixels")
     height: PositiveInt = Field(description="Image height in pixels")
-    capture_time: Annotated[datetime, PlainSerializer(serialize_datetime_with_z)] = Field(
+    capture_time: Annotated[AwareDatetime, PlainSerializer(serialize_datetime_with_z)] = Field(
         default_factory=lambda: datetime.now(UTC), description="Capture time in UTC"
     )
 
