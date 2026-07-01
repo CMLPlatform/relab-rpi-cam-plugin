@@ -32,15 +32,6 @@ just test-slowest
 just check
 ```
 
-Useful raw equivalents:
-
-```sh
-uv run pytest tests
-uv run pytest tests/unit
-uv run pytest tests/integration
-uv run pytest --cov=app tests
-```
-
 ## Code Quality
 
 The repository uses:
@@ -102,7 +93,7 @@ Key directories:
 - `app/auth/` - API-key/session auth and browser login/logout
 - `app/core/` - settings, runtime, lifespan, middleware, bootstrap, and templates config
 - `app/relay/` - outbound WebSocket relay service and state
-- `app/image_sinks/` - backend and S3 capture persistence
+- `app/delivery/` - backend and S3 capture persistence
 - `relab_rpi_cam_models/` - shared backend-to-plugin DTO package
 
 ## Common Changes

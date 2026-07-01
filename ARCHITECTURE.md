@@ -14,7 +14,7 @@ RELab backend / local browser
 FastAPI app (app/main.py, app/router.py)
         |
         v
-Feature routers: camera / pairing / auth / system / frontend
+Feature routers: camera / pairing / auth / observability / frontend
         |
         v
 Feature services and shared infrastructure
@@ -23,7 +23,7 @@ Feature services and shared infrastructure
 AppRuntime-owned services, workers, and runtime state
 ```
 
-Feature packages own their routers, schemas, dependencies, exceptions, and services. Cross-cutting packages at `app/` root own infrastructure: backend client, relay, media pipeline, upload queue, image sinks, observability, and workers.
+Feature packages own their routers, schemas, dependencies, exceptions, and services. The camera package also owns the preview/stream pipeline under `app/camera/streaming/`. Cross-cutting packages at `app/` root own infrastructure: backend client, relay, delivery (image sinks and upload queue), observability, and workers.
 
 ## Runtime Container
 
@@ -163,7 +163,7 @@ Capture requests produce image bytes and bounded metadata, then pass them to the
 
 ## Image Sinks And Upload Queue
 
-`app/image_sinks/base.py::ImageSink` abstracts capture persistence:
+`app/delivery/base.py::ImageSink` abstracts capture persistence:
 
 - backend sink uploads to the paired RELab backend
 - S3 sink uploads to an S3-compatible bucket
