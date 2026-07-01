@@ -1,7 +1,5 @@
 """Export the plugin OpenAPI schema to a committed JSON artifact."""
 
-from __future__ import annotations
-
 import argparse
 import json
 from pathlib import Path

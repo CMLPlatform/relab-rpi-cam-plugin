@@ -373,7 +373,7 @@
         "type": "object"
       },
       "CaptureMetadata": {
-        "description": "Dynamic capture metadata from libcamera.\n\nFor more info, see  https://libcamera.org/api-html/namespacelibcamera_1_1controls.html.",
+        "description": "Dynamic capture metadata from libcamera.\n\nFor more info, see https://libcamera.org/api-html/namespacelibcamera_1_1controls.html.",
         "properties": {
           "analogue_gain": {
             "anyOf": [
@@ -560,6 +560,7 @@
           "expires_at": {
             "anyOf": [
               {
+                "format": "date-time",
                 "type": "string"
               },
               {
