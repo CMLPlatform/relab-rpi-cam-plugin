@@ -45,6 +45,11 @@ async def preview_thumbnail(request: Request) -> FileResponse:
     path = settings.image_path / "preview-thumbnail" / "current.jpg"
     if not path.exists():
         raise HTTPException(status_code=404, detail="No preview thumbnail cached yet")
+    # Reject oversized files by stat before reading, so a corrupt/huge cache
+    # file can't OOM the Pi — validate_persisted_bytes only checks length
+    # after the whole file is already in memory.
+    if path.stat().st_size > settings.max_capture_file_bytes:
+        raise HTTPException(status_code=503, detail="Preview thumbnail cache is invalid")
     try:
         JPEG_CAPTURE_POLICY.validate_persisted_bytes(
             path.read_bytes(),

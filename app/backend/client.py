@@ -34,6 +34,7 @@ _UPLOAD_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=5.0)
 _UPLOAD_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
 _UPLOAD_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/image-upload"
 _PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/preview-thumbnail-upload"
+_SELF_UNPAIR_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/self"
 _SELF_UNPAIR_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
 
 
@@ -208,7 +209,7 @@ async def notify_self_unpair() -> None:
         return
 
     base_url = settings.pairing_backend_url.rstrip("/")
-    endpoint = _camera_endpoint("/v1/plugins/rpi-cam/device/cameras/{camera_id}/self", runtime_state.relay_camera_id)
+    endpoint = _camera_endpoint(_SELF_UNPAIR_ENDPOINT_TEMPLATE, runtime_state.relay_camera_id)
     url = f"{base_url}{endpoint}"
 
     try:
