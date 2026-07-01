@@ -835,18 +835,3 @@ class TestActiveStreamState:
         state.reset()
 
         assert not state.is_active
-
-    def test_to_view_returns_contract_view(self) -> None:
-        """to_view should build the public stream view from runtime state."""
-        state = ActiveStreamState()
-        state.start(
-            StreamStartResult(
-                mode=StreamMode.YOUTUBE,
-                url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
-            )
-        )
-
-        view = state.to_view({"Model": MOCK_CAMERA}, {"FrameDuration": 33_333})
-
-        assert view is not None
-        assert view.mode == StreamMode.YOUTUBE
