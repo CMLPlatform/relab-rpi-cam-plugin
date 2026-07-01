@@ -101,7 +101,7 @@ class TestStreamStop:
         )
         resp = await client.delete("/streams/youtube")
         assert resp.status_code == 500
-        assert ENCODER_STUCK_MSG in resp.json().get("detail", "")
+        assert ENCODER_STUCK_MSG not in resp.text
 
 
 class TestStreamStartErrorPaths:

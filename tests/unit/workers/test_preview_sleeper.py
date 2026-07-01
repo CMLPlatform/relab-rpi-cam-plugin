@@ -61,7 +61,7 @@ class TestShouldBeRunning:
         relay_state: RelayRuntimeState,
     ) -> None:
         """Configured but not currently connected — backend's unreachable."""
-        # Relay state reset by autouse fixture; no connect() called.
+        # Fresh relay_state fixture, never connected → disconnected.
         sleeper = PreviewSleeper(
             pipeline=pipeline, relay_state=relay_state, relay_enabled_getter=lambda: True, hibernate_after_s=300
         )

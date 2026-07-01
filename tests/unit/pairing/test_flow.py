@@ -642,22 +642,8 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_mod, "save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         service = pairing_mod.PairingService()
-        client: Any = FakeClient(
-            post_responses=[FakeResponse(201)],
-            get_responses=[
-                FakeResponse(200, {"status": pairing_mod.STATUS_WAITING}),
-                FakeResponse(
-                    200,
-                    {
-                        "status": pairing_mod.STATUS_PAIRED,
-                        "camera_id": RELAY_CAMERA_ID,
-                        "ws_url": EXAMPLE_RELAY_BACKEND_URL,
-                        "auth_scheme": RELAY_AUTH_SCHEME,
-                        "key_id": RELAY_KEY_ID,
-                    },
-                ),
-            ],
-        )
+        # client.get is overwritten below with an AsyncMock, so get_responses is unused here.
+        client: Any = FakeClient(post_responses=[FakeResponse(201)], get_responses=[])
         waiting_response = FakeResponse(200, {"status": pairing_mod.STATUS_WAITING})
         paired_response = FakeResponse(
             200,

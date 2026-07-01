@@ -1,6 +1,7 @@
 """Tests for camera management dependencies and orchestration."""
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -135,6 +136,38 @@ class TestCheckStreamDuration:
 
         mock_camera_manager.stop_streaming_mock.assert_awaited_once()
 
+    async def test_ignores_recent_stream(
+        self,
+        mock_camera_manager: ProbeCameraManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Should not stop the stream if it has been active for less than the configured maximum duration."""
+        monkeypatch.setattr(settings, "max_stream_duration_s", 10)
+        mock_camera_manager.stream.is_active = True
+        mock_camera_manager.stream.started_at = datetime.now(UTC)
+
+        await camera_deps.check_stream_duration(mock_camera_manager)
+
+        mock_camera_manager.stop_streaming_mock.assert_not_awaited()
+
+    async def test_logs_runtime_error(
+        self,
+        mock_camera_manager: ProbeCameraManager,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Should log a RuntimeError if stopping the stream fails, but not raise it."""
+        monkeypatch.setattr(settings, "max_stream_duration_s", 10)
+        mock_camera_manager.stream.is_active = True
+        mock_camera_manager.stream.started_at = datetime.now(UTC) - timedelta(seconds=20)
+        mock_camera_manager.stop_streaming_mock.side_effect = RuntimeError("boom")
+
+        with caplog.at_level(logging.ERROR):
+            await camera_deps.check_stream_duration(mock_camera_manager)
+
+        mock_camera_manager.stop_streaming_mock.assert_awaited_once()
+        assert "Failed to stop stream when exceeding max duration" in caplog.text
+
 
 class TestGetCameraManager:
     """Tests for runtime-aware camera manager resolution."""
@@ -164,35 +197,6 @@ class TestGetCameraManager:
         )
 
         assert camera_deps.get_camera_manager(request) is runtime.camera_manager
-
-    async def test_ignores_recent_stream(
-        self,
-        mock_camera_manager: ProbeCameraManager,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Should not stop the stream if it has been active for less than the configured maximum duration."""
-        monkeypatch.setattr(settings, "max_stream_duration_s", 10)
-        mock_camera_manager.stream.is_active = True
-        mock_camera_manager.stream.started_at = datetime.now(UTC)
-
-        await camera_deps.check_stream_duration(mock_camera_manager)
-
-        mock_camera_manager.stop_streaming_mock.assert_not_awaited()
-
-    async def test_logs_runtime_error(
-        self,
-        mock_camera_manager: ProbeCameraManager,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Should log a RuntimeError if stopping the stream fails, but not raise it."""
-        monkeypatch.setattr(settings, "max_stream_duration_s", 10)
-        mock_camera_manager.stream.is_active = True
-        mock_camera_manager.stream.started_at = datetime.now(UTC) - timedelta(seconds=20)
-        mock_camera_manager.stop_streaming_mock.side_effect = RuntimeError("boom")
-
-        await camera_deps.check_stream_duration(mock_camera_manager)
-
-        mock_camera_manager.stop_streaming_mock.assert_awaited_once()
 
 
 class TestCheckStreamHealth:

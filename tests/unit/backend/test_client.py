@@ -282,7 +282,7 @@ class TestUploadImage:
         monkeypatch.setattr(
             backend_client_mod,
             "build_device_assertion",
-            lambda: (_ for _ in ()).throw(ValueError(DEVICE_ASSERTION_ERROR)),
+            lambda *_: (_ for _ in ()).throw(ValueError(DEVICE_ASSERTION_ERROR)),
         )
 
         with pytest.raises(BackendUploadError, match="Failed to mint device assertion"):

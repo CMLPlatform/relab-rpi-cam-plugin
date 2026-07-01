@@ -101,8 +101,8 @@ class TestPairingBackendReachability:
             async def __aexit__(self, *_args: object) -> None:
                 return None
 
-            async def get(self, *_args: object, **_kwargs: object) -> None:
-                await get()
+            async def get(self, url: str, *_args: object, **_kwargs: object) -> None:
+                await get(url)
 
         def fake_async_client(*_args: object, **kwargs: object) -> FakeClient:
             seen_kwargs.update(kwargs)
@@ -116,7 +116,7 @@ class TestPairingBackendReachability:
             "timeout": setup_router._PAIRING_BACKEND_REACHABILITY_TIMEOUT,
             "follow_redirects": False,
         }
-        get.assert_awaited_once()
+        get.assert_awaited_once_with(setup_router.normalize_pairing_backend_base_url("https://api.example"))
 
 
 class TestSetupPage:

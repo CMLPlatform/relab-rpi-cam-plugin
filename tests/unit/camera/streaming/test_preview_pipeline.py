@@ -13,7 +13,7 @@ from app.camera.streaming.preview_pipeline import PreviewPipelineManager
 @pytest.fixture(autouse=True)
 def stub_encoder_and_output(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Replace H264Encoder + the RTSP output builder with MagicMocks so start_encoder is safe."""
-    encoder_cls = MagicMock(return_value=MagicMock(name="H264Encoder-instance"))
+    encoder_cls = MagicMock(side_effect=lambda *_a, **_k: MagicMock(name="H264Encoder-instance"))
     output_factory = MagicMock(return_value=MagicMock(name="FfmpegOutput-instance"))
     monkeypatch.setattr(preview_pipeline_mod, "H264Encoder", encoder_cls)
     monkeypatch.setattr(preview_pipeline_mod, "build_rtsp_ffmpeg_output", output_factory)
@@ -112,6 +112,7 @@ class TestSetBitrate:
         """When the encoder is live, set_bitrate should stop+start at the new rate."""
         manager = PreviewPipelineManager()
         await manager.start(backend)
+        first_encoder = backend.start_lores_encoder.await_args.args[0]
         backend.start_lores_encoder.reset_mock()
         backend.stop_lores_encoder.reset_mock()
         stub_encoder_and_output.reset_mock()
@@ -121,6 +122,7 @@ class TestSetBitrate:
         assert manager._bitrate == 200_000
         backend.stop_lores_encoder.assert_awaited_once()
         backend.start_lores_encoder.assert_awaited_once()
-        # The new encoder should have its bitrate attribute set to the new value.
-        new_encoder = stub_encoder_and_output.return_value
+        # A fresh encoder (not the original) must be handed to the backend at the new rate.
+        new_encoder = backend.start_lores_encoder.await_args.args[0]
+        assert new_encoder is not first_encoder
         assert new_encoder.bitrate == 200_000
