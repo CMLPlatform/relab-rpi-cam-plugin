@@ -66,8 +66,4 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-if (typeof mediaQuery.addEventListener === "function") {
-  mediaQuery.addEventListener("change", onSystemThemeChange);
-} else if (typeof mediaQuery.addListener === "function") {
-  mediaQuery.addListener(onSystemThemeChange);
-}
+mediaQuery.addEventListener("change", onSystemThemeChange);
