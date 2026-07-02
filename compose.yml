@@ -12,8 +12,23 @@
 #   Add ``observability-ship`` to COMPOSE_PROFILES, e.g.
 #   ``COMPOSE_PROFILES=standalone,observability-ship``.
 
+x-runtime-hardening: &runtime-hardening
+  tmpfs:
+    - /tmp
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   app:
+    <<: *runtime-hardening
     image: relab-rpi-cam-plugin
     build:
       context: .
@@ -25,17 +40,12 @@ services:
         condition: service_healthy
     volumes:
       - /run/udev:/run/udev:ro
+      - app_data:/app/data
       - app_logs:/app/logs
       - relay_credentials:/home/rpicam/.config/relab
     env_file:
-      - .env
-    group_add:
-      - video
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - path: .env
+        required: false
     # Host networking lets the app reach MediaMTX (RTSP :8554, HLS :8888,
     # control API :9997) over loopback, keeping those listeners localhost-only
     # without any ``host.docker.internal`` bridge gymnastics. Port 8018 is bound
@@ -43,11 +53,12 @@ services:
     network_mode: host
 
   mediamtx:
+    <<: *runtime-hardening
     # MediaMTX sidecar: the single media seam for the plugin.
     #
     #   - Ingest: RTSP on :8554 (lores cam-preview always, main cam-hires while
     #     a YouTube stream is active).
-    #   - Browser/native preview: LL-HLS on :8888.
+    #   - Browser/native preview: HLS on :8888.
     #   - Runtime control: HTTP API on localhost:9997. The plugin's
     #     ``mediamtx_client`` patches the ``cam-hires`` path at runtime with a
     #     ``runOnReady`` command that forks ffmpeg inside this container to
@@ -56,30 +67,23 @@ services:
     # ``-ffmpeg`` variant is required because ``runOnReady`` shells out to
     # ffmpeg and the default image doesn't ship it. Runs on the host network so
     # all three listeners (8554/8888/9997) are reachable from the app container.
-    image: relab-rpi-cam-plugin-mediamtx
-    build:
-      context: .
-      dockerfile: docker/mediamtx.Dockerfile
+    image: bluenviron/mediamtx:1.17.1-ffmpeg@sha256:f648b6c98abbc02917d5598479e647b1b451dd13f8df265ab2afde060fd50f7f
     restart: unless-stopped
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
-    # Hit the control API on localhost:9997. Our wrapper image adds wget since
-    # the upstream image intentionally stays minimal.
+    # Hit the control API on localhost:9997 with the busybox wget the upstream
+    # image already ships.
     healthcheck:
       test: [ "CMD-SHELL", "wget -q -O /dev/null http://localhost:9997/v3/config/global/get || exit 1" ]
       interval: 30s
       timeout: 3s
       retries: 3
       start_period: 5s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "3"
     network_mode: host
 
   alloy:
-    image: grafana/alloy:v1.12.0
+    <<: *runtime-hardening
+    image: grafana/alloy:v1.12.0@sha256:85e4a706181741dd735d9a69bea81f9e03e16d5349bff46dd9640379f143c007
     restart: unless-stopped
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
@@ -88,6 +92,7 @@ services:
     environment:
       LOKI_PUSH_URL: ${LOKI_PUSH_URL:-}
       PROMETHEUS_REMOTE_WRITE_URL: ${PROMETHEUS_REMOTE_WRITE_URL:-}
+      PROMETHEUS_SCRAPE_API_KEY: ${PROMETHEUS_SCRAPE_API_KEY:-}
       OBSERVABILITY_INSTANCE: ${OBSERVABILITY_INSTANCE:-rpi-cam-plugin}
     command:
       - run
@@ -97,15 +102,15 @@ services:
       - observability-ship
 
   rustfs:
-    # S3-compatible object storage for standalone mode. When this sidecar is
-    # running the plugin's S3CompatibleSink writes captures directly into the
-    # bucket over the docker host network — no Relab backend needed.
+    <<: *runtime-hardening
+    # S3-compatible object storage for standalone mode. The sidecar publishes
+    # loopback-only ports by default; set RUSTFS_*_BIND only when exposing it.
     # See the ``standalone`` section of ``.env.example`` for the required vars.
-    image: rustfs/rustfs:latest
+    image: rustfs/rustfs:1.0.0-beta.1@sha256:3c2d55977829620284ece8593901bf776bcfc0fc9972784352de4dcffdb92416
     restart: unless-stopped
     ports:
-      - "9000:9000" # S3 API
-      - "9001:9001" # Web console
+      - "${RUSTFS_API_BIND:-127.0.0.1}:9000:9000" # S3 API
+      - "${RUSTFS_CONSOLE_BIND:-127.0.0.1}:9001:9001" # Web console
     volumes:
       - rustfs_data:/data
     environment:
@@ -122,15 +127,11 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "3"
     profiles:
       - standalone
 
 volumes:
+  app_data:
   app_logs:
   relay_credentials:
   alloy_data:

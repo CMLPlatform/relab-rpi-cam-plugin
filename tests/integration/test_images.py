@@ -11,7 +11,7 @@ from pydantic import AnyUrl
 
 from app.camera.services.manager import CameraManager
 from app.core.settings import settings
-from app.image_sinks.base import ImageSinkError, StoredImage
+from app.delivery.base import ImageSinkError, StoredImage
 from tests.constants import (
     QUEUED_STATUS,
     SAMPLE_IMAGE_ID,
@@ -154,6 +154,37 @@ class TestCaptureEndpoint:
         call = stub_success_sink.put.await_args
         assert call is not None
         assert call.kwargs["upload_metadata"] == {"product_id": 99, "description": "rear view"}
+
+    @pytest.mark.usefixtures("stub_success_sink")
+    async def test_capture_rejects_large_upload_metadata(self, client: AsyncClient) -> None:
+        """Upload metadata should be bounded before capture or sink work starts."""
+        resp = await client.post("/captures", json={"description": "x" * 5000})
+
+        assert resp.status_code == 422
+
+    async def test_capture_returns_507_when_upload_queue_is_full(
+        self,
+        client: AsyncClient,
+        camera_manager: CameraManager,
+        stub_failing_sink: _StubSink,
+        tmp_path: Path,
+    ) -> None:
+        """A failed upload should surface capacity exhaustion instead of growing the queue."""
+        del stub_failing_sink
+        original = settings.image_path
+        original_max_entries = settings.upload_queue_max_pending_entries
+        settings.image_path = tmp_path
+        settings.upload_queue_max_pending_entries = 0
+        cast("Any", camera_manager)._upload_queue = None
+
+        try:
+            resp = await client.post("/captures", json={"product_id": 7})
+        finally:
+            settings.image_path = original
+            settings.upload_queue_max_pending_entries = original_max_entries
+            cast("Any", camera_manager)._upload_queue = None
+
+        assert resp.status_code == 507
 
     async def test_capture_runtime_error_returns_500(
         self,

@@ -2,7 +2,7 @@
 
 When the RPi boots without relay credentials but has a `pairing_backend_url` configured,
 it enters pairing mode:
-1. Generates a 6-char code and registers it with the backend.
+1. Generates a 6-character code and registers it with the backend.
 2. Displays the code on its setup page for the user to enter in the ReLab app.
 3. Polls the backend until the user claims the code.
 4. Receives credentials, saves them to a separate JSON file, and starts the relay.
@@ -14,11 +14,8 @@ import asyncio
 import base64
 import logging
 import secrets
-import socket
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
@@ -27,37 +24,37 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.core.bootstrap import set_runtime_relay_credentials
-from app.core.runtime_context import get_active_runtime
+from app.core.runtime_context import get_active_runtime_state
+from app.core.settings import APP_ENV_DEVELOPMENT, PAIRING_LOOPBACK_CONTAINER_ERROR, validate_relay_backend_url
 from app.core.settings import settings as app_settings
 from app.observability.logging import build_log_extra
 from app.pairing.services.client import PairingClient
-from app.pairing.services.credentials import (
-    _CREDENTIALS_FILE,
-    delete_relay_credentials,
-    load_relay_credentials,
-    save_relay_credentials,
+from app.pairing.services.credentials import save_relay_credentials
+from app.utils.files import is_running_in_container
+from app.utils.network import find_lan_ips
+from relab_rpi_cam_models import (
+    PAIRING_CODE_ALPHABET,
+    PAIRING_CODE_LENGTH,
+    PairingClaimedBootstrap,
+    PairingStatus,
 )
-from relab_rpi_cam_models import PairingClaimedBootstrap, PairingStatus, RelayAuthScheme
-
-__all__ = [
-    "_CREDENTIALS_FILE",
-    "delete_relay_credentials",
-    "load_relay_credentials",
-]
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
+    from app.core.runtime_state import RuntimeState
+
 logger = logging.getLogger(__name__)
 
 
-_CODE_LENGTH = 3  # token_hex(3) → 6 hex chars
 PAIRING_CODE_TTL_SECONDS = 10 * 60
+_PAIRING_NONCE_BYTES = 16
+_PAIRING_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
+_PAIRING_LIMITS = httpx.Limits(max_connections=4, max_keepalive_connections=2)
 
 # Pairing status values
 STATUS_WAITING = "waiting"
 STATUS_PAIRED = "paired"
-AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
 _DOCKER_HOST_ALIAS = "host.docker.internal"
 
@@ -84,8 +81,9 @@ class PairingState:
 class PairingService:
     """Runtime-owned pairing orchestration and observable state."""
 
-    def __init__(self) -> None:
+    def __init__(self, runtime_state: RuntimeState | None = None) -> None:
         self.state = PairingState()
+        self._runtime_state = runtime_state
 
     def reset_state(self) -> None:
         """Clear the active pairing code and return to idle."""
@@ -106,7 +104,7 @@ class PairingService:
 
     async def run_forever(self, on_paired: Callable[[], Coroutine[Any, Any, None]]) -> None:
         """Run the pairing flow until credentials are obtained or a fatal error occurs."""
-        base = _normalize_pairing_backend_base_url(app_settings.pairing_backend_url.rstrip("/"))
+        base = normalize_pairing_backend_base_url(app_settings.pairing_backend_url.rstrip("/"))
         if not base:
             return
 
@@ -115,7 +113,11 @@ class PairingService:
         # the human to enter the code.
         retry_delay = 10.0
         max_retry_delay = 120.0
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)) as client:
+        async with httpx.AsyncClient(
+            timeout=_PAIRING_TIMEOUT,
+            limits=_PAIRING_LIMITS,
+            follow_redirects=False,
+        ) as client:
             while True:
                 try:
                     await self._pairing_cycle(client, base, on_paired)
@@ -152,20 +154,23 @@ class PairingService:
                 else:
                     return
 
-    def _prepare_registration_state(self, registration: PairingRegistration) -> None:
-        _prepare_registration_state(self.state, registration)
-
     async def _pairing_cycle(
         self,
-        client: PairingClient | httpx.AsyncClient,
+        client: httpx.AsyncClient,
         base_url: str,
         on_paired: Callable[[], Coroutine[Any, Any, None]],
     ) -> None:
-        pairing_client = _coerce_pairing_client(client, base_url)
+        pairing_client = PairingClient(client, base_url)
         registration = await _register_pairing_code_with_client(pairing_client, self.state)
         self.state.status = STATUS_WAITING
         poll_result = await _poll_pairing_status(pairing_client, registration.code, registration.fingerprint)
-        await _complete_pairing_state(self.state, poll_result, registration.private_key, on_paired)
+        await _complete_pairing_state(
+            self.state,
+            poll_result,
+            registration.private_key,
+            on_paired,
+            self._runtime_state or get_active_runtime_state(),
+        )
 
 
 @dataclass(frozen=True)
@@ -193,25 +198,6 @@ def _sanitize_log_value(value: object) -> str:
     return str(value).replace("\r", " ").replace("\n", " ")
 
 
-def _coerce_pairing_client(client: PairingClient | httpx.AsyncClient, base_url: str) -> PairingClient:
-    """Normalize a raw httpx client or an existing PairingClient to PairingClient."""
-    if isinstance(client, PairingClient):
-        return client
-    return PairingClient(client, base_url)
-
-
-def _pairing_code_expires_at() -> datetime:
-    """Return the expiry timestamp for the currently active pairing code."""
-    return datetime.now(UTC) + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
-
-
-def _set_pairing_code_state(state: PairingState, code: str, fingerprint: str) -> None:
-    """Store the active pairing code and its expiry on the observable state."""
-    state.code = code
-    state.fingerprint = fingerprint
-    state.expires_at = _pairing_code_expires_at()
-
-
 def _pairing_setup_location() -> str:
     """Return the best operator-facing setup location for pairing."""
     base_url = str(app_settings.base_url).rstrip("/")
@@ -224,12 +210,7 @@ def _pairing_setup_location() -> str:
     return "/setup"
 
 
-def _is_running_in_container() -> bool:
-    """Best-effort Docker/container detection for local-dev URL handling."""
-    return Path("/.dockerenv").exists()
-
-
-def _normalize_pairing_backend_base_url(base_url: str) -> str:
+def normalize_pairing_backend_base_url(base_url: str) -> str:
     """Rewrite loopback backends to the Docker host alias when needed.
 
     Inside a container, http://localhost points back at the container itself.
@@ -237,8 +218,10 @@ def _normalize_pairing_backend_base_url(base_url: str) -> str:
     transparently switch to host.docker.internal so the plugin can reach it.
     """
     parsed = urlparse(base_url)
-    if parsed.hostname not in _LOOPBACK_HOSTS or not _is_running_in_container():
+    if parsed.hostname not in _LOOPBACK_HOSTS or not is_running_in_container():
         return base_url
+    if app_settings.app_env != APP_ENV_DEVELOPMENT:
+        raise RuntimeError(PAIRING_LOOPBACK_CONTAINER_ERROR)
 
     rewritten = parsed._replace(netloc=parsed.netloc.replace(parsed.hostname, _DOCKER_HOST_ALIAS, 1))
     normalized = urlunparse(rewritten)
@@ -254,12 +237,9 @@ def _normalize_pairing_backend_base_url(base_url: str) -> str:
 def _lan_setup_url(port: int | None) -> str | None:
     """Best-effort LAN setup URL when the configured base URL is loopback-only."""
     setup_port = port or 8018
-    with suppress(OSError):
-        hostname = socket.gethostname()
-        _, _, addresses = socket.gethostbyname_ex(hostname)
-        for address in addresses:
-            if address and address not in _LOOPBACK_HOSTS and not address.startswith("127."):
-                return f"http://{address}:{setup_port}/setup"
+    ips = find_lan_ips()
+    if ips:
+        return f"http://{ips[0]}:{setup_port}/setup"
     return None
 
 
@@ -279,14 +259,18 @@ def _format_pairing_ready_message(code: str) -> str:
 
 def _log_pairing_ready(code: str) -> None:
     """Emit the currently active pairing code for operators over SSH/logs."""
-    logger.info("%s", _format_pairing_ready_message(code), extra=build_log_extra())
+    logger.info(
+        "%s",
+        _format_pairing_ready_message(code),
+        extra={**build_log_extra(), "local_operator_only": True},
+    )
 
 
 def _log_pairing_connect_error(exc: httpx.ConnectError, base_url: str) -> None:
     """Log actionable guidance for unreachable pairing backends."""
     del exc
     parsed = urlparse(base_url)
-    if parsed.hostname in _LOOPBACK_HOSTS and _is_running_in_container():
+    if parsed.hostname in _LOOPBACK_HOSTS and is_running_in_container():
         logger.error(
             "Pairing backend %s is loopback from inside the container. "
             "Use the host machine via http://%s:%s, a LAN IP, or the real HTTPS backend.",
@@ -346,7 +330,7 @@ def _log_pairing_timeout(stage: str, code: str, retry_in_s: int) -> None:
 def _new_pairing_registration() -> PairingRegistration:
     code, fingerprint = _generate_code_and_fingerprint()
     private_key = _generate_private_key()
-    key_id = secrets.token_urlsafe(16)
+    key_id = secrets.token_urlsafe(_PAIRING_NONCE_BYTES)
     return PairingRegistration(
         code=code,
         fingerprint=fingerprint,
@@ -357,7 +341,9 @@ def _new_pairing_registration() -> PairingRegistration:
 
 
 def _prepare_registration_state(state: PairingState, registration: PairingRegistration) -> None:
-    _set_pairing_code_state(state, registration.code, registration.fingerprint)
+    state.code = registration.code
+    state.fingerprint = registration.fingerprint
+    state.expires_at = datetime.now(UTC) + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
     state.status = "registering"
     state.error = None
     _log_pairing_ready(registration.code)
@@ -422,18 +408,14 @@ async def _poll_pairing_status(
         data = client.parse_poll_response(resp.json())
         if data.status == PairingStatus.WAITING:
             continue
-        return PairingClaimedBootstrap(
-            camera_id=str(data.camera_id),
-            ws_url=str(data.ws_url),
-            auth_scheme=RelayAuthScheme(str(data.auth_scheme)),
-            key_id=str(data.key_id),
+        return PairingClaimedBootstrap.model_validate(
+            {
+                "camera_id": data.camera_id,
+                "ws_url": data.ws_url,
+                "auth_scheme": data.auth_scheme,
+                "key_id": data.key_id,
+            }
         )
-
-
-def _clear_active_pairing_code(state: PairingState) -> None:
-    state.code = None
-    state.fingerprint = None
-    state.expires_at = None
 
 
 async def _complete_pairing_state(
@@ -441,16 +423,23 @@ async def _complete_pairing_state(
     payload: PairingClaimedBootstrap,
     private_key: ec.EllipticCurvePrivateKey,
     on_paired: Callable[[], Coroutine[Any, Any, None]],
+    runtime_state: RuntimeState,
 ) -> None:
     camera_id = payload.camera_id
-    relay_backend_url = payload.ws_url
+    relay_backend_url = str(payload.ws_url)
     relay_auth_scheme = payload.auth_scheme.value
     key_id = payload.key_id
     private_key_pem = _private_key_pem(private_key)
+    validate_relay_backend_url(
+        relay_backend_url,
+        app_env=app_settings.app_env,
+    )
 
     logger.info("PAIRING COMPLETE | camera_id=%s relay_starting=true", camera_id)
     state.status = STATUS_PAIRED
-    _clear_active_pairing_code(state)
+    state.code = None
+    state.fingerprint = None
+    state.expires_at = None
 
     save_relay_credentials(
         relay_backend_url=relay_backend_url,
@@ -460,7 +449,7 @@ async def _complete_pairing_state(
         private_key_pem=private_key_pem,
     )
     set_runtime_relay_credentials(
-        get_active_runtime().runtime_state,
+        runtime_state,
         relay_backend_url=relay_backend_url,
         relay_camera_id=camera_id,
         relay_auth_scheme=relay_auth_scheme,
@@ -471,8 +460,8 @@ async def _complete_pairing_state(
 
 
 def _generate_code_and_fingerprint() -> tuple[str, str]:
-    code = secrets.token_hex(_CODE_LENGTH).upper()
-    fingerprint = secrets.token_urlsafe(16)
+    code = "".join(secrets.choice(PAIRING_CODE_ALPHABET) for _ in range(PAIRING_CODE_LENGTH))
+    fingerprint = secrets.token_urlsafe(_PAIRING_NONCE_BYTES)
     return code, fingerprint
 
 

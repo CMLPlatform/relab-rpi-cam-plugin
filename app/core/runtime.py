@@ -8,17 +8,16 @@ from dataclasses import dataclass, field
 from inspect import isawaitable
 from typing import TYPE_CHECKING
 
-from app.camera.services.hardware_protocols import Picamera2Like
 from app.camera.services.manager import CameraManager
-from app.core.runtime_context import get_active_runtime, set_active_runtime
+from app.camera.streaming.preview_pipeline import PreviewPipelineManager
+from app.core.runtime_context import get_active_runtime, get_active_runtime_state, set_active_runtime
 from app.core.runtime_state import RuntimeState
 from app.core.settings import settings
-from app.media.preview_pipeline import PreviewPipelineManager
+from app.delivery.queue import run_upload_queue_worker
 from app.observability.tracing import ObservabilityHandle
 from app.pairing.services.service import PairingService
 from app.relay.service import RelayService
 from app.relay.state import RelayRuntimeState
-from app.upload.queue import UploadQueueWorker
 from app.workers.preview_sleeper import PreviewSleeper
 from app.workers.preview_thumbnail import PreviewThumbnailWorker
 from app.workers.thermal_governor import ThermalGovernor
@@ -34,7 +33,7 @@ __all__ = [
     "AppRuntime",
     "ensure_app_runtime",
     "get_active_runtime",
-    "get_app_runtime",
+    "get_active_runtime_state",
     "get_request_runtime",
     "set_active_runtime",
 ]
@@ -48,18 +47,18 @@ class AppRuntime:
     runtime_state: RuntimeState = field(default_factory=lambda: RuntimeState.from_settings(settings))
     preview_pipeline: PreviewPipelineManager = field(default_factory=PreviewPipelineManager)
     relay_state: RelayRuntimeState = field(default_factory=RelayRuntimeState)
-    pairing_service: PairingService = field(default_factory=PairingService)
+    pairing_service: PairingService = field(init=False)
     relay_service: RelayService = field(init=False)
     preview_sleeper: PreviewSleeper = field(init=False)
     preview_thumbnail_worker: PreviewThumbnailWorker = field(init=False)
     thermal_governor: ThermalGovernor = field(init=False)
-    upload_queue_worker: UploadQueueWorker | None = None
     background_tasks: set[asyncio.Task[None]] = field(default_factory=set)
     recurring_tasks: set[asyncio.Task[None]] = field(default_factory=set)
     managed_tasks_by_name: dict[str, asyncio.Task[None]] = field(default_factory=dict)
     observability_handle: ObservabilityHandle | None = None
 
     def __post_init__(self) -> None:
+        self.pairing_service = PairingService(runtime_state=self.runtime_state)
         self.relay_service = RelayService(state=self.relay_state, runtime_state=self.runtime_state)
         self.preview_sleeper = PreviewSleeper(
             pipeline=self.preview_pipeline,
@@ -164,12 +163,12 @@ class AppRuntime:
 
     def start_preview_sleeper(self) -> asyncio.Task[None]:
         """Start or replace the preview sleeper loop under runtime ownership."""
-        self.preview_sleeper.configure(camera_getter=self.camera_getter)
+        self.preview_sleeper.configure(backend=self.camera_manager.backend)
         return self.create_task(self.preview_sleeper.run_forever(), name="preview_sleeper")
 
     def start_thermal_governor(self) -> asyncio.Task[None]:
         """Start or replace the thermal governor loop under runtime ownership."""
-        self.thermal_governor.configure(camera_getter=self.camera_getter)
+        self.thermal_governor.configure(backend=self.camera_manager.backend)
         return self.create_task(self.thermal_governor.run_forever(), name="thermal_governor")
 
     def start_preview_thumbnail_worker(self) -> asyncio.Task[None]:
@@ -178,9 +177,7 @@ class AppRuntime:
 
     def start_upload_queue_worker(self) -> asyncio.Task[None]:
         """Start or replace the upload queue worker under runtime ownership."""
-        if self.upload_queue_worker is None:
-            self.upload_queue_worker = UploadQueueWorker(self.camera_manager.upload_queue)
-        return self.create_task(self.upload_queue_worker.run_forever(), name="upload_queue_worker")
+        return self.create_task(run_upload_queue_worker(self.camera_manager.upload_queue), name="upload_queue_worker")
 
     async def stop_runtime_workers(self) -> None:
         """Stop runtime-owned long-lived worker loops in dependency order."""
@@ -193,10 +190,6 @@ class AppRuntime:
             }
         )
 
-    def camera_getter(self) -> Picamera2Like | None:
-        """Return the live backend camera object for background services."""
-        return self.camera_manager.backend.camera
-
 
 def ensure_app_runtime(app: FastAPI) -> AppRuntime:
     """Attach and return the runtime container for the given app."""
@@ -208,11 +201,6 @@ def ensure_app_runtime(app: FastAPI) -> AppRuntime:
     app.state.runtime = runtime
     set_active_runtime(runtime)
     return runtime
-
-
-def get_app_runtime(app: FastAPI) -> AppRuntime:
-    """Return the app runtime, creating it lazily if needed."""
-    return ensure_app_runtime(app)
 
 
 def get_request_runtime(request: Request) -> AppRuntime:

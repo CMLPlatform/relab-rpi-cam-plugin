@@ -31,15 +31,14 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from app.camera.services.backend import CameraBackend
+from app.camera.streaming.preview_pipeline import PreviewPipelineManager
 from app.core.settings import settings
-from app.media.preview_pipeline import PreviewPipelineManager
 from app.observability.logging import build_log_extra
 from app.relay.state import RelayRuntimeState
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-    from app.camera.services.hardware_protocols import Picamera2Like
 
 logger = logging.getLogger(__name__)
 
@@ -55,29 +54,47 @@ class PreviewSleeper:
         pipeline: PreviewPipelineManager,
         relay_state: RelayRuntimeState,
         relay_enabled_getter: Callable[[], bool] | None = None,
-        camera_getter: Callable[[], Picamera2Like | None] | None = None,
+        backend: CameraBackend | None = None,
         hibernate_after_s: float | None = None,
         poll_interval_s: float = _POLL_INTERVAL_S,
     ) -> None:
         self._pipeline = pipeline
         self._relay_state = relay_state
         self._relay_enabled_getter = relay_enabled_getter or (lambda: False)
-        self._camera_getter = camera_getter
+        self._backend = backend
         self._hibernate_after_s = (
             hibernate_after_s if hibernate_after_s is not None else settings.preview_hibernate_after_s
         )
         self._poll_interval_s = poll_interval_s
 
-    def configure(self, *, camera_getter: Callable[[], Picamera2Like | None]) -> None:
-        """Bind the live camera getter used by the sleeper loop."""
-        self._camera_getter = camera_getter
+    def configure(self, *, backend: CameraBackend) -> None:
+        """Bind the camera backend used by the sleeper loop."""
+        self._backend = backend
 
     async def run_forever(self) -> None:
         """Run the preview sleeper loop until the owning runtime cancels it."""
-        if self._camera_getter is None:
-            err_msg = "PreviewSleeper requires configure(camera_getter=...) before run_forever()"
+        if self._backend is None:
+            err_msg = "PreviewSleeper requires configure(backend=...) before run_forever()"
             raise RuntimeError(err_msg)
-        await self._run()
+        try:
+            while True:
+                try:
+                    await self._tick()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Preview sleeper tick failed; continuing", extra=build_log_extra())
+                await asyncio.sleep(self._poll_interval_s)
+        except asyncio.CancelledError:
+            # On cancel, stop the encoder if it's running so the app shutdown
+            # path doesn't leave a dangling ffmpeg subprocess. Any errors are
+            # swallowed because we're already tearing down.
+            if self._backend is not None and self._backend.is_open and self._pipeline.is_running:
+                try:
+                    await self._pipeline.stop(self._backend)
+                except (OSError, RuntimeError):
+                    logger.debug("Preview sleeper cleanup error on cancel", exc_info=True)
+            raise
 
     def should_be_running(self) -> bool:
         """Decide whether the encoder should currently be running."""
@@ -97,7 +114,7 @@ class PreviewSleeper:
             # app-managed HLS proxy records a preview request.
             return False
 
-        if not self._relay_state.is_connected():
+        if not self._relay_state.is_connected:
             return False
 
         idle = self._relay_state.seconds_since_last_activity()
@@ -107,27 +124,8 @@ class PreviewSleeper:
             return False
         return idle <= self._hibernate_after_s
 
-    async def _run(self) -> None:
-        """Poll at ``_poll_interval_s`` and toggle the encoder to match."""
-        try:
-            while True:
-                await self._tick()
-                await asyncio.sleep(self._poll_interval_s)
-        except asyncio.CancelledError:
-            # On cancel, stop the encoder if it's running so the app shutdown
-            # path doesn't leave a dangling ffmpeg subprocess. Any errors are
-            # swallowed because we're already tearing down.
-            camera = self._camera_getter() if self._camera_getter else None
-            if camera is not None and self._pipeline.is_running:
-                try:
-                    await self._pipeline.stop(camera)
-                except (OSError, RuntimeError):
-                    logger.debug("Preview sleeper cleanup error on cancel", exc_info=True)
-            raise
-
     async def _tick(self) -> None:
-        camera = self._camera_getter() if self._camera_getter else None
-        if camera is None:
+        if self._backend is None or not self._backend.is_open:
             # No camera yet (e.g. initial startup race). Try again next tick.
             return
 
@@ -140,7 +138,7 @@ class PreviewSleeper:
                 extra=build_log_extra(),
             )
             try:
-                await self._pipeline.start(camera)
+                await self._pipeline.start(self._backend)
             except RuntimeError as exc:
                 logger.warning("Preview sleeper failed to wake encoder: %s", exc, extra=build_log_extra())
             return
@@ -152,6 +150,6 @@ class PreviewSleeper:
                 extra=build_log_extra(),
             )
             try:
-                await self._pipeline.stop(camera)
+                await self._pipeline.stop(self._backend)
             except RuntimeError as exc:
                 logger.warning("Preview sleeper failed to hibernate encoder: %s", exc, extra=build_log_extra())

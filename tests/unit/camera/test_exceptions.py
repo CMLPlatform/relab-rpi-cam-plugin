@@ -6,7 +6,7 @@ from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
 from app.camera.exceptions import ActiveStreamError, CameraInitializationError
-from app.media.stream_state import ActiveStreamState
+from app.camera.streaming.stream_state import ActiveStreamState
 from tests.constants import YOUTUBE_WATCH_URL_PREFIX
 
 _STREAM_ACTIVE_PREFIX = "Stream active in"

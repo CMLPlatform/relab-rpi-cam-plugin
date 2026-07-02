@@ -43,6 +43,9 @@ loki.process "app" {
 
 loki.write "local" {
   endpoint {
+    // Prefer HTTPS remote collectors with authentication and an explicit
+    // retention policy. Plaintext HTTP should be limited to loopback lab
+    // collectors that are trusted during pairing windows.
     url = sys.env("LOKI_PUSH_URL")
   }
 }
@@ -51,7 +54,8 @@ loki.write "local" {
 // Scrapes the plugin's /metrics endpoint and forwards to a Prometheus-compatible
 // remote_write receiver. The whole pipeline no-ops cleanly when
 // PROMETHEUS_REMOTE_WRITE_URL is empty: prometheus.scrape still runs but the
-// remote_write sink drops samples if its url is blank.
+// remote_write sink drops samples if its url is blank. /metrics is protected;
+// set PROMETHEUS_SCRAPE_API_KEY to a value also present in AUTHORIZED_API_KEYS.
 
 prometheus.scrape "rpi_cam" {
   targets = [
@@ -63,11 +67,16 @@ prometheus.scrape "rpi_cam" {
     },
   ]
   scrape_interval = "15s"
+  http_headers = {
+    "X-API-Key" = [sys.env("PROMETHEUS_SCRAPE_API_KEY")],
+  }
   forward_to      = [prometheus.remote_write.local.receiver]
 }
 
 prometheus.remote_write "local" {
   endpoint {
+    // Prefer HTTPS remote_write endpoints with scoped credentials. Plaintext
+    // HTTP is appropriate only for loopback/local development receivers.
     url = sys.env("PROMETHEUS_REMOTE_WRITE_URL")
   }
 }

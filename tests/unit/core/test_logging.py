@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 
 from fastapi import Request, Response
 
@@ -16,6 +17,17 @@ REQUEST_ID = "req-123"
 CAMERA_ID = "cam-1"
 STREAM_MODE = "youtube"
 CLIENT_REQUEST_ID = "client-req-42"
+SENSITIVE_SAMPLE = "sample-sensitive-value-1234567890"
+REDACTED = "[REDACTED]"
+BEARER_VALUE = "Bearer token-123"
+PAIRING_CODE = "ABC234"
+LOCAL_OPERATOR_ONLY_MESSAGE = "[local operator message omitted]"
+SECURITY_EVENT = "auth.login"
+SECURITY_OUTCOME = "success"
+SECURITY_AUTH_METHOD = "api_key"
+SECURITY_METHOD = "POST"
+SECURITY_PATH = "/auth/login"
+SECURITY_CLIENT_HOST = "192.0.2.10"
 
 
 def _request_with_headers(*, headers: list[tuple[bytes, bytes]] | None = None) -> Request:
@@ -33,6 +45,11 @@ def _request_with_headers(*, headers: list[tuple[bytes, bytes]] | None = None) -
         "root_path": "",
     }
     return Request(scope)
+
+
+def _raise_sensitive_error() -> None:
+    msg = f"stream_key={SENSITIVE_SAMPLE}"
+    raise RuntimeError(msg)
 
 
 class TestJsonFormatter:
@@ -63,6 +80,113 @@ class TestJsonFormatter:
         assert payload["request_id"] == REQUEST_ID
         assert payload["camera_id"] == CAMERA_ID
         assert payload["stream_mode"] == STREAM_MODE
+
+    def test_includes_security_event_metadata(self) -> None:
+        """Formatter output should preserve structured security-event fields."""
+        formatter = logging_mod.JsonFormatter()
+        record = logging.LogRecord(
+            name="test.security",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=10,
+            msg="security event",
+            args=(),
+            exc_info=None,
+        )
+        record.event = SECURITY_EVENT
+        record.outcome = SECURITY_OUTCOME
+        record.auth_method = SECURITY_AUTH_METHOD
+        record.method = SECURITY_METHOD
+        record.path = SECURITY_PATH
+        record.status_code = 303
+        record.client_host = SECURITY_CLIENT_HOST
+
+        payload = json.loads(formatter.format(record))
+
+        assert payload["event"] == SECURITY_EVENT
+        assert payload["outcome"] == SECURITY_OUTCOME
+        assert payload["auth_method"] == SECURITY_AUTH_METHOD
+        assert payload["method"] == SECURITY_METHOD
+        assert payload["path"] == SECURITY_PATH
+        assert payload["status_code"] == 303
+        assert payload["client_host"] == SECURITY_CLIENT_HOST
+
+    def test_redacts_sensitive_message_fields(self) -> None:
+        """Structured logs should redact known secret fields before JSON output."""
+        formatter = logging_mod.JsonFormatter()
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=10,
+            msg='upload failed with {"s3_secret_access_key": "%s"} and Authorization: Bearer token-123',
+            args=(SENSITIVE_SAMPLE,),
+            exc_info=None,
+        )
+
+        payload = json.loads(formatter.format(record))
+
+        assert SENSITIVE_SAMPLE not in payload["message"]
+        assert BEARER_VALUE not in payload["message"]
+        assert REDACTED in payload["message"]
+
+    def test_redacts_exception_text(self) -> None:
+        """Structured logs should redact secrets embedded in exception text."""
+        formatter = logging_mod.JsonFormatter()
+        try:
+            _raise_sensitive_error()
+        except RuntimeError:
+            record = logging.LogRecord(
+                name="test.logger",
+                level=logging.ERROR,
+                pathname=__file__,
+                lineno=10,
+                msg="failed",
+                args=(),
+                exc_info=sys.exc_info(),
+            )
+
+        payload = json.loads(formatter.format(record))
+
+        assert SENSITIVE_SAMPLE not in payload["exception"]
+        assert REDACTED in payload["exception"]
+
+    def test_local_operator_only_messages_are_omitted_from_json_logs(self) -> None:
+        """Pairing banners may stay on console but must not enter shipped JSON logs."""
+        formatter = logging_mod.JsonFormatter()
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=10,
+            msg=f"PAIRING CODE: {PAIRING_CODE}",
+            args=(),
+            exc_info=None,
+        )
+        record.local_operator_only = True
+
+        payload = json.loads(formatter.format(record))
+
+        assert PAIRING_CODE not in payload["message"]
+        assert payload["message"] == LOCAL_OPERATOR_ONLY_MESSAGE
+
+    def test_console_formatter_redacts_sensitive_values(self) -> None:
+        """Human-readable logs should share the same redaction policy."""
+        formatter = logging_mod.RedactingFormatter("%(message)s")
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=10,
+            msg="api_key=%s",
+            args=(SENSITIVE_SAMPLE,),
+            exc_info=None,
+        )
+
+        text = formatter.format(record)
+
+        assert SENSITIVE_SAMPLE not in text
+        assert REDACTED in text
 
     def test_build_log_extra_prefers_explicit_values(self) -> None:
         """Explicit log fields should win over runtime-derived fallbacks."""

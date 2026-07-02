@@ -9,29 +9,20 @@ from app.camera.services.manager import CameraControlsNotSupportedError, CameraM
 
 CURRENT_MODE_KEY = "current_mode"
 STREAM_KEY = "stream"
+MAX_CONTROL_COUNT = 32
+REQUEST_ID = "test-request-id"
 
 
 class TestCameraStatus:
     """Tests for GET /camera."""
 
-    async def test_status_returns_200(self, client: AsyncClient) -> None:
-        """Test that the camera status endpoint returns a 200 response."""
+    async def test_status_idle_by_default(self, client: AsyncClient) -> None:
+        """Idle camera status returns 200 with current_mode/stream present and None."""
         resp = await client.get("/camera")
         assert resp.status_code == 200
-
-    async def test_status_default_fields(self, client: AsyncClient) -> None:
-        """Test that the camera status response contains the expected fields even when the camera is idle."""
-        resp = await client.get("/camera")
         data = resp.json()
-        assert CURRENT_MODE_KEY in data
-        assert STREAM_KEY in data
-
-    async def test_status_idle_by_default(self, client: AsyncClient) -> None:
-        """Test that the camera status shows the camera as idle (current_mode=None, stream=None) by default."""
-        resp = await client.get("/camera")
-        data = resp.json()
-        assert data["current_mode"] is None
-        assert data["stream"] is None
+        assert data[CURRENT_MODE_KEY] is None
+        assert data[STREAM_KEY] is None
 
 
 class TestCameraControls:
@@ -52,6 +43,14 @@ class TestCameraControls:
 
         assert resp.status_code == 200
         assert resp.json()["supported"] is True
+
+    async def test_set_controls_rejects_too_many_controls(self, client: AsyncClient) -> None:
+        """Control patches should be bounded before reaching the camera backend."""
+        controls = {f"Control{i}": i for i in range(MAX_CONTROL_COUNT + 1)}
+
+        resp = await client.patch("/camera/controls", json={"controls": controls})
+
+        assert resp.status_code == 422
 
     async def test_set_focus_returns_200(self, client: AsyncClient) -> None:
         """Test that friendly focus controls can be applied."""
@@ -138,3 +137,30 @@ class TestCameraControlsNotSupported:
         )
         resp = await client.put("/camera/focus", json={"mode": "manual", "lens_position": 99.0})
         assert resp.status_code == 422
+
+
+class TestCameraErrorDisclosure:
+    """5xx camera responses should be stable and request-correlatable."""
+
+    async def test_capture_runtime_error_hides_raw_exception_and_returns_request_id(
+        self,
+        client: AsyncClient,
+        camera_manager: CameraManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Unexpected capture failures should not expose local implementation details."""
+        monkeypatch.setattr(
+            camera_manager,
+            "capture_jpeg",
+            AsyncMock(side_effect=RuntimeError("backend http://secret-sidecar.local failed")),
+        )
+
+        resp = await client.post("/captures", headers={"X-Request-ID": REQUEST_ID})
+
+        assert resp.status_code == 500
+        assert resp.json() == {
+            "detail": {
+                "message": "Image capture failed",
+                "request_id": REQUEST_ID,
+            }
+        }

@@ -8,6 +8,7 @@ from relab_rpi_cam_models.stream import StreamMode, StreamView
 from app.camera.dependencies import CameraManagerDependency
 from app.camera.exceptions import ActiveStreamError, YoutubeConfigRequiredError
 from app.camera.schemas import YoutubeStreamConfig
+from app.core.headers import client_error_detail
 
 router = APIRouter(prefix="/streams/youtube", tags=["streams"])
 
@@ -44,7 +45,7 @@ async def start_stream(
 @router.get("", summary="Get active stream")
 async def get_stream_status(camera_manager: CameraManagerDependency) -> StreamView:
     """Get current stream status."""
-    if (stream_info := await camera_manager.get_stream_view()) is None:
+    if (stream_info := await camera_manager.get_stream_info()) is None:
         raise HTTPException(404, "No stream active")
     return stream_info
 
@@ -57,9 +58,9 @@ async def get_stream_status(camera_manager: CameraManagerDependency) -> StreamVi
 )
 async def stop_stream(camera_manager: CameraManagerDependency) -> None:
     """Stop active YouTube stream."""
-    if not camera_manager.has_active_stream():
+    if not camera_manager.stream.is_active:
         raise HTTPException(404, "No stream active")
     try:
         return await camera_manager.stop_streaming()
     except RuntimeError as e:
-        raise HTTPException(500, str(e)) from e
+        raise HTTPException(500, client_error_detail("Failed to stop stream")) from e

@@ -1,4 +1,4 @@
-"""Integration tests for the unauthenticated /metrics endpoint."""
+"""Integration tests for the protected /metrics endpoint."""
 
 from unittest.mock import MagicMock
 
@@ -45,8 +45,8 @@ class TestMetricsRoute:
         assert MET_CPU_TEMP_62_0 in body
         assert MET_THERMAL_WARM in body
 
-    async def test_unauthenticated_access_allowed(self, unauthed_client: AsyncClient) -> None:
-        """/metrics must be reachable without the API key — Alloy scrapes it directly."""
+    async def test_unauthenticated_access_rejected(self, unauthed_client: AsyncClient) -> None:
+        """/metrics must not expose device activity to unauthenticated clients."""
         resp = await unauthed_client.get("/metrics")
-        assert resp.status_code == 200
-        assert MET_CPU in resp.text
+        assert resp.status_code == 401
+        assert MET_CPU not in resp.text

@@ -7,7 +7,9 @@
 {% block site_header_nav %}
   <nav class="site-header__nav" aria-label="Primary">
     <a href="{{ url_for('homepage') }}" class="btn btn--ghost">Home</a>
+    {% if api_docs_enabled %}
     <a href="{{ url_for('swagger_ui_html') }}" class="btn btn--ghost">API Docs</a>
+    {% endif %}
   </nav>
 {% endblock %}
 
@@ -15,277 +17,16 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
-  function fallbackCopyText(text) {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    textarea.style.pointerEvents = "none";
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    textarea.setSelectionRange(0, textarea.value.length);
-    const ok = document.execCommand("copy");
-    document.body.removeChild(textarea);
-    return ok;
-  }
-
-  function pairingButtonFeedbackSvg(state) {
-    if (state === "copied" || state === "success") {
-      return `
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M20.25 6.75 9.75 17.25 3.75 11.25" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-          <span class="sr-only">${state === "success" ? "Refreshed" : "Copied"}</span>
-        `;
-    }
-    return `
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M15.75 8.25 8.25 15.75M8.25 8.25l7.5 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
-        </svg>
-        <span class="sr-only">Copy failed</span>
-      `;
-  }
-
-  function setPairingButtonFeedback(button, state, label, title) {
-    if (!button) {
-      return;
-    }
-    if (!button.dataset.defaultHtml) {
-      button.dataset.defaultHtml = button.innerHTML;
-    }
-    button.dataset.feedbackState = state;
-    button.innerHTML = pairingButtonFeedbackSvg(state);
-    button.setAttribute("aria-label", label);
-    button.setAttribute("title", title);
-  }
-
-  function setPairingActionStatus(text, state) {
-    const el = document.getElementById("pairing-action-status");
-    if (!el) {
-      return;
-    }
-    el.dataset.state = state || "";
-    el.textContent = text || "";
-    if (el._pairingActionStatusTimer) {
-      window.clearTimeout(el._pairingActionStatusTimer);
-      el._pairingActionStatusTimer = null;
-    }
-    if (text) {
-      el._pairingActionStatusTimer = window.setTimeout(() => {
-        el.textContent = "";
-        el.dataset.state = "";
-      }, 1200);
-    }
-  }
-
-  async function copyText(text, button) {
-    const value = String(text || "").trim();
-    let copied = false;
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(value);
-        copied = true;
-      }
-    } catch {
-      copied = false;
-    }
-
-    if (!copied) {
-      copied = fallbackCopyText(value);
-    }
-
-    if (button) {
-      const previousLabel = button.getAttribute("aria-label") || "Copy code";
-      const previousTitle = button.getAttribute("title") || previousLabel;
-      const nextLabel = copied ? "Copied pairing code" : "Copy pairing code failed";
-      setPairingButtonFeedback(button, copied ? "copied" : "failed", nextLabel, nextLabel);
-      setPairingActionStatus(copied ? "Copied" : "Copy failed", copied ? "success" : "failed");
-      window.setTimeout(() => {
-        if (button.dataset.defaultHtml) {
-          button.innerHTML = button.dataset.defaultHtml;
-        }
-        button.dataset.feedbackState = "";
-        button.setAttribute("aria-label", previousLabel);
-        button.setAttribute("title", previousTitle);
-      }, 1200);
-    }
-  }
-
-  async function refreshPairingCode(button) {
-    const previousLabel = button ? (button.getAttribute("aria-label") || "Generate a new pairing code") : "";
-    const previousTitle = button ? (button.getAttribute("title") || previousLabel) : "";
-    if (button) {
-      button.disabled = true;
-      button.setAttribute("aria-label", "Refreshing pairing code…");
-      button.setAttribute("title", "Refreshing pairing code…");
-    }
-    setPairingActionStatus("Generating new code…", "pending");
-
-    try {
-      const resp = await fetch("/pairing/code", { method: "POST" });
-      if (!resp.ok) {
-        if (button) {
-          setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
-          setPairingActionStatus("Refresh failed", "failed");
-          window.setTimeout(() => {
-            if (button.dataset.defaultHtml) {
-              button.innerHTML = button.dataset.defaultHtml;
-            }
-            button.dataset.feedbackState = "";
-            button.setAttribute("aria-label", previousLabel);
-            button.setAttribute("title", previousTitle);
-          }, 1200);
-        }
-        alert("Could not refresh the pairing code (" + resp.status + ").");
-        return;
-      }
-      if (button) {
-        setPairingButtonFeedback(button, "success", "Pairing code refreshed", "Pairing code refreshed");
-        setPairingActionStatus("Refreshed. Reloading page…", "success");
-        window.setTimeout(() => {
-          if (button.dataset.defaultHtml) {
-            button.innerHTML = button.dataset.defaultHtml;
-          }
-          button.dataset.feedbackState = "";
-          button.setAttribute("aria-label", previousLabel);
-          button.setAttribute("title", previousTitle);
-        }, 1200);
-      }
-      window.setTimeout(() => window.location.reload(), 700);
-    } catch {
-      if (button) {
-        setPairingButtonFeedback(button, "failed", "Could not refresh pairing code", "Could not refresh pairing code");
-        setPairingActionStatus("Refresh failed", "failed");
-        window.setTimeout(() => {
-          if (button.dataset.defaultHtml) {
-            button.innerHTML = button.dataset.defaultHtml;
-          }
-          button.dataset.feedbackState = "";
-          button.setAttribute("aria-label", previousLabel);
-          button.setAttribute("title", previousTitle);
-        }, 1200);
-      }
-      alert("Could not refresh the pairing code. Check your connection.");
-    } finally {
-      if (button) {
-        button.disabled = false;
-      }
-    }
-  }
-
-  function unpair() {
-    document.getElementById("unpair-dialog").showModal();
-  }
-
-  async function confirmUnpair() {
-    const dialog = document.getElementById("unpair-dialog");
-    const btn = document.getElementById("unpair-confirm-btn");
-    btn.disabled = true;
-    btn.textContent = "Unpairing…";
-    try {
-      const resp = await fetch("/pairing", { method: "DELETE" });
-      dialog.close();
-      if (resp.ok) {
-        setPairingActionStatus("Unpaired. Reloading page…", "success");
-        window.setTimeout(() => window.location.reload(), 700);
-      } else {
-        alert("Unpair failed (" + resp.status + "). Try again.");
-      }
-    } catch {
-      dialog.close();
-      alert("Unpair request failed. Check your connection.");
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Unpair";
-    }
-  }
-</script>
-<script>
-  document.addEventListener("DOMContentLoaded", () => {
-    const countdown = document.querySelector("[data-pairing-countdown]");
-    const expiry = document.querySelector("[data-pairing-expiry]");
-    const progress = document.querySelector("[data-pairing-progress]");
-
-    if (!countdown || !expiry || !progress) {
-      return;
-    }
-
-    const expiresAt = new Date(expiry.dataset.expiresAt || "");
-    const ttlMs = Number(expiry.dataset.ttlMs || "0");
-
-    if (Number.isNaN(expiresAt.getTime())) {
-      return;
-    }
-
-    const formatRemaining = (ms) => {
-      if (ms <= 0) {
-        return "expired";
-      }
-      const totalSeconds = Math.ceil(ms / 1000);
-      const minutes = Math.floor(totalSeconds / 60);
-      const seconds = totalSeconds % 60;
-      if (minutes > 0) {
-        return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
-      }
-      return `${seconds}s`;
-    };
-
-    const tick = () => {
-      const remainingMs = expiresAt.getTime() - Date.now();
-      countdown.textContent = formatRemaining(remainingMs);
-
-      const ratio = ttlMs > 0 ? Math.max(0, Math.min(1, remainingMs / ttlMs)) : 0;
-      progress.style.width = `${ratio * 100}%`;
-      progress.classList.toggle("is-expired", remainingMs <= 0);
-    };
-
-    tick();
-    window.setInterval(tick, 1000);
-  });
-</script>
-<script>
-  // Poll the pairing state so the page auto-reloads when the pair or unpair
-  // finishes server-side (no manual refresh needed).
-  document.addEventListener("DOMContentLoaded", () => {
-    const initialRelayEnabled = {{ "true" if relay_enabled else "false" }};
-    const initialStatus = {{ pairing.status | tojson }};
-
-    let reloading = false;
-    const reload = () => {
-      if (reloading) return;
-      reloading = true;
-      window.location.reload();
-    };
-
-    const poll = async () => {
-      if (reloading) return;
-      try {
-        const resp = await fetch("/pairing/state", { cache: "no-store" });
-        if (!resp.ok) return;
-        const data = await resp.json();
-        if (data.relay_enabled !== initialRelayEnabled) {
-          reload();
-          return;
-        }
-        if (data.status !== initialStatus) {
-          reload();
-        }
-      } catch {
-        // Network blip — keep polling.
-      }
-    };
-
-    const intervalId = window.setInterval(poll, 2000);
-    window.addEventListener("beforeunload", () => window.clearInterval(intervalId));
-  });
-</script>
+<script src="{{ url_for('static', path='setup-page.js') }}" nonce="{{ request.state.csp_nonce }}" type="module"></script>
 {% endblock %}
 
 {% block body %}
-<main class="setup-shell">
+<main
+  class="setup-shell"
+  data-pairing-state
+  data-initial-mode="{{ mode }}"
+  data-initial-pairing-status="{{ pairing.status }}"
+>
   <section class="setup-hero">
     <div class="setup-eyebrow">Raspberry Pi Camera</div>
     <h1>Setup</h1>
@@ -294,7 +35,7 @@
 
   <section class="setup-status">
     <div class="setup-status-grid">
-      {% if relay_enabled or pairing.status == status_paired %}
+      {% if mode == 'paired' or pairing.status == status_paired %}
       <div class="status-chip status-chip--success">Paired</div>
       {% elif pairing.status in ('waiting', 'registering') and pairing.code %}
       <div class="status-chip status-chip--live">Pairing ready</div>
@@ -306,16 +47,19 @@
 
       <h2>Connection status</h2>
 
-      {% if relay_enabled %}
+      {% if mode == 'paired' %}
       <div class="setup-state-banner setup-state-banner--success">
         <div class="setup-state-banner__copy">
           <p class="online">Paired and online.</p>
           <span class="setup-debug__text">Relay is connected and the camera is ready for remote access.</span>
         </div>
         <div class="setup-actions">
-          <button class="btn btn--danger" onclick="unpair()">Unpair</button>
+          {% if operator_authenticated %}
+          <button class="btn btn--danger" data-unpair-open type="button">Unpair</button>
+          {% endif %}
         </div>
       </div>
+      {% if operator_authenticated %}
       <div class="setup-inline-metrics">
         <div class="setup-inline-metric">
           <span class="setup-debug__label">Relay backend</span>
@@ -326,6 +70,7 @@
           {% if relay_camera_id %}<code>{{ relay_camera_id }}</code>{% else %}<em>not set</em>{% endif %}
         </div>
       </div>
+      {% endif %}
       {% elif pairing.status == status_paired %}
       <div class="setup-state-banner setup-state-banner--success">
         <div class="setup-state-banner__copy">
@@ -341,7 +86,7 @@
         <div class="pairing-code-shell">
           <div class="pairing-code" id="pairing-code">{{ pairing.code }}</div>
           <button class="setup-copy-code-btn" type="button" aria-label="Copy pairing code" title="Copy pairing code"
-            onclick="copyText(document.getElementById('pairing-code').textContent, this)">
+            data-copy-source="pairing-code">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M9 4.5h8.25A2.25 2.25 0 0 1 19.5 6.75V15" fill="none" stroke="currentColor" stroke-width="1.7"
                 stroke-linecap="round" stroke-linejoin="round" />
@@ -350,8 +95,9 @@
             </svg>
             <span class="sr-only">Copy code</span>
           </button>
+          {% if operator_authenticated %}
           <button class="setup-refresh-code-btn" type="button" aria-label="Generate a new pairing code"
-            title="Generate a new pairing code" onclick="refreshPairingCode(this)">
+            title="Generate a new pairing code" data-refresh-pairing>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M20.25 12a8.25 8.25 0 0 1-13.95 5.95M3.75 12A8.25 8.25 0 0 1 17.7 6.05" fill="none"
                 stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
@@ -360,6 +106,7 @@
             </svg>
             <span class="sr-only">New code</span>
           </button>
+          {% endif %}
         </div>
       </div>
       <div class="pairing-action-status" id="pairing-action-status" aria-live="polite"></div>
@@ -388,6 +135,7 @@
       </div>
       {% endif %}
 
+      {% if operator_authenticated %}
       <details class="setup-debug">
         <summary>
           <span>Pairing details</span>
@@ -398,8 +146,7 @@
             <span class="setup-debug__label">URL</span>
             <div class="setup-debug__value">
               <code id="pairing-backend-url">{{ pairing_backend_url }}</code>
-              <button class="btn setup-copy-btn" type="button"
-                onclick="copyText(document.getElementById('pairing-backend-url').textContent, this)">
+              <button class="btn setup-copy-btn" type="button" data-copy-source="pairing-backend-url">
                 Copy
               </button>
             </div>
@@ -420,7 +167,7 @@
               {% endif %}
               {% if pairing.status == status_error %}
               <span class="setup-debug__hint">{{ pairing.error or 'Backend reachable, but pairing is failing.' }}</span>
-              {% elif not relay_enabled and pairing_backend_reachable %}
+              {% elif mode != 'paired' and pairing_backend_reachable %}
               <span class="setup-debug__hint">Backend responds, so pairing should start automatically.</span>
               {% endif %}
             </span>
@@ -437,19 +184,19 @@
           </div>
         </div>
       </details>
+      {% endif %}
     </div>
   </section>
 
+  {% if operator_authenticated %}
   <section class="setup-status setup-status--advanced">
     <div class="setup-status-grid">
       <details class="setup-advanced">
         <summary>
           <div class="setup-advanced__summary-main">
             <span>
-              {% if local_mode_enabled and local_api_key %}
+              {% if local_auth_enabled %}
               <span class="status-chip status-chip--live">Local access</span>
-              {% elif local_mode_enabled %}
-              <span class="status-chip status-chip--muted">Local access</span>
               {% else %}
               <span class="status-chip status-chip--muted">Local access disabled</span>
               {% endif %}
@@ -457,7 +204,7 @@
             <span class="setup-advanced__summary-copy">Direct LAN access for browser, app, and scripts.</span>
           </div>
           <span class="setup-advanced__summary">
-            {% if local_mode_enabled %}
+            {% if local_auth_enabled %}
             Available
             {% else %}
             Unavailable
@@ -482,17 +229,20 @@
               <span class="setup-debug__text">Use the same key in your browser or send it with <code>X-API-Key</code>.</span>
             </div>
           </div>
-          {% if local_api_key %}
+          {% if has_local_api_key %}
           <div class="setup-value-list">
             <div class="setup-value-card setup-value-card--key">
               <div class="setup-value-card__header">
                 <span class="setup-debug__label">Local API key</span>
-                <button class="btn setup-copy-btn" type="button"
-                  onclick="copyText(document.getElementById('local-api-key').textContent, this)">
+                <button class="btn setup-copy-btn" type="button" data-local-key-reveal>
+                  Reveal local API key
+                </button>
+                <button class="btn setup-copy-btn" type="button" data-copy-source="local-api-key" data-local-key-copy disabled>
                   Copy
                 </button>
               </div>
-              <code id="local-api-key" class="setup-value-card__content setup-value-card__content--secret">{{ local_api_key }}</code>
+              <code id="local-api-key" class="setup-value-card__content setup-value-card__content--secret">Key hidden until revealed.</code>
+              <p class="setup-debug__hint" id="local-key-status" aria-live="polite"></p>
             </div>
             <div class="setup-debug__row">
               <span class="setup-debug__label">HLS preview</span>
@@ -520,13 +270,16 @@
       </details>
     </div>
   </section>
+  {% endif %}
+  {% if operator_authenticated %}
   <dialog id="unpair-dialog" class="setup-dialog">
     <h3>Unpair this camera?</h3>
     <p>It will disconnect from the backend and re-enter pairing mode. You can re-pair it at any time.</p>
     <div class="setup-dialog__actions">
-      <button class="btn setup-dialog__cancel" onclick="document.getElementById('unpair-dialog').close()">Cancel</button>
-      <button class="btn btn--danger" id="unpair-confirm-btn" onclick="confirmUnpair()">Unpair</button>
+      <button class="btn setup-dialog__cancel" data-dialog-close type="button">Cancel</button>
+      <button class="btn btn--danger" id="unpair-confirm-btn" data-unpair-confirm type="button">Unpair</button>
     </div>
   </dialog>
+  {% endif %}
 </main>
 {% endblock %}

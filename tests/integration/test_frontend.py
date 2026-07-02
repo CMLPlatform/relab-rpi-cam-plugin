@@ -1,35 +1,59 @@
 """Tests for frontend routes (landing page)."""
 
-from typing import Any, cast
+from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import AsyncClient
+from PIL import Image
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
-from app.auth.dependencies import verify_request
 from app.camera.routers import hls as hls_mod
 from app.camera.services.manager import CameraManager
 from app.core.settings import settings
-from app.main import app
-from tests.constants import HTML_CONTENT_TYPE, JPEG_CONTENT_TYPE, NO_STORE_CACHE_CONTROL, YOUTUBE_TEST_BROADCAST_URL
+from tests.constants import (
+    COOP_SAME_ORIGIN,
+    CORP_SAME_ORIGIN,
+    CSP_NONCE_ATTR_RE,
+    HEADER_COOP,
+    HEADER_CORP,
+    HEADER_CSP,
+    HEADER_NOSNIFF,
+    HTML_CONTENT_TYPE,
+    JPEG_CONTENT_TYPE,
+    NO_STORE_CACHE_CONTROL,
+    NOSNIFF,
+    YOUTUBE_TEST_BROADCAST_URL,
+)
 
 YOUTUBE_DOMAIN = "youtube.com"
 HLS_PLAYLIST = "#EXTM3U\n"
-HLS_ROUTE_PATH = "/preview/hls/{hls_path:path}"
-DEFAULT_CSP = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-FRAME_OPTIONS_DENY = "DENY"
+DEFAULT_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 SETUP_CSP_INLINE = "'unsafe-inline'"
 SETUP_CSP_CDN = "https://cdn.jsdelivr.net"
+SETUP_CSP_CONNECT_SELF = "connect-src 'self'"
+SETUP_CSP_BROAD_CONNECT = "connect-src 'self' http:"
 DOCS_FAVICON_HOST = "https://fastapi.tiangolo.com"
 THEME_TOGGLE_MARKER = "data-theme-toggle"
 LOGO_SRC = "/static/logo.png"
 SITE_JS_SRC = "/static/site.js"
+THEME_INIT_JS_SRC = "/static/theme-init.js"
+HOMEPAGE_PREVIEW_JS_SRC = "/static/homepage-preview.js"
+HLS_CDN_JS_SRC = "https://cdn.jsdelivr.net/npm/hls.js@1.6.16/dist/hls.min.js"
+HLS_JS_SRI = "sha384-5E8B0pTlZZJMabWpC0fyYf6OUpe15jJij34BqBAh4NXoHAlLNOjCPRrwtOXOQFAn"
+HLS_CROSSORIGIN_ATTR = 'crossorigin="anonymous"'
+HLS_VENDOR_JS_SRC = "/static/vendor/hls-1.6.16.min.js"
 SETUP_LINK_TEXT = ">Setup</a>"
 API_DOCS_LINK_TEXT = ">API Docs</a>"
 HOMEPAGE_SECONDARY_COPY = "Start a live preview to check framing"
 PREVIEW_THUMBNAIL_URL = "/preview-thumbnail.jpg"
 THEME_AUTO_LABEL = "Theme: Auto"
+
+
+def _jpeg_bytes() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (8, 8), color="blue").save(buffer, format="JPEG")
+    return buffer.getvalue()
 
 
 class TestHomepage:
@@ -41,12 +65,30 @@ class TestHomepage:
         assert resp.status_code == 200
         assert HTML_CONTENT_TYPE in resp.headers["content-type"]
 
-    async def test_homepage_sets_relaxed_csp_for_embedded_preview_assets(self, unauthed_client: AsyncClient) -> None:
-        """The landing page CSP should allow its inline script and hls.js dependency."""
+    async def test_homepage_sets_strict_csp_for_pinned_preview_assets(self, unauthed_client: AsyncClient) -> None:
+        """The landing page CSP should allow local scripts and the pinned HLS CDN without inline scripts."""
         resp = await unauthed_client.get("/")
-        assert resp.headers["x-frame-options"] == FRAME_OPTIONS_DENY
-        assert SETUP_CSP_CDN in resp.headers["content-security-policy"]
-        assert SETUP_CSP_INLINE in resp.headers["content-security-policy"]
+        assert SETUP_CSP_CDN in resp.headers[HEADER_CSP]
+        assert SETUP_CSP_INLINE not in resp.headers[HEADER_CSP]
+        assert SETUP_CSP_CONNECT_SELF in resp.headers[HEADER_CSP]
+        assert SETUP_CSP_BROAD_CONNECT not in resp.headers[HEADER_CSP]
+
+    async def test_homepage_sets_document_isolation_headers(self, unauthed_client: AsyncClient) -> None:
+        """HTML document responses should isolate browsing contexts and resource sharing."""
+        resp = await unauthed_client.get("/")
+
+        assert resp.headers[HEADER_COOP] == COOP_SAME_ORIGIN
+        assert resp.headers[HEADER_CORP] == CORP_SAME_ORIGIN
+
+    async def test_homepage_scripts_use_matching_csp_nonce(self, unauthed_client: AsyncClient) -> None:
+        """Server-rendered script tags should use the nonce advertised in CSP."""
+        resp = await unauthed_client.get("/")
+        nonce_values = set(CSP_NONCE_ATTR_RE.findall(resp.text))
+
+        assert nonce_values
+        assert len(nonce_values) == 1
+        nonce = next(iter(nonce_values))
+        assert f"'nonce-{nonce}'" in resp.headers[HEADER_CSP]
 
     async def test_homepage_renders_shared_header_assets_and_theme_control(self, unauthed_client: AsyncClient) -> None:
         """The landing page should expose the shared brand header and theme chooser."""
@@ -56,19 +98,43 @@ class TestHomepage:
         assert THEME_AUTO_LABEL in resp.text
         assert LOGO_SRC in resp.text
         assert SITE_JS_SRC in resp.text
+        assert THEME_INIT_JS_SRC in resp.text
+        assert HOMEPAGE_PREVIEW_JS_SRC in resp.text
+        assert HLS_CDN_JS_SRC in resp.text
+        assert HLS_JS_SRI in resp.text
+        assert HLS_CROSSORIGIN_ATTR in resp.text
+        assert HLS_VENDOR_JS_SRC not in resp.text
 
     async def test_homepage_keeps_primary_actions_in_header_only(self, unauthed_client: AsyncClient) -> None:
-        """The homepage should avoid duplicating setup and docs navigation in the hero."""
+        """The homepage should avoid duplicating setup navigation or linking production docs."""
         resp = await unauthed_client.get("/")
         assert resp.status_code == 200
         assert resp.text.count(SETUP_LINK_TEXT) == 1
-        assert resp.text.count(API_DOCS_LINK_TEXT) == 1
+        assert API_DOCS_LINK_TEXT not in resp.text
         assert HOMEPAGE_SECONDARY_COPY in resp.text
 
     async def test_favicon_returns_ico(self, unauthed_client: AsyncClient) -> None:
         """Test that the favicon route returns an ICO file."""
         resp = await unauthed_client.get("/favicon.ico")
         assert resp.status_code == 200
+
+    async def test_static_allowlist_serves_known_asset_extensions(self, unauthed_client: AsyncClient) -> None:
+        """Static serving should allow only the asset extensions the UI actually uses."""
+        for path in (LOGO_SRC, SITE_JS_SRC, "/static/styles.css", "/static/favicon.ico"):
+            resp = await unauthed_client.get(path)
+
+            assert resp.status_code == 200
+
+    async def test_static_allowlist_rejects_other_extensions(self, unauthed_client: AsyncClient) -> None:
+        """Static serving should not expose unexpected file types from the static tree."""
+        probe = settings.static_path / "not-public.txt"
+        probe.write_text("internal note", encoding="utf-8")
+        try:
+            resp = await unauthed_client.get("/static/not-public.txt")
+        finally:
+            probe.unlink(missing_ok=True)
+
+        assert resp.status_code == 404
 
     async def test_homepage_shows_youtube_link_when_stream_active(
         self,
@@ -108,12 +174,13 @@ class TestHomepage:
         cache_dir = settings.image_path / "preview-thumbnail"
         cache_dir.mkdir(parents=True, exist_ok=True)
         jpeg_path = cache_dir / "current.jpg"
-        jpeg_path.write_bytes(b"\xff\xd8\xff\xd9")
+        jpeg_path.write_bytes(_jpeg_bytes())
         try:
             resp = await unauthed_client.get("/preview-thumbnail.jpg")
             assert resp.status_code == 200
             assert resp.headers["content-type"] == JPEG_CONTENT_TYPE
             assert resp.headers["cache-control"] == NO_STORE_CACHE_CONTROL
+            assert resp.headers[HEADER_NOSNIFF] == NOSNIFF
         finally:
             jpeg_path.unlink(missing_ok=True)
 
@@ -127,8 +194,23 @@ class TestHomepage:
         resp = await unauthed_client.get("/preview-thumbnail.jpg")
         assert resp.status_code == 404
 
-    async def test_hls_preview_proxy_is_available_without_auth(self, unauthed_client: AsyncClient) -> None:
-        """Local preview HLS stays usable before pairing/login."""
+    async def test_preview_thumbnail_rejects_invalid_cached_file(
+        self,
+        unauthed_client: AsyncClient,
+    ) -> None:
+        """The preview-thumbnail route should not serve arbitrary bytes from the cache path."""
+        cache_dir = settings.image_path / "preview-thumbnail"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        jpeg_path = cache_dir / "current.jpg"
+        jpeg_path.write_bytes(b"not a jpeg")
+        try:
+            resp = await unauthed_client.get("/preview-thumbnail.jpg")
+            assert resp.status_code == 503
+        finally:
+            jpeg_path.unlink(missing_ok=True)
+
+    async def test_hls_preview_proxy_response(self, unauthed_client: AsyncClient) -> None:
+        """HLS preview stays usable without auth, uses the tight CSP, and stays same-origin."""
         upstream = MagicMock()
         upstream.status_code = 200
         upstream.content = HLS_PLAYLIST.encode()
@@ -136,43 +218,21 @@ class TestHomepage:
 
         http_client = MagicMock()
         http_client.get = AsyncMock(return_value=upstream)
-        http_client.__aenter__ = AsyncMock(return_value=http_client)
-        http_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
+        with patch.object(hls_mod, "_get_hls_client", return_value=http_client):
             resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
 
         assert resp.status_code == 200
         assert resp.text == HLS_PLAYLIST
+        assert resp.headers[HEADER_CSP] == DEFAULT_CSP
+        assert resp.headers[HEADER_CORP] == CORP_SAME_ORIGIN
 
-    def test_hls_preview_route_does_not_require_api_auth(self) -> None:
-        """Regression test: HLS must stay available before pairing/login."""
-        hls_route = next(route for route in app.routes if getattr(route, "path", "") == HLS_ROUTE_PATH)
-        hls_route_any = cast("Any", hls_route)
-        dependency_calls = [dependency.call for dependency in hls_route_any.dependant.dependencies]
-        assert verify_request not in dependency_calls
-
-    async def test_hls_preview_route_sets_default_csp(self, unauthed_client: AsyncClient) -> None:
-        """API-style routes should use the tighter default CSP."""
-        upstream = MagicMock()
-        upstream.status_code = 200
-        upstream.content = HLS_PLAYLIST.encode()
-        upstream.headers = {"content-type": "application/vnd.apple.mpegurl"}
-
-        http_client = MagicMock()
-        http_client.get = AsyncMock(return_value=upstream)
-        http_client.__aenter__ = AsyncMock(return_value=http_client)
-        http_client.__aexit__ = AsyncMock(return_value=None)
-
-        with patch.object(hls_mod.httpx, "AsyncClient", return_value=http_client):
-            resp = await unauthed_client.get("/preview/hls/cam-preview/index.m3u8")
-
-        assert resp.headers["content-security-policy"] == DEFAULT_CSP
-
-    async def test_docs_route_allows_swagger_assets_in_csp(self, unauthed_client: AsyncClient) -> None:
-        """Swagger docs should receive a CSP that permits the bundled FastAPI assets."""
+    async def test_docs_route_is_not_exposed_in_production_mode(self, unauthed_client: AsyncClient) -> None:
+        """Production-style runs should not expose unauthenticated local Swagger docs."""
         resp = await unauthed_client.get("/docs")
-        assert resp.status_code == 200
-        assert SETUP_CSP_CDN in resp.headers["content-security-policy"]
-        assert DOCS_FAVICON_HOST in resp.headers["content-security-policy"]
-        assert SETUP_CSP_INLINE in resp.headers["content-security-policy"]
+        assert resp.status_code == 404
+
+    async def test_openapi_route_is_not_exposed_in_production_mode(self, unauthed_client: AsyncClient) -> None:
+        """Production-style runs should not expose unauthenticated local OpenAPI JSON."""
+        resp = await unauthed_client.get("/openapi.json")
+        assert resp.status_code == 404

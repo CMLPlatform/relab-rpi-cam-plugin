@@ -11,8 +11,8 @@ import httpx
 import pytest
 
 from app.backend import client as backend_client_mod
-from app.backend.client import BackendUploadError, upload_image
-from app.core.runtime import AppRuntime, set_active_runtime
+from app.backend.client import BackendUploadError, upload_image, upload_preview_thumbnail
+from app.core.runtime import AppRuntime, get_active_runtime, set_active_runtime
 from app.core.settings import settings
 from tests.constants import BACKEND_IMAGE_URL, SAMPLE_SERVER_IMAGE_ID
 
@@ -30,13 +30,19 @@ ASSERTION_WARNING_LOG = "notify_self_unpair: could not mint device assertion"
 ACKNOWLEDGED_UNPAIR_LOG = "backend acknowledged unpair"
 UNEXPECTED_STATUS_LOG = "backend returned HTTP 500"
 NETWORK_WARNING_LOG = "network error reaching backend"
+DEVICE_UPLOAD_PATH = "/v1/plugins/rpi-cam/device/cameras/"
+PREVIEW_THUMBNAIL_URL = "https://backend.example/uploads/rpi-cam/previews/cam.jpg"
+REMOTE_HTTP_IMAGE_URL = "http://backend.example/uploads/rpi-cam/images/abc.jpg"
+REMOTE_HTTP_PREVIEW_THUMBNAIL_URL = "http://backend.example/uploads/rpi-cam/previews/cam.jpg"
+UNSAFE_CAMERA_ID = "cam/../42?admin=true"
+ENCODED_UNSAFE_CAMERA_ID = "cam%2F..%2F42%3Fadmin%3Dtrue"
 
 
 @pytest.fixture(autouse=True)
 def _relay_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Provide the static backend URL needed by the upload client."""
     monkeypatch.setattr(settings, "pairing_backend_url", "https://backend.example/")
-    monkeypatch.setattr(backend_client_mod, "build_device_assertion", lambda: "fake.jwt.token")
+    monkeypatch.setattr(backend_client_mod, "build_device_assertion", lambda *_: "fake.jwt.token")
 
 
 @pytest.fixture(autouse=True)
@@ -69,9 +75,7 @@ def _patch_async_client(response: MagicMock) -> AbstractContextManager[MagicMock
     client_instance = MagicMock()
     client_instance.post = AsyncMock(return_value=response)
     client_instance.delete = AsyncMock(return_value=response)
-    client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-    client_instance.__aexit__ = AsyncMock(return_value=None)
-    return patch.object(backend_client_mod.httpx, "AsyncClient", return_value=client_instance)
+    return patch.object(backend_client_mod, "_get_client", return_value=client_instance)
 
 
 class TestUploadImage:
@@ -95,11 +99,61 @@ class TestUploadImage:
         assert str(result.image_url) == BACKEND_IMAGE_URL
         client_instance = patched_client.return_value
         client_instance.post.assert_awaited_once()
-        _, kwargs = client_instance.post.await_args
+        args, kwargs = client_instance.post.await_args
+        assert str(args[0]).startswith(f"https://backend.example{DEVICE_UPLOAD_PATH}")
+        assert str(args[0]).endswith("/image-upload")
         assert kwargs["files"]["file"] == ("test.jpg", b"\xff\xd8fake-jpg", "image/jpeg")
         assert kwargs["data"]["capture_metadata"] == CAPTURE_METADATA_JSON
         assert kwargs["data"]["upload_metadata"] == UPLOAD_METADATA_JSON
         assert kwargs["headers"]["Authorization"] == AUTHORIZATION_HEADER
+
+    async def test_upload_image_encodes_camera_id_path_segment(self) -> None:
+        """Camera IDs must not be able to alter backend callback paths."""
+        runtime = get_active_runtime()
+        runtime.runtime_state.relay_camera_id = UNSAFE_CAMERA_ID
+        response = _fake_response(
+            200,
+            {"image_id": SAMPLE_SERVER_IMAGE_ID, "image_url": BACKEND_IMAGE_URL},
+        )
+
+        with _patch_async_client(response) as patched_client:
+            await upload_image(
+                image_bytes=b"\xff\xd8fake-jpg",
+                filename="test.jpg",
+                capture_metadata={"width": 1920},
+                upload_metadata={"product_id": 1},
+            )
+
+        args, _kwargs = patched_client.return_value.post.await_args
+        assert str(args[0]) == (f"https://backend.example{DEVICE_UPLOAD_PATH}{ENCODED_UNSAFE_CAMERA_ID}/image-upload")
+
+    async def test_preview_thumbnail_uses_device_callback_route(self) -> None:
+        """Preview thumbnails should use the backend's canonical device callback route."""
+        response = _fake_response(200, {"preview_thumbnail_url": "/uploads/rpi-cam/previews/cam.jpg"})
+
+        with _patch_async_client(response) as patched_client:
+            result = await upload_preview_thumbnail(image_bytes=b"\xff\xd8preview")
+
+        assert str(result.preview_thumbnail_url) == PREVIEW_THUMBNAIL_URL
+        args, kwargs = patched_client.return_value.post.await_args
+        assert str(args[0]).startswith(f"https://backend.example{DEVICE_UPLOAD_PATH}")
+        assert str(args[0]).endswith("/preview-thumbnail-upload")
+        assert kwargs["files"]["file"] == ("preview-thumbnail.jpg", b"\xff\xd8preview", "image/jpeg")
+        assert kwargs["headers"]["Authorization"] == AUTHORIZATION_HEADER
+
+    async def test_preview_thumbnail_encodes_camera_id_path_segment(self) -> None:
+        """Preview thumbnail callbacks should encode the camera ID path segment."""
+        runtime = get_active_runtime()
+        runtime.runtime_state.relay_camera_id = UNSAFE_CAMERA_ID
+        response = _fake_response(200, {"preview_thumbnail_url": "/uploads/rpi-cam/previews/cam.jpg"})
+
+        with _patch_async_client(response) as patched_client:
+            await upload_preview_thumbnail(image_bytes=b"\xff\xd8preview")
+
+        args, _kwargs = patched_client.return_value.post.await_args
+        assert str(args[0]) == (
+            f"https://backend.example{DEVICE_UPLOAD_PATH}{ENCODED_UNSAFE_CAMERA_ID}/preview-thumbnail-upload"
+        )
 
     async def test_relative_image_url_is_prefixed_with_base_url(self) -> None:
         """A relative image_url from the backend should be resolved against the pairing base URL."""
@@ -118,15 +172,38 @@ class TestUploadImage:
         assert result.image_id == SAMPLE_SERVER_IMAGE_ID
         assert str(result.image_url) == BACKEND_IMAGE_URL
 
+    async def test_remote_http_image_url_is_rejected_in_production(self) -> None:
+        """Backend acks must not downgrade returned media URLs to remote HTTP."""
+        response = _fake_response(
+            200,
+            {"image_id": SAMPLE_SERVER_IMAGE_ID, "image_url": REMOTE_HTTP_IMAGE_URL},
+        )
+
+        with _patch_async_client(response), pytest.raises(BackendUploadError, match="image_url must use https"):
+            await upload_image(
+                image_bytes=b"\xff\xd8fake-jpg",
+                filename="test.jpg",
+                capture_metadata={"width": 1920},
+                upload_metadata={"product_id": 1},
+            )
+
+    async def test_remote_http_preview_thumbnail_url_is_rejected_in_production(self) -> None:
+        """Preview thumbnail acks must not downgrade returned media URLs to remote HTTP."""
+        response = _fake_response(200, {"preview_thumbnail_url": REMOTE_HTTP_PREVIEW_THUMBNAIL_URL})
+
+        with (
+            _patch_async_client(response),
+            pytest.raises(BackendUploadError, match="preview_thumbnail_url must use https"),
+        ):
+            await upload_preview_thumbnail(image_bytes=b"\xff\xd8preview")
+
     async def test_http_error_wrapped_in_backend_upload_error(self) -> None:
         """An httpx transport error should surface as BackendUploadError."""
         client_instance = MagicMock()
         client_instance.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
-        client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-        client_instance.__aexit__ = AsyncMock(return_value=None)
 
         with (
-            patch.object(backend_client_mod.httpx, "AsyncClient", return_value=client_instance),
+            patch.object(backend_client_mod, "_get_client", return_value=client_instance),
             pytest.raises(BackendUploadError, match="Network error"),
         ):
             await upload_image(
@@ -190,7 +267,7 @@ class TestUploadImage:
 
         Clearing runtime relay credentials should make the upload fail fast.
         """
-        runtime = backend_client_mod.get_active_runtime()
+        runtime = get_active_runtime()
         runtime.runtime_state.clear_relay_credentials()
         with pytest.raises(BackendUploadError, match="unpaired"):
             await upload_image(
@@ -205,7 +282,7 @@ class TestUploadImage:
         monkeypatch.setattr(
             backend_client_mod,
             "build_device_assertion",
-            lambda: (_ for _ in ()).throw(ValueError(DEVICE_ASSERTION_ERROR)),
+            lambda *_: (_ for _ in ()).throw(ValueError(DEVICE_ASSERTION_ERROR)),
         )
 
         with pytest.raises(BackendUploadError, match="Failed to mint device assertion"):
@@ -235,13 +312,25 @@ class TestNotifySelfUnpair:
 
     async def test_skips_when_relay_credentials_missing(self, caplog: pytest.LogCaptureFixture) -> None:
         """Without relay credentials, there is nothing meaningful to unpair."""
-        runtime = backend_client_mod.get_active_runtime()
+        runtime = get_active_runtime()
         runtime.runtime_state.clear_relay_credentials()
 
         with caplog.at_level(logging.DEBUG):
             await backend_client_mod.notify_self_unpair()
 
         assert NO_RELAY_LOG in caplog.text
+
+    async def test_encodes_camera_id_path_segment(self) -> None:
+        """Self-unpair callbacks should encode the camera ID path segment."""
+        runtime = get_active_runtime()
+        runtime.runtime_state.relay_camera_id = UNSAFE_CAMERA_ID
+        response = _fake_response(204, {})
+
+        with _patch_async_client(response) as patched_client:
+            await backend_client_mod.notify_self_unpair()
+
+        args, _kwargs = patched_client.return_value.delete.await_args
+        assert str(args[0]) == f"https://backend.example{DEVICE_UPLOAD_PATH}{ENCODED_UNSAFE_CAMERA_ID}/self"
 
     async def test_skips_when_device_assertion_cannot_be_built(
         self,
@@ -273,6 +362,10 @@ class TestNotifySelfUnpair:
             await backend_client_mod.notify_self_unpair()
 
         patched_client.return_value.delete.assert_awaited_once()
+        args, kwargs = patched_client.return_value.delete.await_args
+        assert str(args[0]).startswith(f"https://backend.example{DEVICE_UPLOAD_PATH}")
+        assert str(args[0]).endswith("/self")
+        assert kwargs["headers"]["Authorization"] == AUTHORIZATION_HEADER
         assert ACKNOWLEDGED_UNPAIR_LOG in caplog.text
 
     async def test_warns_when_backend_returns_unexpected_status(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -288,11 +381,9 @@ class TestNotifySelfUnpair:
         """Transport failures should also stay best-effort and warning-only."""
         client_instance = MagicMock()
         client_instance.delete = AsyncMock(side_effect=httpx.ConnectError("refused"))
-        client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-        client_instance.__aexit__ = AsyncMock(return_value=None)
 
         with (
-            patch.object(backend_client_mod.httpx, "AsyncClient", return_value=client_instance),
+            patch.object(backend_client_mod, "_get_client", return_value=client_instance),
             caplog.at_level(logging.WARNING),
         ):
             await backend_client_mod.notify_self_unpair()

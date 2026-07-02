@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.core.settings import Settings
 
 _DEVICE_ASSERTION_AUTH_SCHEME = "device_assertion"
+_LOCAL_RELAY_API_KEY_BYTES = 32
 
 
 @dataclass
@@ -66,7 +68,7 @@ class RuntimeState:
         self.relay_key_id = relay_key_id
         self.relay_private_key_pem = relay_private_key_pem
         if not self.local_relay_api_key:
-            self.local_relay_api_key = f"LOCAL_{secrets.token_urlsafe(32)}"
+            self.local_relay_api_key = f"LOCAL_{secrets.token_urlsafe(_LOCAL_RELAY_API_KEY_BYTES)}"
         self.add_authorized_api_key(self.local_relay_api_key)
 
     def clear_relay_credentials(self) -> None:
@@ -92,5 +94,26 @@ class RuntimeState:
         self.authorized_api_keys = frozenset({*self.authorized_api_keys, key})
 
     def is_authorized_api_key(self, api_key: str) -> bool:
-        """Return whether a key is authorized in the current runtime snapshot."""
-        return api_key in self.authorized_api_keys
+        """Return whether a key is authorized in the current runtime snapshot.
+
+        Uses a constant-time comparison per candidate key so a network attacker
+        cannot learn a valid key byte-by-byte from response timing.
+        """
+        return any(secrets.compare_digest(api_key, key) for key in self.authorized_api_keys)
+
+
+class ConnectionMode(StrEnum):
+    """High-level relay/pairing state derived from runtime credentials."""
+
+    PAIRED = "paired"
+    PAIRING = "pairing"
+    IDLE = "idle"
+
+
+def connection_mode(runtime_state: RuntimeState, app_settings: Settings) -> ConnectionMode:
+    """Derive the active connection mode from runtime credentials and pairing config."""
+    if runtime_state.relay_enabled:
+        return ConnectionMode.PAIRED
+    if app_settings.pairing_backend_url:
+        return ConnectionMode.PAIRING
+    return ConnectionMode.IDLE

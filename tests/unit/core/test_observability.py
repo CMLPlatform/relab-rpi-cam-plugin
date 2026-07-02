@@ -139,21 +139,22 @@ class TestSetupObservability:
         monkeypatch.setattr(observability_mod.trace, "set_tracer_provider", set_provider_calls.append)
         monkeypatch.setattr(observability_mod, "FastAPIInstrumentor", lambda: fastapi_instrumentor)
         monkeypatch.setattr(observability_mod, "HTTPXClientInstrumentor", lambda: httpx_instrumentor)
+        otlp_endpoint = "https://otel-collector.example/v1/traces"
 
         handle = observability_mod.setup_observability(
             app,
             enabled=True,
             service_name="camera-plugin",
-            otlp_endpoint="http://otel-collector:4318/v1/traces",
+            otlp_endpoint=otlp_endpoint,
         )
 
         assert created_resources == [{"service.name": "camera-plugin"}]
-        assert exporters == [{"endpoint": "http://otel-collector:4318/v1/traces"}]
-        assert processors == [{"exporter": {"endpoint": "http://otel-collector:4318/v1/traces"}}]
+        assert exporters == [{"endpoint": otlp_endpoint}]
+        assert processors == [{"exporter": {"endpoint": otlp_endpoint}}]
         assert len(tracer_providers) == 1
         provider = tracer_providers[0]
         assert provider.resource == {"resource": {"service.name": "camera-plugin"}}
-        assert provider.span_processors == [{"processor_for": {"endpoint": "http://otel-collector:4318/v1/traces"}}]
+        assert provider.span_processors == [{"processor_for": {"endpoint": otlp_endpoint}}]
         assert set_provider_calls == [provider]
         assert fastapi_instrumentor.instrumented == [(app, provider)]
         assert httpx_instrumentor.instrumented_with == [provider]

@@ -25,18 +25,19 @@ from app.camera.services.backend import (
 )
 from app.camera.services.hardware_protocols import Picamera2Like
 from app.camera.services.hardware_stubs import H264EncoderStub, Picamera2Stub
-from app.core.settings import settings
-from app.media.mediamtx_client import MediaMTXAPIError, MediaMTXClient
-from app.media.stream import (
+from app.camera.streaming.mediamtx_client import MediaMTXAPIError, MediaMTXClient
+from app.camera.streaming.stream import (
     build_hires_rtsp_output,
     get_broadcast_url,
     validate_youtube_mode,
 )
+from app.core.settings import settings
 from app.observability.logging import build_log_extra
 
 if TYPE_CHECKING:
     # libcamera's `controls` module isn't available to the typechecker
     # in all environments; treat it as Any for static checks.
+    from PIL.Image import Image as PilImage
     from relab_rpi_cam_models.stream import StreamMode
 
     controls: Any
@@ -89,6 +90,11 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
         """The live Picamera2 instance, or ``None`` if not yet opened."""
         return self._camera
 
+    @property
+    def is_open(self) -> bool:
+        """Whether the camera pipeline has been initialised."""
+        return self._camera is not None
+
     async def open(self, mode: CameraMode) -> None:
         """Initialise the persistent pipeline on first call; idempotent thereafter."""
         if self._camera is None:
@@ -139,6 +145,38 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
             capture_metadata=capture_metadata,
         )
 
+    async def capture_preview_frame(self) -> PilImage:
+        """Tap the running main stream for a low-cost preview frame.
+
+        Opens VIDEO mode first if the camera isn't up yet (idempotent when running).
+        """
+        await self.open(CameraMode.VIDEO)
+        camera = self._require_camera()
+        return await asyncio.to_thread(camera.capture_image, "main")
+
+    async def start_lores_encoder(self, encoder: object, output: object) -> None:
+        """Attach ``encoder`` to the lores stream and wait for it to start."""
+        camera = self._require_camera()
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(camera.start_encoder, encoder, output, name="lores"),
+                timeout=30.0,
+            )
+        except TimeoutError as exc:
+            msg = "Preview pipeline ffmpeg startup timeout"
+            raise RuntimeError(msg) from exc
+        except (OSError, RuntimeError) as exc:
+            msg = f"Preview pipeline failed to start: {exc}"
+            raise RuntimeError(msg) from exc
+
+    async def stop_lores_encoder(self, encoder: object) -> None:
+        """Detach the lores encoder."""
+        camera = self._require_camera()
+        try:
+            await asyncio.to_thread(camera.stop_encoder, encoder)
+        except (OSError, RuntimeError) as exc:
+            logger.warning("Preview pipeline stop had a non-fatal error: %s", exc, extra=build_log_extra())
+
     async def start_stream(
         self,
         mode: StreamMode,
@@ -158,10 +196,7 @@ class Picamera2Backend(StreamingCameraBackend, ControllableCameraBackend):
            keeps working.
         """
         validate_youtube_mode(mode, youtube_config)
-        if youtube_config is None:
-            msg = "youtube_config must be provided for YouTube mode"
-            raise RuntimeError(msg)
-
+        assert youtube_config is not None  # noqa: S101  # narrowed by validate_youtube_mode
         await self.open(CameraMode.VIDEO)
         camera = self._require_camera()
 
@@ -388,18 +423,18 @@ def _value_type(value: object) -> str | None:
         return None
     if hasattr(value, "name"):
         return "enum"
-    value_type = type(value).__name__
+    label: str
     match value:
         case bool():
-            value_type = "boolean"
+            label = "boolean"
         case int():
-            value_type = "integer"
+            label = "integer"
         case float():
-            value_type = "number"
+            label = "number"
         case str():
-            value_type = "string"
+            label = "string"
         case list() | tuple():
-            value_type = "array"
+            label = "array"
         case _:
-            value_type = type(value).__name__
-    return value_type
+            label = type(value).__name__
+    return label

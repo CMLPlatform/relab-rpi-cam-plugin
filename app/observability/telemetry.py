@@ -19,12 +19,16 @@ logger = logging.getLogger(__name__)
 # Raspberry Pi SoC temperature sysfs path. Both Pi 4 and Pi 5 expose zone0.
 _THERMAL_ZONE = Path("/sys/class/thermal/thermal_zone0/temp")
 
+# Prime psutil's cpu_percent delta counter at import so the first telemetry read
+# returns a real utilisation figure instead of 0.0 (interval=None measures since prior call).
+psutil.cpu_percent(interval=None)
+
 
 def _read_cpu_temp_c() -> float | None:
     """Return the SoC temperature in Celsius, or None if the sysfs node is unavailable."""
     try:
         raw = _THERMAL_ZONE.read_text().strip()
-    except (FileNotFoundError, PermissionError, OSError) as exc:
+    except OSError as exc:
         logger.debug("Thermal sysfs read failed: %s", exc)
         return None
     try:

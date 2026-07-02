@@ -1,0 +1,54 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    ":approveMajorUpdates",
+    ":maintainLockFilesWeekly",
+    ":preserveSemverRanges",
+    "schedule:weekly"
+  ],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "automerge": false,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": false,
+    "labels": [
+      "manual-review",
+      "security-sensitive"
+    ]
+  },
+  "ignorePaths": [
+    ".python-version"
+  ],
+  "packageRules": [
+    {
+      "groupName": "github-actions",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "labels": [
+        "github-actions",
+        "manual-review",
+        "security-sensitive"
+      ]
+    },
+    {
+      "groupName": "docker",
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose"
+      ],
+      "labels": [
+        "docker",
+        "manual-review",
+        "security-sensitive"
+      ]
+    }
+  ],
+  "labels": [
+    "dependencies",
+    "renovate"
+  ]
+}

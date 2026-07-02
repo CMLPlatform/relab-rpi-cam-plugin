@@ -1,23 +1,46 @@
 """Pydantic settings for the Raspberry Pi API app."""
 
+from __future__ import annotations
+
 import json
 from collections.abc import Iterable
+from ipaddress import ip_address
 from pathlib import Path
-from typing import Literal, cast
+from typing import Annotated, Literal, cast
+from urllib.parse import urlparse
 
-from pydantic import HttpUrl, field_validator, model_validator
+from pydantic import Field, HttpUrl, NonNegativeInt, PositiveInt, StringConstraints, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-__all__ = ["Settings", "settings"]
+from app.relay.credentials import load_relay_signing_private_key
+
+__all__ = ["Settings", "is_loopback_url", "settings"]
 
 # Set the project base directory and .env file
 BASE_DIR: Path = (Path(__file__).resolve().parents[2]).resolve()
 HTTPS_SCHEME = "https"
+HTTP_SCHEME = "http"
+RELAY_WSS_SCHEME = "wss"
+RELAY_WS_SCHEME = "ws"
+LOCALHOST_HOSTNAME = "localhost"
 RELAY_AUTH_SCHEME_DEVICE_ASSERTION = "device_assertion"
+CAMERA_BACKEND_PICAMERA2 = "picamera2"  # used in app/camera/services/manager.py
 IMAGE_SINK_AUTO = "auto"
 IMAGE_SINK_BACKEND = "backend"
 IMAGE_SINK_S3 = "s3"
 DEFAULT_PAIRING_BACKEND_URL = "https://api.cml-relab.org"
+APP_ENV_DEVELOPMENT = "development"
+APP_ENV_PRODUCTION = "production"
+# used in core/bootstrap.py and pairing/services/service.py
+PAIRING_LOOPBACK_CONTAINER_ERROR = (
+    "PAIRING_BACKEND_URL uses loopback inside a container. "
+    "Set APP_ENV=development for the host.docker.internal rewrite, or configure a reachable backend URL."
+)
+SECURE_SESSION_COOKIE_PREFIX = "__Host-"
+type HttpFieldName = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=64, pattern=r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$"),
+]
 
 
 def _parse_list_env(v: object) -> list[str]:
@@ -41,6 +64,65 @@ def _parse_list_env(v: object) -> list[str]:
     return cast("list[str]", [parsed] if not isinstance(parsed, list) else parsed)
 
 
+def _is_loopback_host(hostname: str) -> bool:
+    normalized_hostname = hostname.strip("[]").lower()
+    if normalized_hostname == LOCALHOST_HOSTNAME:
+        return True
+    try:
+        return ip_address(normalized_hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def is_loopback_url(value: str) -> bool:
+    """Return whether a URL points at a loopback development host."""
+    hostname = urlparse(value).hostname
+    return bool(hostname and _is_loopback_host(hostname))
+
+
+def validate_endpoint_transport(value: str, *, setting_name: str, app_env: str) -> None:
+    """Enforce HTTPS for remote service endpoints outside development."""
+    if not value:
+        return
+    parsed = urlparse(value)
+    if parsed.scheme not in {HTTP_SCHEME, HTTPS_SCHEME} or not parsed.hostname:
+        msg = f"{setting_name} must use http or https."
+        raise ValueError(msg)
+    if parsed.scheme == HTTPS_SCHEME:
+        return
+    if _is_loopback_host(parsed.hostname):
+        return
+    if app_env == APP_ENV_DEVELOPMENT:
+        return
+    msg = f"{setting_name} must use https unless it points at loopback or APP_ENV=development."
+    raise ValueError(msg)
+
+
+def validate_absolute_url_template_transport(value: str, *, setting_name: str, app_env: str) -> None:
+    """Enforce transport policy for URL templates that declare their own absolute origin."""
+    parsed = urlparse(value)
+    if not parsed.scheme and not parsed.netloc:
+        return
+    validate_endpoint_transport(value, setting_name=setting_name, app_env=app_env)
+
+
+def validate_relay_backend_url(value: str, *, app_env: str) -> str:
+    """Validate the relay WebSocket URL transport policy."""
+    if not value:
+        return value
+    scheme = urlparse(value).scheme
+    if scheme not in {RELAY_WSS_SCHEME, RELAY_WS_SCHEME}:
+        msg = "relay_backend_url must use the wss:// (or ws://) scheme, not http/https"
+        raise ValueError(msg)
+    if scheme == RELAY_WS_SCHEME and app_env != APP_ENV_DEVELOPMENT:
+        msg = (
+            "relay_backend_url uses unencrypted ws://. "
+            "Set APP_ENV=development for local development, or switch to wss://."
+        )
+        raise ValueError(msg)
+    return value
+
+
 class Settings(BaseSettings):
     """Settings class to store all the configurations for the app."""
 
@@ -51,7 +133,7 @@ class Settings(BaseSettings):
         HttpUrl("https://cml-relab.org"),
     ]
     authorized_api_keys: list[str] = []  # Bootstrap-only auth keys from env/.env
-    camera_device_num: int = 0  # Camera device number (usually 0 or 1)
+    camera_device_num: NonNegativeInt = 0  # Camera device number (usually 0 or 1)
 
     # Initialize the settings configuration from the .env file
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", extra="ignore")
@@ -63,11 +145,11 @@ class Settings(BaseSettings):
     log_path: Path = BASE_DIR / "logs"  # Used for storing log files
 
     # Directory cleanup settings
-    cleanup_interval_s: int = 60 * 10  # Interval for cleaning up expired files in seconds (10 minutes)
-    image_ttl_s: int = 60 * 60  # Time-to-live for captured images in seconds (1 hour)
-    max_stream_duration_s: int = 60 * 60 * 5  # Maximum duration for a stream in seconds (5 hours)
-    check_stream_interval_s: int = 60  # Interval for checking stream duration in seconds (1 minute)
-    check_stream_health_interval_s: int = 30  # Interval for checking stream health in seconds
+    cleanup_interval_s: PositiveInt = 60 * 10  # Cleanup interval in seconds (10 minutes)
+    image_ttl_s: PositiveInt = 60 * 60  # Time-to-live for captured images in seconds (1 hour)
+    max_stream_duration_s: PositiveInt = 60 * 60 * 5  # Maximum stream duration in seconds (5 hours)
+    check_stream_interval_s: PositiveInt = 60  # Stream duration check interval in seconds
+    check_stream_health_interval_s: PositiveInt = 30  # Stream health check interval in seconds
 
     # Camera settings
     camera_backend: Literal["picamera2"] = "picamera2"
@@ -77,7 +159,7 @@ class Settings(BaseSettings):
     # Any positive value is a relay idle window in seconds — after no relay
     # traffic for that long, the lores preview encoder is stopped until a new
     # command arrives or the relay reconnects.
-    preview_hibernate_after_s: int = 60 * 5  # Default: hibernate after 5 min idle
+    preview_hibernate_after_s: NonNegativeInt = 60 * 5  # Default: hibernate after 5 min idle
 
     # Image sink selection. ``auto`` infers from what's configured:
     # ``pairing_backend_url`` → backend, ``s3_endpoint_url`` → s3, nothing → error.
@@ -96,9 +178,13 @@ class Settings(BaseSettings):
     s3_public_url_template: str = "{endpoint}/{bucket}/{key}"
 
     # Auth
-    auth_key_name: str = "X-API-Key"
+    auth_key_name: HttpFieldName = "X-API-Key"
     auth_cookie_secure: bool | None = None
-    session_cookie_name: str = "relab_session"
+    session_cookie_name: HttpFieldName = "relab_session"
+
+    # Runtime mode. Production is the safe default; development permits
+    # plaintext endpoints for local-network test services.
+    app_env: Literal["development", "production"] = APP_ENV_PRODUCTION
 
     # Debug mode
     debug: bool = False
@@ -117,33 +203,36 @@ class Settings(BaseSettings):
     local_api_key: str = ""  # Bootstrap-only local API key seed; runtime-owned after startup
     # Extra CORS origins allowed for direct-connect clients, e.g. "http://192.168.1.42"
     # Accepts a JSON array string or comma-separated list (same format as authorized_api_keys).
-    local_allowed_origins: list[str] = []
+    local_allowed_origins: list[HttpUrl] = []
 
     @field_validator("local_allowed_origins", mode="before")
     @classmethod
     def _parse_local_origins(cls, v: object) -> list[str]:
         return _parse_list_env(v)
 
-    # WebSocket relay (auto-enabled when all three fields are set)
-    relay_backend_url: str = ""  # wss://your-backend/plugins/rpi-cam/ws/connect
+    # WebSocket relay bootstrap seed. Runtime-owned relay credentials may later
+    # come from the persisted credentials file instead.
+    relay_backend_url: str = ""  # wss://your-backend/v1/plugins/rpi-cam/ws/connect
     relay_camera_id: str = ""
     relay_auth_scheme: str = "device_assertion"
     relay_key_id: str = ""
     relay_private_key_pem: str = ""
     local_relay_api_key: str = ""  # Bootstrap-only relay-local auth key seed; runtime-owned after startup
-    # Relay reconnect/backoff tunables. Defaults chosen for typical home/LTE
-    # links; operators on flaky networks may want a higher ceiling.
-    relay_reconnect_min_s: float = 2.0
-    relay_reconnect_max_s: float = 60.0
-    relay_max_concurrent_commands: int = 8
-    # Opt-in escape hatch for local development against a non-TLS backend.
-    # Production must leave this False so the device-assertion JWT is never
-    # sent over an unencrypted WebSocket.
-    allow_plaintext_relay: bool = False
+    relay_max_concurrent_commands: int = Field(default=8, ge=1)
+    relay_max_pending_commands: int = Field(default=32, ge=1)
+
+    # Persistent capture retry queue capacity and dead-letter retention.
+    upload_queue_max_pending_entries: int = Field(default=500, ge=0)
+    upload_queue_max_pending_bytes: int = Field(default=2 * 1024 * 1024 * 1024, ge=0)
+    upload_queue_dead_max_entries: int = Field(default=500, ge=0)
+
+    # Captured media file size limits (enforced in-memory before upload to avoid OOM crashes)
+    max_capture_pixels: int = Field(default=20_000_000, ge=1)
+    max_capture_file_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
 
     @property
-    def relay_enabled(self) -> bool:
-        """Relay is enabled when the platform device credential is configured."""
+    def has_static_relay_credentials(self) -> bool:
+        """Return whether env/static config contains a complete relay credential."""
         return bool(
             self.relay_backend_url
             and self.relay_camera_id
@@ -159,22 +248,23 @@ class Settings(BaseSettings):
             return self.auth_cookie_secure
         return self.base_url.scheme == HTTPS_SCHEME
 
+    @property
+    def browser_session_cookie_name(self) -> str:
+        """Return the effective browser session cookie name."""
+        if self.cookie_secure:
+            return f"{SECURE_SESSION_COOKIE_PREFIX}{self.session_cookie_name}"
+        return self.session_cookie_name
+
+    @property
+    def api_docs_enabled(self) -> bool:
+        """Return whether local Swagger/OpenAPI routes should be exposed."""
+        return self.app_env == APP_ENV_DEVELOPMENT
+
     # Pairing: set this to the backend's HTTP(S) API URL to enable zero-config pairing.
     # When set and relay credentials are absent, the RPi enters pairing mode on boot.
     pairing_backend_url: str = DEFAULT_PAIRING_BACKEND_URL
-    pairing_register_timeout_retry_s: int = 1  # Delay before retrying a timed-out pairing register request
-    pairing_poll_interval_s: int = 3  # Delay between pairing poll requests and after poll timeouts
-
-    @field_validator("relay_backend_url")
-    @classmethod
-    def _validate_relay_url_scheme(cls, v: str) -> str:
-        """Require a WebSocket scheme; warn loudly if not encrypted."""
-        if not v:
-            return v
-        if not v.startswith(("wss://", "ws://")):
-            msg = "relay_backend_url must use the wss:// (or ws://) scheme, not http/https"
-            raise ValueError(msg)
-        return v
+    pairing_register_timeout_retry_s: PositiveInt = 1  # Delay before retrying timed-out pairing registration
+    pairing_poll_interval_s: PositiveInt = 3  # Delay between pairing poll requests/timeouts
 
     @field_validator("authorized_api_keys", mode="before")
     @classmethod
@@ -201,7 +291,8 @@ class Settings(BaseSettings):
         return bool(v)
 
     @model_validator(mode="after")
-    def _validate_runtime_bootstrap_config(self) -> "Settings":
+    def _validate_runtime_bootstrap_config(self) -> Settings:
+        validate_relay_backend_url(self.relay_backend_url, app_env=self.app_env)
         relay_fields = (
             self.relay_backend_url,
             self.relay_camera_id,
@@ -217,12 +308,32 @@ class Settings(BaseSettings):
         if self.relay_backend_url and self.relay_auth_scheme != RELAY_AUTH_SCHEME_DEVICE_ASSERTION:
             msg = "RELAY_AUTH_SCHEME must be device_assertion when relay bootstrap credentials are configured."
             raise ValueError(msg)
-        if self.relay_backend_url.startswith("ws://") and not self.allow_plaintext_relay:
-            msg = (
-                "relay_backend_url uses unencrypted ws://. "
-                "Set ALLOW_PLAINTEXT_RELAY=true for local development, or switch to wss://."
-            )
+        if self.relay_private_key_pem:
+            load_relay_signing_private_key(self.relay_private_key_pem)
+        if self.app_env == APP_ENV_PRODUCTION and self.debug:
+            msg = "DEBUG=true is only allowed when APP_ENV=development."
             raise ValueError(msg)
+        validate_endpoint_transport(
+            self.pairing_backend_url,
+            setting_name="PAIRING_BACKEND_URL",
+            app_env=self.app_env,
+        )
+        validate_endpoint_transport(
+            self.s3_endpoint_url,
+            setting_name="S3_ENDPOINT_URL",
+            app_env=self.app_env,
+        )
+        validate_absolute_url_template_transport(
+            self.s3_public_url_template,
+            setting_name="S3_PUBLIC_URL_TEMPLATE",
+            app_env=self.app_env,
+        )
+        if self.otel_enabled:
+            validate_endpoint_transport(
+                self.otel_exporter_otlp_endpoint,
+                setting_name="OTEL_EXPORTER_OTLP_ENDPOINT",
+                app_env=self.app_env,
+            )
         if self.image_sink == IMAGE_SINK_BACKEND and not self.pairing_backend_url:
             msg = "IMAGE_SINK=backend requires PAIRING_BACKEND_URL."
             raise ValueError(msg)

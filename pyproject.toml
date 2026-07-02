@@ -34,12 +34,12 @@
     "psutil>=5.9",
     "pydantic-settings>=2.8.0",
     "pyjwt[crypto]>=2.12.1",
-    "relab-rpi-cam-models>=0.3.1",                    # NOTE: Keep this aligned with the published contract package
-    "websockets>=14.0",
+    "relab-rpi-cam-models>=0.4.0",                    # NOTE: Keep this aligned with the published contract package
+    "websockets>=16.0",
   ]
 
   requires-python = ">=3.13,<3.14" # Python 3.13 is needed in Debian Trixie for picamera2
-  version         = "0.3.0"        # NOTE: Versioning is handled by commitizen
+  version         = "0.4.0"        # NOTE: Versioning is handled by commitizen
 
   [project.urls]
     Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
@@ -110,10 +110,6 @@
       "D105", # undocumented-magic-method (magic methods are often self-explanatory)
       "D107", # undocumented-public-init (__init__ methods are often self-explanatory)
 
-      # TODO: Re-enable these linting rules when we have more than one developer.
-      "FIX002", # Allow todos
-      "TD002",  # Allow todos without authors
-      "TD003",  # Allow todos without issue links
     ]
 
     [tool.ruff.lint.flake8-bugbear]
@@ -126,7 +122,7 @@
       runtime-evaluated-base-classes = ["pydantic.BaseModel"]
 
     [tool.ruff.lint.per-file-ignores]
-      "tests/**" = ["S101", "SLF001"]
+      "tests/**" = ["ANN401", "PLR2004", "S101", "SLF001"]
 
     [tool.ruff.lint.pydocstyle]
       convention = "google"
@@ -139,8 +135,12 @@
   extra-paths = ["typings"]
 
 # UV configuration
-[tool.uv.sources]
-  relab_rpi_cam_models = { workspace = true }
+[tool.uv]
+  # Mitigate supply chain issues
+  exclude-newer = "3 days"
 
-[tool.uv.workspace]
-  members = ["relab_rpi_cam_models"]
+  [tool.uv.sources]
+    relab_rpi_cam_models = { workspace = true }
+
+  [tool.uv.workspace]
+    members = ["relab_rpi_cam_models"]

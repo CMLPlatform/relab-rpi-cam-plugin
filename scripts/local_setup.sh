@@ -5,8 +5,8 @@ set -euo pipefail
 # Usage: ./scripts/local_setup.sh [--dev]
 #
 # Options:
-#   --dev    Create a development environment (install dev deps) and skip
-#            installing pre-commit hooks.
+#   --dev    Create a development environment (install dev deps) and install
+#            pre-commit hooks.
 
 DEV_MODE=false
 while [ "$#" -gt 0 ]; do
@@ -42,7 +42,7 @@ if ! command -v uv >/dev/null 2>&1; then
 	fi
 
 	# Ensure the freshly-installed uv is on PATH for this run
-	export PATH="$HOME/.local/bin/env:$PATH"
+	export PATH="$HOME/.local/bin:$PATH"
 
 	if ! command -v uv >/dev/null 2>&1; then
 		echo "uv still not available after installation; please add $HOME/.local/bin to your PATH or install uv manually: https://astral.sh/uv" >&2
@@ -63,7 +63,7 @@ else
 fi
 
 # Install pre-commit hooks only in dev mode
-if [ "$DEV_MODE" == true ]; then
+if [ "$DEV_MODE" = true ]; then
 	echo "Installing pre-commit hooks ..."
 	uv run pre-commit install
 	echo "Local setup complete. To run the application, use 'uv run fastapi dev app/main.py'"

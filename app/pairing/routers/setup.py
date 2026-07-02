@@ -4,30 +4,46 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
+from functools import partial
+from typing import TYPE_CHECKING
 
 import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+from app.auth.dependencies import has_valid_browser_session
 from app.backend.client import notify_self_unpair
-from app.core.bootstrap import clear_runtime_relay_credentials
 from app.core.runtime import get_request_runtime
+from app.core.runtime_state import ConnectionMode, connection_mode
 from app.core.settings import DEFAULT_PAIRING_BACKEND_URL, settings
 from app.core.templates_config import templates
 from app.observability.logging import build_log_extra
-from app.pairing.routers.local_access import _get_candidate_urls
+from app.pairing.routers.local_access import _API_PORT, get_candidate_urls
+from app.pairing.services.credentials import delete_relay_credentials
 from app.pairing.services.service import (
     PAIRING_CODE_TTL_SECONDS,
     STATUS_PAIRED,
-    _normalize_pairing_backend_base_url,
-    delete_relay_credentials,
+    normalize_pairing_backend_base_url,
 )
+from app.utils.network import is_local_client
+
+if TYPE_CHECKING:
+    from app.core.runtime import AppRuntime
 
 _STATUS_ERROR = "error"
 _PAIRING_BACKEND_REACHABILITY_TIMEOUT = httpx.Timeout(connect=1.5, read=1.5, write=1.5, pool=1.5)
 
 logger = logging.getLogger(__name__)
 
+
+async def _restart_relay_after_pairing(runtime: AppRuntime) -> None:
+    """Restart the WebSocket relay once (re-)pairing completes."""
+    runtime.create_task(runtime.relay_service.run_forever(), name="ws_relay")
+    logger.info("Re-paired — WebSocket relay restarted", extra=build_log_extra())
+
+
+public_router = APIRouter(tags=["setup"])
 router = APIRouter(tags=["setup"])
 
 
@@ -37,28 +53,43 @@ async def _pairing_backend_reachable() -> bool:
     if not base_url:
         return False
 
-    normalized_base_url = _normalize_pairing_backend_base_url(base_url)
     try:
-        async with httpx.AsyncClient(timeout=_PAIRING_BACKEND_REACHABILITY_TIMEOUT, follow_redirects=True) as client:
+        normalized_base_url = normalize_pairing_backend_base_url(base_url)
+        async with httpx.AsyncClient(timeout=_PAIRING_BACKEND_REACHABILITY_TIMEOUT, follow_redirects=False) as client:
             await client.get(normalized_base_url)
-    except httpx.HTTPError:
+    except (RuntimeError, httpx.HTTPError):
         return False
     return True
 
 
-@router.get("/setup")
+@public_router.get("/setup")
 async def setup_page(request: Request) -> HTMLResponse:
     """HTML page showing camera config status and pairing code."""
     runtime = get_request_runtime(request)
     base_url = str(settings.base_url).rstrip("/")
     pairing = runtime.pairing_service.get_state()
+    # The pairing code lets anyone claim this camera into their own account, so
+    # only expose it to local-network (or authenticated) visitors — not the
+    # fully public /setup surface a remote/relayed request could reach.
+    if not (operator_authenticated := has_valid_browser_session(request)) and not is_local_client(
+        request.client.host if request.client else None
+    ):
+        pairing = replace(pairing, code=None)
     pairing_expires_at_iso = pairing.expires_at.isoformat() if pairing.expires_at else ""
+    mode = connection_mode(runtime.runtime_state, settings)
+    has_local_key = bool(runtime.runtime_state.local_api_key)
 
-    candidate_urls = _get_candidate_urls()
-    # Strip scheme and port so the template can compose its own URLs.
-    lan_ips = [u.removeprefix("http://").removesuffix(":8018") for u in candidate_urls] or ["<this-ip>"]
-    connection_host = lan_ips[0]
-    pairing_backend_reachable = runtime.runtime_state.relay_enabled or await _pairing_backend_reachable()
+    lan_ips: list[str] = []
+    connection_host = ""
+    pairing_backend_reachable = False
+    if operator_authenticated:
+        candidate_urls = get_candidate_urls()
+        # Strip scheme and port so the template can compose its own URLs.
+        lan_ips = [u.removeprefix("http://").removesuffix(f":{_API_PORT}") for u in candidate_urls] or ["<this-ip>"]
+        connection_host = lan_ips[0]
+        pairing_backend_reachable = mode is ConnectionMode.PAIRED or (
+            mode is ConnectionMode.PAIRING and await _pairing_backend_reachable()
+        )
 
     return templates.TemplateResponse(
         request,
@@ -66,25 +97,27 @@ async def setup_page(request: Request) -> HTMLResponse:
         {
             "pairing": pairing,
             "pairing_expires_at_iso": pairing_expires_at_iso,
-            "relay_enabled": runtime.runtime_state.relay_enabled,
-            "relay_backend_url": runtime.runtime_state.relay_backend_url,
-            "relay_camera_id": runtime.runtime_state.relay_camera_id,
-            "pairing_backend_url": settings.pairing_backend_url,
-            "default_pairing_backend_url": DEFAULT_PAIRING_BACKEND_URL,
+            "mode": mode.value,
+            "relay_backend_url": runtime.runtime_state.relay_backend_url if operator_authenticated else "",
+            "relay_camera_id": runtime.runtime_state.relay_camera_id if operator_authenticated else "",
+            "pairing_backend_url": settings.pairing_backend_url if operator_authenticated else "",
+            "default_pairing_backend_url": DEFAULT_PAIRING_BACKEND_URL if operator_authenticated else "",
             "base_url": base_url,
             "status_paired": STATUS_PAIRED,
             "status_error": _STATUS_ERROR,
             "pairing_code_ttl_seconds": PAIRING_CODE_TTL_SECONDS,
-            "local_mode_enabled": settings.local_mode_enabled,
-            "local_api_key": runtime.runtime_state.local_api_key,
+            "local_auth_enabled": settings.local_mode_enabled and has_local_key,
+            "has_local_api_key": has_local_key if operator_authenticated else False,
+            "operator_authenticated": operator_authenticated,
             "connection_host": connection_host,
             "lan_ips": lan_ips,
             "pairing_backend_reachable": pairing_backend_reachable,
+            "api_docs_enabled": settings.api_docs_enabled,
         },
     )
 
 
-@router.get("/pairing/state")
+@public_router.get("/pairing/state")
 async def pairing_state(request: Request) -> JSONResponse:
     """Return the current pairing state for client-side polling by the setup page."""
     runtime = get_request_runtime(request)
@@ -92,7 +125,7 @@ async def pairing_state(request: Request) -> JSONResponse:
     return JSONResponse(
         {
             "status": state.status,
-            "relay_enabled": runtime.runtime_state.relay_enabled,
+            "mode": connection_mode(runtime.runtime_state, settings).value,
         }
     )
 
@@ -111,10 +144,6 @@ async def unpair(request: Request) -> Response:
     """
     runtime = get_request_runtime(request)
 
-    async def _on_repaired() -> None:
-        runtime.create_task(runtime.relay_service.run_forever(), name="ws_relay")
-        logger.info("Re-paired — WebSocket relay restarted", extra=build_log_extra())
-
     async def _do_reset() -> None:
         # Small delay so the 204 response travels back through the relay WS
         # before the relay task receives its CancelledError.
@@ -127,11 +156,14 @@ async def unpair(request: Request) -> Response:
         await runtime.stop_tasks({"ws_relay", "pairing"})
 
         delete_relay_credentials()
-        clear_runtime_relay_credentials(runtime.runtime_state)
+        runtime.runtime_state.clear_relay_credentials()
         runtime.pairing_service.reset_state()
 
-        if settings.pairing_backend_url:
-            runtime.create_task(runtime.pairing_service.run_forever(_on_repaired), name="pairing")
+        if connection_mode(runtime.runtime_state, settings) is ConnectionMode.PAIRING:
+            runtime.create_task(
+                runtime.pairing_service.run_forever(partial(_restart_relay_after_pairing, runtime)),
+                name="pairing",
+            )
             logger.info("Unpairing complete — pairing flow restarted", extra=build_log_extra())
         else:
             logger.info(
@@ -153,10 +185,6 @@ async def refresh_pairing_code(request: Request) -> Response:
     """
     runtime = get_request_runtime(request)
 
-    async def _on_paired() -> None:
-        runtime.create_task(runtime.relay_service.run_forever(), name="ws_relay")
-        logger.info("Re-paired — WebSocket relay restarted", extra=build_log_extra())
-
     async def _do_refresh() -> None:
         await asyncio.sleep(0.1)
 
@@ -164,11 +192,14 @@ async def refresh_pairing_code(request: Request) -> Response:
 
         await runtime.stop_tasks({"pairing"})
 
-        if settings.pairing_backend_url and not runtime.runtime_state.relay_enabled:
-            runtime.create_task(runtime.pairing_service.run_forever(_on_paired), name="pairing")
+        if connection_mode(runtime.runtime_state, settings) is ConnectionMode.PAIRING:
+            runtime.create_task(
+                runtime.pairing_service.run_forever(partial(_restart_relay_after_pairing, runtime)),
+                name="pairing",
+            )
             logger.info("Pairing code refreshed — pairing flow restarted", extra=build_log_extra())
         else:
-            logger.info("Pairing code refreshed — no pairing backend configured", extra=build_log_extra())
+            logger.info("Pairing code refreshed — pairing flow not active", extra=build_log_extra())
 
     runtime.create_task(_do_refresh(), name="pairing_refresh")
     return Response(status_code=204)

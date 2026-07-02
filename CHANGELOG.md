@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.4.0 (2026-07-01)
+
+### Feat
+
+- Harden authentication and sessions: enforced lifetimes, ASVS-aligned cookies, same-origin checks for cookie writes, and structured auth, CSRF, and session logging
+- Harden browser security: per-request CSP nonces, restricted CORS and private-network access, blocked HTTP TRACE, and limited static file types
+- Enforce HTTPS transport for S3 and OTLP endpoints
+- Validate relay credentials at startup and boundaries, allowlist backend commands, bound inputs, and rate-limit sensitive actions
+- Require auth for pairing, preview, and metrics endpoints, and fail closed for production loopback pairing
+- Reject `DEBUG=true` in production and reveal the local API key on demand instead of embedding it in HTML
+- Add a security CI workflow, pin container images by digest, and default listeners to loopback
+- Add a pairing-state polling endpoint and a client-safe exception handler
+
+### Fix
+
+- Block backslash open-redirects, redact bearer tokens in auth headers, return 403 instead of 500 for non-ASCII API keys, and reject oversized preview thumbnails
+- Prevent startup crashes from malformed credential files, and harden capture validation and cleanup
+- Fix worker reliability: thermal-throttle desync, preview-sleeper loop death, and preview recovery on fatal HLS errors
+- Serialize capture timestamps as UTC-aware and relay binary frames correctly, warn on plain-HTTP base URLs in production, and map dma_heap nodes individually in Compose
+
+### Refactor
+
+- Reorganize into a feature-first layout: image sinks and upload into `delivery`, streaming into `camera/streaming`, metrics into `observability`
+
 ## v0.3.0 (2026-04-21)
 
 ### Feat

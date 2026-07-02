@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from opentelemetry import trace
@@ -18,41 +19,25 @@ if TYPE_CHECKING:
 
 
 class _FastAPIInstrumentorProtocol(Protocol):
-    def instrument_app(self, app: FastAPI, *, tracer_provider: TracerProvider) -> None:
-        """Attach tracing hooks to the FastAPI app."""
-        raise NotImplementedError
-
     def uninstrument_app(self, app: FastAPI) -> None:
-        """Remove tracing hooks from the FastAPI app."""
-        raise NotImplementedError
+        """Remove FastAPI instrumentation from the app."""
 
 
 class _HTTPXInstrumentorProtocol(Protocol):
-    def instrument(self, *, tracer_provider: TracerProvider) -> None:
-        """Attach tracing hooks to HTTPX."""
-        raise NotImplementedError
-
     def uninstrument(self) -> None:
-        """Remove tracing hooks from HTTPX."""
-        raise NotImplementedError
+        """Remove HTTPX client instrumentation."""
 
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class ObservabilityHandle:
     """Tracks active OTel instrumentation so shutdown can clean up."""
 
-    def __init__(
-        self,
-        *,
-        fastapi_instrumentor: _FastAPIInstrumentorProtocol,
-        httpx_instrumentor: _HTTPXInstrumentorProtocol,
-        tracer_provider: TracerProvider,
-    ) -> None:
-        self.fastapi_instrumentor = fastapi_instrumentor
-        self.httpx_instrumentor = httpx_instrumentor
-        self.tracer_provider = tracer_provider
+    fastapi_instrumentor: _FastAPIInstrumentorProtocol
+    httpx_instrumentor: _HTTPXInstrumentorProtocol
+    tracer_provider: TracerProvider
 
     def shutdown(self, app: FastAPI) -> None:
         """Best-effort teardown for active OTel instrumentation."""

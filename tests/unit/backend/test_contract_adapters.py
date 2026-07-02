@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from PIL import Image
+from PIL.ExifTags import Base
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
@@ -12,7 +13,7 @@ from app.backend.contract_adapters import (
     build_stream_metadata,
     image_metadata_to_exif,
 )
-from app.media.stream_state import ActiveStreamState, StreamStateError
+from app.camera.streaming.stream_state import ActiveStreamState, StreamStateError
 from tests.constants import YOUTUBE_WATCH_URL_PREFIX
 
 MOCK_CAMERA_MODEL = "mock"
@@ -45,7 +46,17 @@ class TestContractAdapters:
         image = Image.new("RGB", (100, 100), color="red")
         metadata = build_image_metadata(image, {"Model": MOCK_CAMERA_MODEL}, {"ExposureTime": 1_000})
         exif = image_metadata_to_exif(metadata)
-        assert exif
+        assert exif[Base.Make.value] == "Raspberry Pi"
+        assert exif[Base.Software.value] == "picamera2"
+        assert exif[Base.ImageWidth.value] == 100
+        assert exif[Base.ImageLength.value] == 100
+
+    def test_image_metadata_to_exif_preserves_zero_sensor_temperature(self) -> None:
+        """A valid 0.0 degC sensor reading must not be dropped by a falsy check."""
+        image = Image.new("RGB", (100, 100), color="red")
+        metadata = build_image_metadata(image, {"Model": MOCK_CAMERA_MODEL}, {"SensorTemperature": 0.0})
+        exif = image_metadata_to_exif(metadata)
+        assert exif[Base.AmbientTemperature.value] == 0.0
 
 
 class TestActiveStreamState:
