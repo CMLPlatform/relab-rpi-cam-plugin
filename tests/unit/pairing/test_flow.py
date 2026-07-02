@@ -6,19 +6,21 @@ import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
 
-from app.auth.dependencies import reload_authorized_hashes
+from app.auth.dependencies import reload_authorized_keys
 from app.core.runtime import AppRuntime, set_active_runtime
+from app.core.runtime_state import RuntimeState
 from app.core.settings import settings
 from app.pairing.services import credentials as pairing_credentials
 from app.pairing.services import service as pairing_mod
 from tests.constants import (
     EXAMPLE_BACKEND_URL,
     EXAMPLE_RELAY_BACKEND_URL,
+    EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
     PAIRING_POLL_TIMEOUT_LOG,
     PAIRING_REGISTER_TIMEOUT_LOG,
     TRACEBACK_TEXT,
@@ -30,7 +32,8 @@ if TYPE_CHECKING:
 RELAY_CAMERA_ID = "cam-1"
 RELAY_AUTH_SCHEME = "device_assertion"
 RELAY_KEY_ID = "key-1"
-PAIRING_CODE_1 = "ABC123"
+VALID_RELAY_KEY_ID = "key-12345"
+PAIRING_CODE_1 = "ABC234"
 PAIRING_CODE_2 = "XYZ789"
 PAIRING_MODE_LOG_PREFIX = "PAIRING MODE | state=awaiting_claim setup=/setup"
 PAIRING_FAILURE_LOG = "Pairing cycle failed"
@@ -52,6 +55,9 @@ PAIRING_READ_WARNING = "Failed to read"
 PAIRING_DELETE_WARNING = "Failed to delete relay credentials file"
 HTTP_502 = "HTTP 502"
 HTML_DOCTYPE_TAG = "<!DOCTYPE html>"
+APP_ENV_DEVELOPMENT = "development"
+APP_ENV_PRODUCTION = "production"
+PAIRING_LOOPBACK_ERROR = "PAIRING_BACKEND_URL uses loopback inside a container"
 
 
 class FakeResponse:
@@ -143,46 +149,39 @@ class TestPairingHelpers:
         monkeypatch.delenv("RELAB_CREDENTIALS_FILE", raising=False)
         assert str(pairing_credentials._get_credentials_file()).endswith(".config/relab/relay_credentials.json")
 
-    def test_pairing_service_reset_and_get_state(self) -> None:
-        """Pairing service should expose and reset its observable state."""
+    def test_pairing_service_reset_state(self) -> None:
+        """Pairing service should reset its observable state to idle."""
         service = pairing_mod.PairingService()
         service.state.code = "CODE"
         service.state.status = "waiting"
-
-        assert service.get_state() is service.state
 
         service.reset_state()
 
         assert service.state.code is None
         assert service.state.status == PAIRING_STATUS_IDLE
 
-    def test_prepare_registration_state_logs_pairing_code(
+    def test_log_pairing_ready_marks_banner_as_local_operator_only(
         self,
-        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The pairing code should be logged as soon as a registration is prepared."""
-        registration = pairing_mod.PairingRegistration(
-            code=PAIRING_CODE_1,
-            fingerprint=FINGERPRINT_1,
-            private_key=cast("Any", None),
-            key_id=RELAY_KEY_ID,
-            public_key_jwk={},
-        )
-        service = pairing_mod.PairingService()
-        logged: list[str] = []
+        """Pairing codes should be visible locally but marked out of shipped JSON logs."""
+        records: list[logging.LogRecord] = []
 
-        def _log_ready(code: str) -> None:
-            logged.append(code)
+        class _CaptureHandler(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
 
-        monkeypatch = pytest.MonkeyPatch()
-        monkeypatch.setattr(pairing_mod, "_log_pairing_ready", _log_ready)
-        with caplog.at_level(logging.INFO):
-            service._prepare_registration_state(registration)
-        monkeypatch.undo()
+        handler = _CaptureHandler()
+        monkeypatch.setattr(pairing_mod, "build_log_extra", dict)
+        pairing_mod.logger.addHandler(handler)
+        try:
+            pairing_mod._log_pairing_ready(PAIRING_CODE_1)
+        finally:
+            pairing_mod.logger.removeHandler(handler)
 
-        assert logged == [PAIRING_CODE_1]
-        assert service.state.status == PAIRING_STATUS_REGISTERING
-        assert f"PAIRING CODE: {PAIRING_CODE_1}" in pairing_mod._format_pairing_ready_message(PAIRING_CODE_1)
+        assert records
+        assert PAIRING_CODE_1 in records[0].getMessage()
+        assert cast("Any", records[0]).local_operator_only is True
 
     def test_log_pairing_connect_error_for_loopback_container_backend(
         self,
@@ -190,7 +189,7 @@ class TestPairingHelpers:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Loopback backends inside containers should emit the host alias guidance."""
-        monkeypatch.setattr(pairing_mod, "_is_running_in_container", lambda: True)
+        monkeypatch.setattr(pairing_mod, "is_running_in_container", lambda: True)
         with caplog.at_level(logging.ERROR):
             pairing_mod._log_pairing_connect_error(httpx.ConnectError("refused"), "http://localhost:8011")
         assert PAIRING_HOST_ALIAS in caplog.text
@@ -201,14 +200,14 @@ class TestPairingHelpers:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Non-loopback connect errors should log the simpler unreachable message."""
-        monkeypatch.setattr(pairing_mod, "_is_running_in_container", lambda: False)
+        monkeypatch.setattr(pairing_mod, "is_running_in_container", lambda: False)
         with caplog.at_level(logging.ERROR):
             pairing_mod._log_pairing_connect_error(httpx.ConnectError("refused"), EXAMPLE_BACKEND_URL)
         assert f"Pairing backend {EXAMPLE_BACKEND_URL} could not be reached." in caplog.text
 
     def test_log_pairing_http_status_error_variants(self, caplog: pytest.LogCaptureFixture) -> None:
         """Register-specific 403s and 5xx failures should both be logged."""
-        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/register")
+        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register")
         forbidden = httpx.HTTPStatusError(
             "forbidden",
             request=request,
@@ -234,7 +233,7 @@ class TestPairingHelpers:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Very long 4xx backend bodies should be trimmed in logs."""
-        request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/poll")
+        request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/poll")
         long_body = "x" * 300
         error = httpx.HTTPStatusError(
             "bad",
@@ -286,6 +285,54 @@ class TestPairingHelpers:
         assert registration.key_id == RELAY_KEY_ID
         assert registration.public_key_jwk["kid"] == RELAY_KEY_ID
 
+    async def test_pairing_client_uses_canonical_v1_backend_paths(self) -> None:
+        """Backend pairing calls should use the canonical versioned plugin routes."""
+        http_client = AsyncMock()
+        pairing_client = pairing_mod.PairingClient(http_client, EXAMPLE_BACKEND_URL)
+        public_key_jwk = pairing_mod._public_jwk(pairing_mod._generate_private_key(), VALID_RELAY_KEY_ID)
+
+        await pairing_client.register(
+            code=PAIRING_CODE_1,
+            fingerprint=FINGERPRINT_1,
+            public_key_jwk=public_key_jwk,
+            key_id=VALID_RELAY_KEY_ID,
+        )
+        await pairing_client.poll(code=PAIRING_CODE_1, fingerprint=FINGERPRINT_1)
+
+        http_client.post.assert_awaited_once()
+        http_client.get.assert_awaited_once()
+        assert http_client.post.await_args.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register"
+        assert http_client.get.await_args.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/poll"
+
+    async def test_complete_pairing_rejects_plaintext_relay_url_before_persisting(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Pairing payloads must not persist ws:// relay credentials outside development."""
+        state = pairing_mod.PairingState()
+        on_paired = AsyncMock()
+        save_credentials = Mock()
+        monkeypatch.setattr(pairing_mod, "save_relay_credentials", save_credentials)
+
+        with pytest.raises(ValueError, match="unencrypted ws://"):
+            await pairing_mod._complete_pairing_state(
+                state,
+                pairing_mod.PairingClaimedBootstrap.model_validate(
+                    {
+                        "camera_id": RELAY_CAMERA_ID,
+                        "ws_url": EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
+                        "auth_scheme": RELAY_AUTH_SCHEME,
+                        "key_id": RELAY_KEY_ID,
+                    }
+                ),
+                pairing_mod._generate_private_key(),
+                on_paired,
+                RuntimeState(),
+            )
+
+        save_credentials.assert_not_called()
+        on_paired.assert_not_awaited()
+
 
 class TestRunPairing:
     """Tests for the top-level pairing loop."""
@@ -323,9 +370,10 @@ class TestRunPairing:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Loopback pairing backends should target the Docker host when containerized."""
+        """Development loopback pairing backends should target the Docker host when containerized."""
+        monkeypatch.setattr(settings, "app_env", APP_ENV_DEVELOPMENT)
         monkeypatch.setattr(settings, "pairing_backend_url", "http://localhost:8011")
-        monkeypatch.setattr(pairing_mod, "_is_running_in_container", lambda: True)
+        monkeypatch.setattr(pairing_mod, "is_running_in_container", lambda: True)
         seen: list[str] = []
         service = pairing_mod.PairingService()
 
@@ -343,6 +391,18 @@ class TestRunPairing:
 
         assert seen == ["http://host.docker.internal:8011"]
 
+    async def test_rejects_production_loopback_backend_in_container(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Production should fail closed instead of silently rewriting loopback backends."""
+        monkeypatch.setattr(settings, "app_env", APP_ENV_PRODUCTION)
+        monkeypatch.setattr(settings, "pairing_backend_url", "http://localhost:8011")
+        monkeypatch.setattr(pairing_mod, "is_running_in_container", lambda: True)
+
+        with pytest.raises(RuntimeError, match=PAIRING_LOOPBACK_ERROR):
+            await pairing_mod.PairingService().run_forever(AsyncMock())
+
     async def test_retries_after_http_status_error(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -357,7 +417,7 @@ class TestRunPairing:
 
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock(side_effect=_record_sleep))
         service = pairing_mod.PairingService()
-        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/register")
+        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register")
         error = httpx.HTTPStatusError("boom", request=request, response=httpx.Response(500, request=request))
         attempts = {"count": 0}
 
@@ -462,7 +522,7 @@ class TestPairingCycle:
         try:
             with caplog.at_level(logging.INFO):
                 service.log_mode_started()
-            await service._pairing_cycle(cast("Any", client), EXAMPLE_BACKEND_URL, on_paired)
+            await service._pairing_cycle(client, EXAMPLE_BACKEND_URL, on_paired)
 
             on_paired.assert_awaited_once()
             assert app_runtime.runtime_state.relay_backend_url == EXAMPLE_RELAY_BACKEND_URL
@@ -483,7 +543,7 @@ class TestPairingCycle:
             app_runtime.runtime_state.clear_relay_credentials()
             app_runtime.runtime_state.local_relay_api_key = ""
             app_runtime.runtime_state.replace_authorized_api_keys(original_snapshot)
-            reload_authorized_hashes(app_runtime.runtime_state)
+            reload_authorized_keys(app_runtime.runtime_state)
 
     async def test_expired_code_rotates_without_error_stacktrace(
         self,
@@ -554,8 +614,8 @@ class TestPairingCycle:
                 ),
             ],
         )
-        timeout_request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/register")
-        cast("Any", client).post = AsyncMock(
+        timeout_request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register")
+        client.post = AsyncMock(
             side_effect=[httpx.ReadTimeout("register timed out", request=timeout_request), FakeResponse(201)]
         )
         monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: client)
@@ -580,22 +640,8 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_mod, "save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         service = pairing_mod.PairingService()
-        client: Any = FakeClient(
-            post_responses=[FakeResponse(201)],
-            get_responses=[
-                FakeResponse(200, {"status": pairing_mod.STATUS_WAITING}),
-                FakeResponse(
-                    200,
-                    {
-                        "status": pairing_mod.STATUS_PAIRED,
-                        "camera_id": RELAY_CAMERA_ID,
-                        "ws_url": EXAMPLE_RELAY_BACKEND_URL,
-                        "auth_scheme": RELAY_AUTH_SCHEME,
-                        "key_id": RELAY_KEY_ID,
-                    },
-                ),
-            ],
-        )
+        # client.get is overwritten below with an AsyncMock, so get_responses is unused here.
+        client: Any = FakeClient(post_responses=[FakeResponse(201)], get_responses=[])
         waiting_response = FakeResponse(200, {"status": pairing_mod.STATUS_WAITING})
         paired_response = FakeResponse(
             200,
@@ -607,8 +653,8 @@ class TestPairingCycle:
                 "key_id": RELAY_KEY_ID,
             },
         )
-        timeout_request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/poll")
-        cast("Any", client).get = AsyncMock(
+        timeout_request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/poll")
+        client.get = AsyncMock(
             side_effect=[
                 httpx.ReadTimeout("poll timed out", request=timeout_request),
                 waiting_response,
@@ -629,12 +675,7 @@ class TestPairingCycle:
     def test_pairing_mode_prefers_detected_lan_setup_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Loopback base URLs should prefer a best-effort LAN setup URL in logs."""
         monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
-        monkeypatch.setattr(pairing_mod.socket, "gethostname", lambda: "rpi-cam")
-        monkeypatch.setattr(
-            pairing_mod.socket,
-            "gethostbyname_ex",
-            lambda _host: ("rpi-cam", [], ["127.0.0.1", "192.168.1.42"]),
-        )
+        monkeypatch.setattr(pairing_mod, "find_lan_ips", lambda: ["192.168.1.42"])
 
         assert pairing_mod._pairing_setup_location() == LAN_SETUP_URL
 
@@ -644,8 +685,7 @@ class TestPairingCycle:
     ) -> None:
         """If no non-loopback LAN address is available, logs should keep the safe /setup fallback."""
         monkeypatch.setattr(settings, "base_url", "http://127.0.0.1:8018/")
-        monkeypatch.setattr(pairing_mod.socket, "gethostname", lambda: "rpi-cam")
-        monkeypatch.setattr(pairing_mod.socket, "gethostbyname_ex", lambda _host: ("rpi-cam", [], ["127.0.0.1"]))
+        monkeypatch.setattr(pairing_mod, "find_lan_ips", list)
 
         assert pairing_mod._pairing_setup_location() == RELATIVE_SETUP_PATH
 
@@ -654,8 +694,8 @@ class TestPairingCycle:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Real backend hosts should be left untouched."""
-        monkeypatch.setattr(pairing_mod, "_is_running_in_container", lambda: True)
-        assert pairing_mod._normalize_pairing_backend_base_url(EXAMPLE_BACKEND_URL) == EXAMPLE_BACKEND_URL
+        monkeypatch.setattr(pairing_mod, "is_running_in_container", lambda: True)
+        assert pairing_mod.normalize_pairing_backend_base_url(EXAMPLE_BACKEND_URL) == EXAMPLE_BACKEND_URL
 
     async def test_saves_and_loads_credentials(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that credentials are saved to and loaded from disk correctly."""
@@ -677,7 +717,8 @@ class TestPairingCycle:
             "relay_key_id": RELAY_KEY_ID,
             "relay_private_key_pem": private_key,
         }
-        assert pairing_mod.load_relay_credentials() == {
+        assert creds_file.stat().st_mode & 0o777 == 0o600
+        assert pairing_credentials.load_relay_credentials() == {
             "relay_backend_url": EXAMPLE_RELAY_BACKEND_URL,
             "relay_camera_id": RELAY_CAMERA_ID,
             "relay_auth_scheme": RELAY_AUTH_SCHEME,
@@ -692,7 +733,7 @@ class TestPairingCycle:
     ) -> None:
         """Test that missing credentials files return None."""
         monkeypatch.setattr(pairing_credentials, "_CREDENTIALS_FILE", tmp_path / "missing.json")
-        assert pairing_mod.load_relay_credentials() is None
+        assert pairing_credentials.load_relay_credentials() is None
 
     async def test_register_pairing_code_raises_after_three_timeouts(
         self,
@@ -700,7 +741,7 @@ class TestPairingCycle:
     ) -> None:
         """Three register timeouts in one cycle should surface a runtime error."""
         state = pairing_mod.PairingState()
-        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/plugins/rpi-cam/pairing/register")
+        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register")
         client = cast("Any", FakeClient([], []))
         client.post = AsyncMock(
             side_effect=[
@@ -758,6 +799,7 @@ class TestPairingCycle:
             ),
             private_key,
             on_paired,
+            app_runtime.runtime_state,
         )
 
         assert state.status == pairing_mod.STATUS_PAIRED
@@ -815,7 +857,7 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_credentials, "_CREDENTIALS_FILE", creds_file)
 
         with caplog.at_level(logging.WARNING):
-            assert pairing_mod.load_relay_credentials() is None
+            assert pairing_credentials.load_relay_credentials() is None
 
         assert PAIRING_READ_WARNING in caplog.text
 
@@ -836,6 +878,6 @@ class TestPairingCycle:
         monkeypatch.setattr(Path, "unlink", _boom)
 
         with caplog.at_level(logging.WARNING):
-            pairing_mod.delete_relay_credentials()
+            pairing_credentials.delete_relay_credentials()
 
         assert PAIRING_DELETE_WARNING in caplog.text

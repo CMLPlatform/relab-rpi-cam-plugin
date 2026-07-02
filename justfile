@@ -32,6 +32,12 @@ format:
     uv run ruff check --fix .
     uv run ruff format .
 
+openapi:
+    uv run python -m scripts.export_openapi
+
+openapi-check:
+    uv run python -m scripts.export_openapi --check
+
 pre-commit:
     uv run pre-commit run --all-files
 

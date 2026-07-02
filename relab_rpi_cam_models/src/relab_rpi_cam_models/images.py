@@ -17,15 +17,14 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_pascal, to_snake
 
+_LIBCAMERA_ALIAS_CONFIG = ConfigDict(
+    populate_by_name=True, alias_generator=AliasGenerator(validation_alias=to_pascal, serialization_alias=to_snake)
+)
+
 
 def serialize_datetime_with_z(dt: datetime) -> str:
-    """Serialize datetime to ISO 8601 format with 'Z' timezone."""
-    return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def serialize_optional_datetime_with_z(dt: datetime | None) -> str | None:
-    """Serialize an optional datetime, preserving None."""
-    return serialize_datetime_with_z(dt) if dt is not None else None
+    """Serialize datetime to ISO 8601 UTC format with 'Z' timezone."""
+    return dt.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 class ImageProperties(BaseModel):
@@ -33,7 +32,7 @@ class ImageProperties(BaseModel):
 
     width: PositiveInt = Field(description="Image width in pixels")
     height: PositiveInt = Field(description="Image height in pixels")
-    capture_time: Annotated[datetime, PlainSerializer(serialize_datetime_with_z)] = Field(
+    capture_time: Annotated[AwareDatetime, PlainSerializer(serialize_datetime_with_z)] = Field(
         default_factory=lambda: datetime.now(UTC), description="Capture time in UTC"
     )
 
@@ -52,15 +51,13 @@ class CameraProperties(BaseModel):
     sensor_sensitivity: float | None = Field(default=None)
 
     # Allow the fields to be populated by PascalCase dicts and serialized as snake_case
-    model_config = ConfigDict(
-        populate_by_name=True, alias_generator=AliasGenerator(validation_alias=to_pascal, serialization_alias=to_snake)
-    )
+    model_config = _LIBCAMERA_ALIAS_CONFIG
 
 
 class CaptureMetadata(BaseModel):
     """Dynamic capture metadata from libcamera.
 
-    For more info, see  https://libcamera.org/api-html/namespacelibcamera_1_1controls.html.
+    For more info, see https://libcamera.org/api-html/namespacelibcamera_1_1controls.html.
     """
 
     exposure_time: PositiveInt | None = Field(default=None, description="Exposure time in microseconds")
@@ -71,10 +68,7 @@ class CaptureMetadata(BaseModel):
     lux: PositiveFloat | None = Field(default=None, description="Illuminance in lux")
     sensor_temperature: float | None = Field(default=None, description="Sensor temperature in °C")
 
-    # Allow the fields to be populated by PascalCase dicts and serialized as snake_case
-    model_config = ConfigDict(
-        populate_by_name=True, alias_generator=AliasGenerator(validation_alias=to_pascal, serialization_alias=to_snake)
-    )
+    model_config = _LIBCAMERA_ALIAS_CONFIG
 
 
 class BaseMetadata(BaseModel):
@@ -119,7 +113,9 @@ class ImageCaptureResponse(BaseModel):
         default=None,
         description="Backend-hosted URL for the stored image. None when the capture is queued.",
     )
-    expires_at: Annotated[AwareDatetime | None, PlainSerializer(serialize_optional_datetime_with_z)] = Field(
+    expires_at: Annotated[
+        AwareDatetime | None, PlainSerializer(lambda dt: serialize_datetime_with_z(dt) if dt is not None else None)
+    ] = Field(
         default=None,
         description="Expiration time for queue entries; None for successfully uploaded images.",
     )

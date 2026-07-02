@@ -318,6 +318,10 @@ html[data-theme="dark"] body.setup-page {
     min-width: 0;
 }
 
+.site-header__logout {
+    margin: 0;
+}
+
 .theme-toggle {
     display: inline-flex;
     align-items: center;

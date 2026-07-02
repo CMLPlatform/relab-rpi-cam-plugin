@@ -10,12 +10,18 @@ import pytest
 from fastapi import HTTPException
 
 from app.camera.routers import hls as hls_mod
-from app.camera.routers.hls import _is_local_client, proxy_hls, start_preview, stop_preview
+from app.camera.routers.hls import proxy_hls, start_preview, stop_preview
 from app.relay.state import RelayRuntimeState
+from app.utils.network import is_local_client
 from tests.constants import HLS_M3U8_CONTENT_TYPE, HLS_MP4_CONTENT_TYPE, HLS_PREVIEW_ENCODER_FRAGMENT
+
+MEDIAMTX_UNAVAILABLE_DETAIL = {"message": "MediaMTX HLS is temporarily unavailable"}
+PREVIEW_START_FAILED_DETAIL = {"message": "Preview encoder failed to start"}
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
+
+    from httpx import AsyncClient
 
 
 class _Response:
@@ -38,14 +44,12 @@ def _patch_httpx(response: _Response | Exception) -> AbstractContextManager[Magi
         client.get = AsyncMock(side_effect=response)
     else:
         client.get = AsyncMock(return_value=response)
-    client.__aenter__ = AsyncMock(return_value=client)
-    client.__aexit__ = AsyncMock(return_value=None)
-    return patch.object(hls_mod.httpx, "AsyncClient", return_value=client)
+    return patch.object(hls_mod, "_get_hls_client", return_value=client)
 
 
-def _camera_manager(camera: MagicMock | None = None) -> MagicMock:
+def _camera_manager(*, is_open: bool = True) -> MagicMock:
     manager = MagicMock()
-    manager.backend.camera = camera or MagicMock(name="camera")
+    manager.backend.is_open = is_open
     return manager
 
 
@@ -114,7 +118,7 @@ class TestProxyHLS:
     async def test_preview_request_wakes_sleeping_encoder(self) -> None:
         """A local preview request starts the encoder before proxying to MediaMTX."""
         response = _Response(200, content=b"#EXTM3U\n", headers={"content-type": HLS_M3U8_CONTENT_TYPE})
-        camera = MagicMock(name="camera")
+        camera_manager = _camera_manager()
         pipeline = _pipeline(running=False)
 
         with _patch_httpx(response):
@@ -122,12 +126,12 @@ class TestProxyHLS:
             await proxy_hls(
                 request=_request(),
                 hls_path="cam-preview/index.m3u8",
-                camera_manager=_camera_manager(camera),
+                camera_manager=camera_manager,
                 pipeline=pipeline,
                 relay_state=relay_state,
             )
 
-        pipeline.start.assert_awaited_once_with(camera)
+        pipeline.start.assert_awaited_once_with(camera_manager.backend)
 
     async def test_non_preview_hls_request_does_not_wake_encoder(self) -> None:
         """Only the managed preview path controls the preview encoder."""
@@ -178,7 +182,6 @@ class TestProxyHLS:
 
     async def test_404_with_running_pipeline_does_not_recycle(self) -> None:
         """The proxy is pure — 404 is surfaced verbatim, recycle is the user's job via /preview/stop."""
-        camera = MagicMock(name="camera")
         pipeline = _pipeline(running=True)
         relay_state = RelayRuntimeState()
 
@@ -186,7 +189,7 @@ class TestProxyHLS:
             await proxy_hls(
                 request=_request(),
                 hls_path="cam-preview/index.m3u8",
-                camera_manager=_camera_manager(camera),
+                camera_manager=_camera_manager(),
                 pipeline=pipeline,
                 relay_state=relay_state,
             )
@@ -219,6 +222,7 @@ class TestProxyHLS:
                 relay_state=relay_state,
             )
         assert excinfo.value.status_code == 503
+        assert excinfo.value.detail == MEDIAMTX_UNAVAILABLE_DETAIL
 
 
 def _thumbnail_worker() -> MagicMock:
@@ -238,15 +242,15 @@ class TestPreviewStart:
         rather than waiting for the first request to trigger startup and then waiting again for the first video segment
         to be generated before anything shows up in the preview.
         """
-        camera = MagicMock(name="camera")
+        camera_manager = _camera_manager()
         pipeline = _pipeline(running=False)
         resp = await start_preview(
             request=_request(),
-            camera_manager=_camera_manager(camera),
+            camera_manager=camera_manager,
             pipeline=pipeline,
         )
         assert resp.status_code == 204
-        pipeline.start.assert_awaited_once_with(camera)
+        pipeline.start.assert_awaited_once_with(camera_manager.backend)
 
     async def test_start_rejects_remote_client(self) -> None:
         """Test that starting the preview rejects remote clients."""
@@ -258,17 +262,31 @@ class TestPreviewStart:
             )
         assert excinfo.value.status_code == 403
 
-    async def test_start_returns_503_when_camera_missing(self) -> None:
-        """Test that starting the preview returns 503 if the camera is missing from the manager backend."""
-        manager = MagicMock()
-        manager.backend.camera = None
+    async def test_start_returns_503_when_camera_not_open(self) -> None:
+        """Test that starting the preview returns 503 if the camera backend is not open."""
         with pytest.raises(HTTPException) as excinfo:
             await start_preview(
                 request=_request(),
-                camera_manager=manager,
+                camera_manager=_camera_manager(is_open=False),
                 pipeline=_pipeline(running=False),
             )
         assert excinfo.value.status_code == 503
+
+    async def test_start_runtime_error_returns_generic_503_detail(self) -> None:
+        """Preview startup failures should not expose raw encoder exception text."""
+        camera_manager = _camera_manager()
+        pipeline = _pipeline(running=False)
+        pipeline.start = AsyncMock(side_effect=RuntimeError("ffmpeg path /secret/bin failed"))
+
+        with pytest.raises(HTTPException) as excinfo:
+            await start_preview(
+                request=_request(),
+                camera_manager=camera_manager,
+                pipeline=pipeline,
+            )
+
+        assert excinfo.value.status_code == 503
+        assert excinfo.value.detail == PREVIEW_START_FAILED_DETAIL
 
 
 class TestPreviewStop:
@@ -276,17 +294,17 @@ class TestPreviewStop:
 
     async def test_stop_halts_pipeline_and_refreshes_thumbnail(self) -> None:
         """Stopping the preview should stop the encoder and trigger a thumbnail refresh even if the pipeline is idle."""
-        camera = MagicMock(name="camera")
+        camera_manager = _camera_manager()
         pipeline = _pipeline(running=True)
         worker = _thumbnail_worker()
         resp = await stop_preview(
             request=_request(),
-            camera_manager=_camera_manager(camera),
+            camera_manager=camera_manager,
             pipeline=pipeline,
             thumbnail_worker=worker,
         )
         assert resp.status_code == 204
-        pipeline.stop.assert_awaited_once_with(camera)
+        pipeline.stop.assert_awaited_once_with(camera_manager.backend)
         worker.refresh_once.assert_awaited_once()
 
     async def test_stop_refreshes_thumbnail_even_when_pipeline_idle(self) -> None:
@@ -321,9 +339,24 @@ class TestLocalClientDetection:
     @pytest.mark.parametrize("host", ["127.0.0.1", "::1", "192.168.2.10", "10.0.0.5", "172.20.0.2", "169.254.1.2"])
     def test_local_addresses_are_allowed(self, host: str) -> None:
         """Loopback, private, and link-local addresses may use local preview."""
-        assert _is_local_client(host) is True
+        assert is_local_client(host) is True
 
     @pytest.mark.parametrize("host", ["8.8.8.8", "2001:4860:4860::8888", None])
     def test_public_or_missing_addresses_are_rejected(self, host: str | None) -> None:
         """Public and missing client addresses may not use local preview."""
-        assert _is_local_client(host) is False
+        assert is_local_client(host) is False
+
+
+class TestPreviewControlAuth:
+    """Route-level auth checks for direct preview control endpoints."""
+
+    @pytest.mark.parametrize("path", ["/preview/start", "/preview/stop"])
+    async def test_preview_control_routes_reject_unauthenticated_clients(
+        self,
+        unauthed_client: AsyncClient,
+        path: str,
+    ) -> None:
+        """Direct preview control should require normal API authentication."""
+        resp = await unauthed_client.post(path)
+
+        assert resp.status_code == 401

@@ -50,8 +50,8 @@ The supported public API is intentionally small:
 - `StreamView`
 - `StreamMetadata`
 - `ImageCaptureResponse`
-- private backend\<->plugin device seam models for pairing, relay, local access,
-  and upload acknowledgements
+- private backend\<->plugin device seam models and relay allowlist policy for
+  pairing, relay, local access, and upload acknowledgements
 - image metadata DTOs used inside those responses
 
 This package does not own:
@@ -64,12 +64,6 @@ This package does not own:
 - plugin runtime wiring such as `AppRuntime`, `RuntimeState`, `PairingService`, or `RelayService`
 
 Treat anything outside the documented DTOs as private and subject to change.
-
-In practical terms:
-
-- backend OpenAPI remains the public/frontend contract
-- `relab_rpi_cam_models` owns only the private backend\<->plugin device seam
-- frontend code should consume backend-generated types, not these private DTOs
 
 ## License
 

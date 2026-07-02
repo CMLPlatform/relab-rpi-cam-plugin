@@ -11,9 +11,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
 from contextlib import suppress
 from pathlib import Path
+
+from app.utils.files import write_json_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -41,29 +42,25 @@ def save_relay_credentials(
 ) -> None:
     """Persist relay credentials atomically to the JSON credentials file.
 
-    Writes via a temp file + ``Path.replace`` so a power loss mid-write
-    cannot leave a truncated credentials file behind.
+    Merges into any existing content (preserving ``local_api_key`` and other
+    fields) then writes via ``write_json_atomic``.
     """
-    data = {
-        "relay_backend_url": relay_backend_url,
-        "relay_camera_id": camera_id,
-        "relay_auth_scheme": relay_auth_scheme,
-        "relay_key_id": key_id,
-        "relay_private_key_pem": private_key_pem,
-    }
-    _CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w", dir=_CREDENTIALS_FILE.parent, delete=False, suffix=".tmp", encoding="utf-8"
-    ) as tmp:
-        tmp_path = tmp.name
-        tmp.write(json.dumps(data, indent=2))
-    try:
-        Path(tmp_path).replace(_CREDENTIALS_FILE)
-        _CREDENTIALS_FILE.chmod(0o600)
-    except OSError:
-        with suppress(OSError):
-            Path(tmp_path).unlink()
-        raise
+    existing: dict[str, object] = {}
+    if _CREDENTIALS_FILE.exists():
+        with suppress(json.JSONDecodeError, OSError):
+            loaded = json.loads(_CREDENTIALS_FILE.read_text())
+            if isinstance(loaded, dict):
+                existing = loaded
+    existing.update(
+        {
+            "relay_backend_url": relay_backend_url,
+            "relay_camera_id": camera_id,
+            "relay_auth_scheme": relay_auth_scheme,
+            "relay_key_id": key_id,
+            "relay_private_key_pem": private_key_pem,
+        }
+    )
+    write_json_atomic(_CREDENTIALS_FILE, existing)
     logger.info("Relay credentials saved to %s", _CREDENTIALS_FILE)
 
 

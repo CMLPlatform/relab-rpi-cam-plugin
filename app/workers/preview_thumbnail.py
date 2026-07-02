@@ -29,10 +29,7 @@ _POLL_INTERVAL_S = 30.0
 _HLS_ACTIVITY_WINDOW_S = 45.0
 _ACTIVITY_REFRESH_COOLDOWN_S = 60.0
 _LOCK_TIMEOUT_S = 0.25
-_STARTUP_REASON = "startup"
-_INTERVAL_REASON = "interval"
-_ACTIVITY_REASON = "activity"
-_CAPTURE_REASON = "capture"
+_REASON_ACTIVITY = "activity"
 
 
 class PreviewThumbnailWorker:
@@ -73,7 +70,7 @@ class PreviewThumbnailWorker:
     async def run_forever(self) -> None:
         """Refresh the cached preview thumbnail on startup, interval, and preview activity."""
         await self._sleep(_STARTUP_DELAY_S)
-        await self.refresh_once(reason=_STARTUP_REASON)
+        await self.refresh_once(reason="startup")
         while True:
             await self._maybe_refresh()
             await self._sleep(self._poll_interval_s)
@@ -108,13 +105,13 @@ class PreviewThumbnailWorker:
         lock or waiting for the next interval poll.
         """
         image_bytes = await asyncio.to_thread(encode_preview_jpeg, image)
-        return await self._persist_and_maybe_upload(image_bytes, reason=_CAPTURE_REASON, upload=True)
+        return await self._persist_and_maybe_upload(image_bytes, reason="capture", upload=True)
 
     async def _persist_and_maybe_upload(self, image_bytes: bytes, *, reason: str, upload: bool) -> bool:
         _write_preview_thumbnail_atomic(self._cache_path, image_bytes)
         now = self._monotonic()
         self._last_refresh_monotonic = now
-        if reason == _ACTIVITY_REASON:
+        if reason == _REASON_ACTIVITY:
             self._last_activity_refresh_monotonic = now
 
         if not upload or not self._relay_enabled_getter():
@@ -137,10 +134,10 @@ class PreviewThumbnailWorker:
 
     async def _maybe_refresh(self) -> None:
         if self._should_refresh_for_activity():
-            await self.refresh_once(reason=_ACTIVITY_REASON)
+            await self.refresh_once(reason=_REASON_ACTIVITY)
             return
         if self._should_refresh_for_interval():
-            await self.refresh_once(reason=_INTERVAL_REASON)
+            await self.refresh_once(reason="interval")
 
     def _should_refresh_for_interval(self) -> bool:
         if self._last_refresh_monotonic is None:

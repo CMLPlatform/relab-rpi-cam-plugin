@@ -10,10 +10,13 @@ from urllib.parse import urlparse
 from relab_rpi_cam_models.camera import CameraMode
 
 from app.__version__ import version
+from app.backend.client import aclose_client as aclose_backend_client
 from app.camera.dependencies import check_stream_duration, check_stream_health
 from app.camera.exceptions import CameraInitializationError
+from app.camera.routers.hls import aclose_hls_client
 from app.core.bootstrap import bootstrap_runtime_state
 from app.core.runtime import AppRuntime, ensure_app_runtime
+from app.core.runtime_state import ConnectionMode, connection_mode
 from app.core.settings import settings
 from app.observability.logging import configure_library_loggers
 from app.utils.files import cleanup_images, setup_directory
@@ -36,16 +39,17 @@ def _log_startup_banner(runtime: AppRuntime) -> None:
     base_url = urlparse(str(settings.base_url))
     setup_port = base_url.port or 8018
     setup_url = f"http://<this-ip>:{setup_port}/setup"
+    mode = connection_mode(runtime.runtime_state, settings)
 
-    if runtime.runtime_state.relay_enabled:
+    if mode is ConnectionMode.PAIRED:
         mode_line = f"PAIRED      camera_id={runtime.runtime_state.relay_camera_id}"
-    elif settings.pairing_backend_url:
+    elif mode is ConnectionMode.PAIRING:
         mode_line = "PAIRING     waiting for code to be claimed in the ReLab app"
     else:
         mode_line = "IDLE        set PAIRING_BACKEND_URL in .env to enable pairing"
 
     local_key_hint = "run:  just show-key" if runtime.runtime_state.local_api_key else "not yet generated"
-    pairing_hint = "pairing code will appear below in a boxed log banner" if settings.pairing_backend_url else None
+    pairing_hint = "pairing code will appear below in a boxed log banner" if mode is ConnectionMode.PAIRING else None
     pairing_hint_line = f"  Note     : {pairing_hint}\n" if pairing_hint else ""
 
     sep = "═" * 54
@@ -77,10 +81,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await setup_directory(settings.image_path)
     logger.info("Temporary file directories set up")
 
-    if runtime.runtime_state.relay_enabled:
+    mode = connection_mode(runtime.runtime_state, settings)
+    if mode is ConnectionMode.PAIRED:
         runtime.create_task(runtime.relay_service.run_forever(), name="ws_relay")
         logger.info("WebSocket relay started")
-    elif settings.pairing_backend_url:
+    elif mode is ConnectionMode.PAIRING:
 
         async def _on_paired() -> None:
             runtime.create_task(runtime.relay_service.run_forever(), name="ws_relay")
@@ -143,6 +148,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await runtime.wait_for_managed_tasks()
 
     await runtime.camera_manager.cleanup(force=True)
+    await aclose_backend_client()
+    await aclose_hls_client()
     if runtime.observability_handle is not None:
         runtime.observability_handle.shutdown(app)
     logger.info("Camera resources cleaned up")

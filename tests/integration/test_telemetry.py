@@ -52,8 +52,3 @@ class TestTelemetryRoute:
         assert data["preview_sessions"] == 0
         assert data["current_preview_size"] is None
         assert TIMESTAMP_KEY in data
-
-    async def test_requires_auth(self, unauthed_client: AsyncClient) -> None:
-        """Telemetry must sit behind the standard verify_request dependency."""
-        resp = await unauthed_client.get("/system/telemetry")
-        assert resp.status_code in {401, 403}

@@ -2,13 +2,20 @@
 
 from .camera import CameraMode, CameraStatusView
 from .device_seam import (
-    SAFE_RELAY_TRACE_HEADERS,
+    PAIRING_CODE_ALPHABET,
+    PAIRING_CODE_LENGTH,
+    PAIRING_CODE_PATTERN,
+    RELAY_ALLOWED_EXACT_COMMANDS,
+    RELAY_ALLOWED_PREFIX_COMMANDS,
+    RELAY_COMMAND_FORBIDDEN_DETAIL,
+    RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
     DeviceImageUploadAck,
     DevicePreviewThumbnailAck,
     DevicePublicKeyJWK,
     LocalAccessInfo,
     PairingClaimedBootstrap,
     PairingClaimedRecord,
+    PairingCode,
     PairingPendingRecord,
     PairingPollResponse,
     PairingRegisterRequest,
@@ -18,6 +25,10 @@ from .device_seam import (
     RelayCommandEnvelope,
     RelayMessageType,
     RelayResponseEnvelope,
+    build_relay_command,
+    extract_safe_relay_headers,
+    relay_command_is_allowed,
+    relay_content_type_is_binary,
 )
 from .images import (
     BaseMetadata,
@@ -32,7 +43,13 @@ from .stream import StreamMetadata, StreamMode, StreamView
 from .telemetry import TelemetrySnapshot, ThermalState
 
 __all__ = [
-    "SAFE_RELAY_TRACE_HEADERS",
+    "PAIRING_CODE_ALPHABET",
+    "PAIRING_CODE_LENGTH",
+    "PAIRING_CODE_PATTERN",
+    "RELAY_ALLOWED_EXACT_COMMANDS",
+    "RELAY_ALLOWED_PREFIX_COMMANDS",
+    "RELAY_COMMAND_FORBIDDEN_DETAIL",
+    "RELAY_WS_TEXT_FRAME_LIMIT_BYTES",
     "BaseMetadata",
     "CameraMode",
     "CameraProperties",
@@ -48,6 +65,7 @@ __all__ = [
     "LocalAccessInfo",
     "PairingClaimedBootstrap",
     "PairingClaimedRecord",
+    "PairingCode",
     "PairingPendingRecord",
     "PairingPollResponse",
     "PairingRegisterRequest",
@@ -62,4 +80,8 @@ __all__ = [
     "StreamView",
     "TelemetrySnapshot",
     "ThermalState",
+    "build_relay_command",
+    "extract_safe_relay_headers",
+    "relay_command_is_allowed",
+    "relay_content_type_is_binary",
 ]

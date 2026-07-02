@@ -28,54 +28,45 @@ def _stream_mode(manager: CameraManager) -> object | None:
     return getattr(manager.stream, "mode", None)
 
 
-async def check_stream_duration(manager: CameraManager | None = None) -> None:
+async def check_stream_duration(manager: CameraManager) -> None:
     """Stop streams that exceed maximum duration."""
-    if manager is None:
-        msg = "check_stream_duration requires an explicit CameraManager"
-        raise RuntimeError(msg)
-    active_manager = manager
     if (
-        active_manager.stream.is_active
-        and active_manager.stream.started_at
-        and (datetime.now(UTC) - active_manager.stream.started_at).total_seconds() > settings.max_stream_duration_s
+        manager.stream.is_active
+        and manager.stream.started_at
+        and (datetime.now(UTC) - manager.stream.started_at).total_seconds() > settings.max_stream_duration_s
     ):
         try:
-            await active_manager.stop_streaming()
+            await manager.stop_streaming()
         except RuntimeError as e:
             logger.exception(
                 "Failed to stop stream when exceeding max duration",
                 exc_info=e,
-                extra=build_log_extra(stream_mode=_stream_mode(active_manager)),
+                extra=build_log_extra(stream_mode=_stream_mode(manager)),
             )
 
 
-async def check_stream_health(manager: CameraManager | None = None) -> None:
+async def check_stream_health(manager: CameraManager) -> None:
     """Monitor stream health: verify the stream is still active and recording.
 
     If the stream becomes unhealthy (e.g., ffmpeg crashed), stops the stream
     to allow recovery on next start request.
     """
-    if manager is None:
-        msg = "check_stream_health requires an explicit CameraManager"
-        raise RuntimeError(msg)
-    active_manager = manager
-    if not active_manager.stream.is_active:
+    if not manager.stream.is_active:
         return
 
     try:
-        # Try to get stream info — this will fail if camera is not recording properly
-        stream_info = await active_manager.get_stream_info()
+        stream_info = await manager.get_stream_info()
         if stream_info is None:
             logger.warning(
                 "Stream info became unavailable; stopping stream",
-                extra=build_log_extra(stream_mode=_stream_mode(active_manager)),
+                extra=build_log_extra(stream_mode=_stream_mode(manager)),
             )
-            await active_manager.stop_streaming()
+            await manager.stop_streaming()
     except (OSError, RuntimeError) as e:
         logger.warning(
             "Stream health check failed: %s. Stopping stream for recovery.",
             e,
-            extra=build_log_extra(stream_mode=_stream_mode(active_manager)),
+            extra=build_log_extra(stream_mode=_stream_mode(manager)),
         )
         with contextlib.suppress(RuntimeError):
-            await active_manager.stop_streaming()
+            await manager.stop_streaming()

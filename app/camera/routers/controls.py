@@ -19,7 +19,7 @@ async def get_camera_status(
     camera_manager: CameraManagerDependency,
 ) -> CameraStatusView:
     """Return the current camera mode and any active stream details."""
-    return await camera_manager.get_camera_status()
+    return await camera_manager.get_status()
 
 
 @router.get(

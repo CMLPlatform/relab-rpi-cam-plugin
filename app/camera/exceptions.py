@@ -1,6 +1,6 @@
 """Camera-feature exception classes."""
 
-from app.media.stream_state import ActiveStreamState
+from app.camera.streaming.stream_state import ActiveStreamState
 
 
 class ActiveStreamError(Exception):

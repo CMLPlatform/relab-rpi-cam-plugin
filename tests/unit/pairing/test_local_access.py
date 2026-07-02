@@ -6,19 +6,19 @@ import socket
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from app.pairing.routers.local_access import _get_candidate_urls
+from app.pairing.routers.local_access import get_candidate_urls
 
 if TYPE_CHECKING:
     import pytest
 
 
 class TestGetCandidateUrls:
-    """Tests for _get_candidate_urls."""
+    """Tests for get_candidate_urls."""
 
     def test_prefers_physical_interfaces_over_docker_bridges(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A Docker bridge should not outrank a real LAN interface."""
         monkeypatch.setattr(
-            "app.pairing.routers.local_access.psutil.net_if_addrs",
+            "app.utils.network.psutil.net_if_addrs",
             lambda: {
                 "docker0": [SimpleNamespace(family=socket.AF_INET, address="172.17.0.1")],
                 "eth0": [SimpleNamespace(family=socket.AF_INET, address="192.168.1.50")],
@@ -26,6 +26,6 @@ class TestGetCandidateUrls:
             },
         )
 
-        urls = _get_candidate_urls()
+        urls = get_candidate_urls()
 
         assert urls == ["http://192.168.1.50:8018"]

@@ -10,9 +10,10 @@ from fastapi import APIRouter
 from app.camera.routers import captures, controls, hls, stream
 
 public_router = APIRouter()
-public_router.include_router(hls.router)
+public_router.include_router(hls.public_router)
 
 router = APIRouter()
 router.include_router(controls.router)
 router.include_router(captures.router)
 router.include_router(stream.router)
+router.include_router(hls.router)

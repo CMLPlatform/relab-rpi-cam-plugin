@@ -14,13 +14,12 @@ import app.pairing.services.service as pairing_mod
 from app.core.runtime import AppRuntime
 from app.core.settings import settings
 from tests.constants import EXAMPLE_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL
-from tests.support.fakes import (
+from tests.fakes import (
     FakePairingService,
     FakePreviewSleeper,
     FakePreviewThumbnailWorker,
     FakeRelayService,
     FakeThermalGovernor,
-    FakeUploadQueueWorker,
     StubCameraManager,
 )
 
@@ -44,10 +43,23 @@ def runtime(monkeypatch: pytest.MonkeyPatch) -> AppRuntime:
     runtime.preview_sleeper = FakePreviewSleeper(runtime)
     runtime.preview_thumbnail_worker = FakePreviewThumbnailWorker()
     runtime.thermal_governor = FakeThermalGovernor(runtime)
-    runtime.upload_queue_worker = FakeUploadQueueWorker()
     runtime.relay_service = FakeRelayService(runtime)
     runtime.pairing_service = LoggingPairingService()
     runtime.observability_handle = None
+
+    upload_worker_run_calls = 0
+
+    async def _fake_upload_worker_coro() -> None:
+        nonlocal upload_worker_run_calls
+        upload_worker_run_calls += 1
+        await asyncio.Future()
+
+    def _fake_start_upload_queue_worker() -> asyncio.Task[None]:
+        return runtime.create_task(_fake_upload_worker_coro(), name="upload_queue_worker")
+
+    monkeypatch.setattr(runtime, "start_upload_queue_worker", _fake_start_upload_queue_worker)
+    monkeypatch.setattr(runtime, "_upload_worker_run_calls", lambda: upload_worker_run_calls, raising=False)
+
     monkeypatch.setattr(lifespan_mod, "ensure_app_runtime", lambda _app: runtime)
     return runtime
 
@@ -66,6 +78,7 @@ class TestLifespan:
         self,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
+        runtime: AppRuntime,
     ) -> None:
         """The startup banner should not advertise a container-looking mDNS hostname."""
         app = FastAPI()
@@ -84,6 +97,8 @@ class TestLifespan:
         assert STARTUP_BANNER_SETUP_URL in caplog.text
         assert STARTUP_BANNER_PAIRING_NOTE not in caplog.text
         assert LOCAL_DNS_SUFFIX not in caplog.text
+        assert cast("FakePairingService", runtime.pairing_service).run_calls == 0
+        assert cast("FakeRelayService", runtime.relay_service).run_calls == 0
 
     async def test_relay_enabled_starts_relay_and_cleans_up(
         self,
@@ -117,6 +132,8 @@ class TestLifespan:
         await _run_lifespan_once(app)
 
         assert setup_calls == [settings.image_path]
+        assert cast("FakeRelayService", runtime.relay_service).run_calls == 1
+        assert cast("FakePairingService", runtime.pairing_service).run_calls == 0
         assert {task.get_name() for task in runtime.background_tasks | runtime.recurring_tasks} == set()
         camera_manager = cast("StubCameraManager", runtime.camera_manager)
         assert camera_manager.cleanup_calls == [True]
@@ -125,7 +142,7 @@ class TestLifespan:
         assert cast("FakePreviewSleeper", runtime.preview_sleeper).configure_calls == 1
         assert cast("FakePreviewSleeper", runtime.preview_sleeper).run_calls == 1
         assert cast("FakePreviewThumbnailWorker", runtime.preview_thumbnail_worker).run_calls == 1
-        assert cast("FakeUploadQueueWorker", runtime.upload_queue_worker).run_calls == 1
+        assert getattr(runtime, "_upload_worker_run_calls")() == 1  # noqa: B009 # synthetic test-only attr, not on AppRuntime
 
     async def test_pairing_mode_starts_relay_after_pairing(
         self,
@@ -151,6 +168,8 @@ class TestLifespan:
         assert PAIRING_MODE_LOG in caplog.text
         assert STARTUP_BANNER_PAIRING_NOTE in caplog.text
         pairing_service = cast("FakePairingService", runtime.pairing_service)
+        assert pairing_service.run_calls == 1
+        assert cast("FakeRelayService", runtime.relay_service).run_calls == 1
         camera_manager = cast("StubCameraManager", runtime.camera_manager)
         assert pairing_service.log_calls == 1
         assert camera_manager.cleanup_calls == [True]

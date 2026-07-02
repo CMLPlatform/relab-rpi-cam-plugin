@@ -1,13 +1,13 @@
 # Prep stage: fetch the Raspberry Pi archive keyring once (shared by later stages).
-# Using ADD eliminates the need to install curl in either stage.
-# The .deb is installed here; only the extracted keyring file is copied forward.
+# The remote .deb is checksum-pinned; only the extracted keyring file is copied forward.
 # See raspberrypi/rpi-image-gen#171 for why we fetch the .deb directly.
-FROM debian:trixie-slim AS rpi-keyring
-ADD https://archive.raspberrypi.com/debian/pool/main/r/raspberrypi-archive-keyring/raspberrypi-archive-keyring_2025.1+rpt1_all.deb /tmp/keyring.deb
+FROM debian:trixie-slim@sha256:cedb1ef40439206b673ee8b33a46a03a0c9fa90bf3732f54704f99cb061d2c5a AS rpi-keyring
+ADD --checksum=sha256:2e727149d7acb8cc7f604e66d0049161039c8aa1eaf1175e54f9e69d963d60e4 \
+    https://archive.raspberrypi.com/debian/pool/main/r/raspberrypi-archive-keyring/raspberrypi-archive-keyring_2025.1+rpt1_all.deb /tmp/keyring.deb
 RUN dpkg -i /tmp/keyring.deb
 
 # Build stage: compile the virtual environment (no S3 dependencies by default).
-FROM ghcr.io/astral-sh/uv:0.11-python3.13-trixie-slim AS builder
+FROM ghcr.io/astral-sh/uv:0.11-python3.13-trixie-slim@sha256:e4c38c90b787fd96bb53ad8db7199f31343424f3d2e3291d2008b5bc379a138c AS builder
 
 WORKDIR /app
 
@@ -43,7 +43,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable --no-dev --group s3
 
 # Runtime stage: minimal paired-mode image (no S3 dependencies).
-FROM python:3.13-slim-trixie AS runtime
+FROM python:3.13-slim-trixie@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280 AS runtime
 
 WORKDIR /app
 
@@ -58,7 +58,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg python3-picamera2 && \
-    useradd --create-home --uid 1000 --groups video rpicam
+    useradd --create-home --uid 1000 --gid video rpicam
 
 ENV PYTHONPATH="/app:/usr/lib/python3/dist-packages" \
     PYTHONUNBUFFERED=1 \
@@ -66,7 +66,6 @@ ENV PYTHONPATH="/app:/usr/lib/python3/dist-packages" \
 
 COPY --link --chown=1000:44 --from=builder /app/.venv .venv
 COPY --link --chown=1000:44 --from=builder /app/app app
-COPY --link --chown=1000:44 scripts/docker_entrypoint.sh scripts/docker_entrypoint.sh
 
 RUN mkdir -p /app/data/images /app/logs /home/rpicam/.config/relab && \
     chown -R 1000:44 /app/data /app/logs /home/rpicam/.config
@@ -76,7 +75,9 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 EXPOSE 8018
 
-ENTRYPOINT ["scripts/docker_entrypoint.sh"]
+USER 1000:44
+
+CMD ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8018", "--forwarded-allow-ips", "127.0.0.1,::1"]
 
 # Standalone runtime: identical to the paired runtime but with S3 dependencies.
 # Only the venv differs; all other layers are inherited from the runtime stage.

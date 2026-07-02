@@ -1,7 +1,5 @@
 """Validate a models package tag against the package version."""
 
-from __future__ import annotations
-
 import argparse
 import sys
 import tomllib

@@ -36,4 +36,4 @@ jobs:
         if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${{ steps.cz.outputs.next_version }}" --title "${{ steps.cz.outputs.next_version }}" --generate-notes
+        run: gh release create "v${{ steps.cz.outputs.next_version }}" --title "v${{ steps.cz.outputs.next_version }}" --generate-notes

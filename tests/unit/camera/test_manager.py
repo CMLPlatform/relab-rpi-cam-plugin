@@ -1,12 +1,13 @@
 """Tests for camera management dependencies and orchestration."""
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI, Request
@@ -25,12 +26,14 @@ from app.camera.schemas import (
     FocusMode,
     YoutubeStreamConfig,
 )
+from app.camera.services import manager as manager_mod
 from app.camera.services.backend import CaptureResult, StreamingCameraBackend, StreamStartResult
 from app.camera.services.manager import CameraControlsNotSupportedError, CameraManager
+from app.camera.streaming.stream_state import ActiveStreamState
 from app.core.runtime import AppRuntime
 from app.core.settings import settings
-from app.image_sinks.base import StoredImage
-from app.media.stream_service import StreamService
+from app.delivery.base import StoredImage
+from app.utils.file_policy import CaptureFileValidationError
 from tests.constants import EXAMPLE_IMAGE_URL, YOUTUBE_WATCH_URL_PREFIX
 
 if TYPE_CHECKING:
@@ -51,6 +54,7 @@ class FakeBackend:
         self.stop_stream: Any = AsyncMock()
         self.open: Any = AsyncMock(side_effect=self._open)
         self.capture_image: Any = AsyncMock()
+        self.capture_preview_frame: Any = AsyncMock(return_value=Image.new("RGB", (640, 480)))
         self.start_stream: Any = AsyncMock()
         self.get_stream_metadata: Any = AsyncMock(return_value=({"Model": "mock-camera"}, {"FrameDuration": 33_333}))
         # Optional controllable-backend hooks. Declare them as attributes so
@@ -63,9 +67,15 @@ class FakeBackend:
         self.set_focus: Callable[[FocusControlRequest], Awaitable[CameraControlsView]] | None = None
 
     @property
-    def camera(self) -> None:
-        """Return None for fake backend (no hardware camera)."""
-        return None
+    def is_open(self) -> bool:
+        """Return True when the fake backend has been opened."""
+        return self.current_mode is not None
+
+    async def start_lores_encoder(self, encoder: object, output: object) -> None:
+        """No-op."""
+
+    async def stop_lores_encoder(self, encoder: object) -> None:
+        """No-op."""
 
     async def _open(self, mode: CameraMode) -> None:
         self.current_mode = mode
@@ -126,12 +136,44 @@ class TestCheckStreamDuration:
 
         mock_camera_manager.stop_streaming_mock.assert_awaited_once()
 
+    async def test_ignores_recent_stream(
+        self,
+        mock_camera_manager: ProbeCameraManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Should not stop the stream if it has been active for less than the configured maximum duration."""
+        monkeypatch.setattr(settings, "max_stream_duration_s", 10)
+        mock_camera_manager.stream.is_active = True
+        mock_camera_manager.stream.started_at = datetime.now(UTC)
+
+        await camera_deps.check_stream_duration(mock_camera_manager)
+
+        mock_camera_manager.stop_streaming_mock.assert_not_awaited()
+
+    async def test_logs_runtime_error(
+        self,
+        mock_camera_manager: ProbeCameraManager,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Should log a RuntimeError if stopping the stream fails, but not raise it."""
+        monkeypatch.setattr(settings, "max_stream_duration_s", 10)
+        mock_camera_manager.stream.is_active = True
+        mock_camera_manager.stream.started_at = datetime.now(UTC) - timedelta(seconds=20)
+        mock_camera_manager.stop_streaming_mock.side_effect = RuntimeError("boom")
+
+        with caplog.at_level(logging.ERROR):
+            await camera_deps.check_stream_duration(mock_camera_manager)
+
+        mock_camera_manager.stop_streaming_mock.assert_awaited_once()
+        assert "Failed to stop stream when exceeding max duration" in caplog.text
+
 
 class TestGetCameraManager:
     """Tests for runtime-aware camera manager resolution."""
 
-    def test_prefers_request_runtime_camera_manager(self) -> None:
-        """Request-scoped runtime should override the legacy compatibility manager."""
+    def test_returns_request_runtime_camera_manager(self) -> None:
+        """Request-scoped runtime provides the camera manager dependency."""
         app = FastAPI()
         runtime = AppRuntime(
             camera_manager=cast(
@@ -155,35 +197,6 @@ class TestGetCameraManager:
         )
 
         assert camera_deps.get_camera_manager(request) is runtime.camera_manager
-
-    async def test_ignores_recent_stream(
-        self,
-        mock_camera_manager: ProbeCameraManager,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Should not stop the stream if it has been active for less than the configured maximum duration."""
-        monkeypatch.setattr(settings, "max_stream_duration_s", 10)
-        mock_camera_manager.stream.is_active = True
-        mock_camera_manager.stream.started_at = datetime.now(UTC)
-
-        await camera_deps.check_stream_duration(mock_camera_manager)
-
-        mock_camera_manager.stop_streaming_mock.assert_not_awaited()
-
-    async def test_logs_runtime_error(
-        self,
-        mock_camera_manager: ProbeCameraManager,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Should log a RuntimeError if stopping the stream fails, but not raise it."""
-        monkeypatch.setattr(settings, "max_stream_duration_s", 10)
-        mock_camera_manager.stream.is_active = True
-        mock_camera_manager.stream.started_at = datetime.now(UTC) - timedelta(seconds=20)
-        mock_camera_manager.stop_streaming_mock.side_effect = RuntimeError("boom")
-
-        await camera_deps.check_stream_duration(mock_camera_manager)
-
-        mock_camera_manager.stop_streaming_mock.assert_awaited_once()
 
 
 class TestCheckStreamHealth:
@@ -270,17 +283,15 @@ class TestCameraManagerCleanup:
     """Tests for CameraManager.cleanup method."""
 
     async def test_cleanup_uses_correct_ttl(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Should call clear_directory with image_ttl_s."""
-        mock_clear_directory = AsyncMock()
-        monkeypatch.setattr("app.camera.services.manager.clear_directory", mock_clear_directory)
+        """Should delegate image retention cleanup to the shared helper."""
+        mock_cleanup_images = AsyncMock()
+        monkeypatch.setattr("app.camera.services.manager.cleanup_images", mock_cleanup_images)
 
         manager = CameraManager(backend=cast("StreamingCameraBackend", FakeBackend()))
 
         await manager.cleanup()
 
-        mock_clear_directory.assert_awaited_once()
-        call_args = mock_clear_directory.call_args
-        assert call_args[1]["time_to_live_s"] == settings.image_ttl_s
+        mock_cleanup_images.assert_awaited_once_with()
 
 
 class TestCameraManagerStartStreaming:
@@ -313,7 +324,6 @@ class TestCameraManagerStartStreaming:
         assert result.mode == StreamMode.YOUTUBE
         assert result.provider == YOUTUBE_PROVIDER
         assert manager.stream.is_active
-        assert manager.stream_service.state.is_active
         backend.start_stream.assert_awaited_once_with(StreamMode.YOUTUBE, youtube_config=youtube_config)
 
     async def test_stream_start_failure_resets_state(self) -> None:
@@ -345,7 +355,7 @@ class TestCameraManagerStartStreaming:
 class TestCameraManagerCapture:
     """Tests for CameraManager capture flows."""
 
-    async def test_capture_uses_backend_result(self, tmp_path: Path) -> None:
+    async def test_capture_uses_backend_result(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Should build an image response from the backend capture result."""
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="green")
@@ -357,6 +367,7 @@ class TestCameraManagerCapture:
 
         # Stub sink that reports a successful upload without touching any real backend.
         stub_image_id = "a" * 32  # 32-char hex, matches ImageCaptureResponse.image_id pattern
+        generated_image_id = "b" * 32
 
         class _StubSink:
             put = AsyncMock(
@@ -366,25 +377,27 @@ class TestCameraManagerCapture:
                 )
             )
 
+        monkeypatch.setattr(manager_mod.secrets, "token_hex", lambda _n: generated_image_id)
         manager = CameraManager(
             backend=cast("StreamingCameraBackend", backend),
             sink=_StubSink(),
         )
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
 
-        try:
-            response = await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        response = await manager.capture_jpeg()
 
         assert response.metadata.camera_properties.camera_model == MOCK_CAMERA
         assert response.image_id == stub_image_id
         assert str(response.image_url) == EXAMPLE_IMAGE_URL
+        assert _StubSink.put.await_args is not None
+        assert _StubSink.put.await_args.kwargs["image_id"] == generated_image_id
+        assert _StubSink.put.await_args.kwargs["filename"] == f"{generated_image_id}.jpg"
         backend.capture_image.assert_awaited_once()
 
-    async def test_capture_invokes_capture_uploaded_hook_with_captured_frame(self, tmp_path: Path) -> None:
+    async def test_capture_invokes_capture_uploaded_hook_with_captured_frame(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A successful capture should invoke the registered hook with the PIL frame."""
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="red")
@@ -414,17 +427,15 @@ class TestCameraManagerCapture:
 
         manager.set_capture_uploaded_hook(_hook)
 
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
-        try:
-            await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        await manager.capture_jpeg()
 
         assert hook_calls == [image]
 
-    async def test_capture_hook_failure_does_not_break_capture(self, tmp_path: Path) -> None:
+    async def test_capture_hook_failure_does_not_break_capture(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A failing hook must be logged but must not propagate out of capture_jpeg."""
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="red")
@@ -453,17 +464,13 @@ class TestCameraManagerCapture:
 
         manager.set_capture_uploaded_hook(_hook)
 
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
-        try:
-            response = await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        response = await manager.capture_jpeg()
 
         assert response.status == ImageCaptureStatus.UPLOADED
 
-    async def test_capture_allows_active_youtube_stream(self, tmp_path: Path) -> None:
+    async def test_capture_allows_active_youtube_stream(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Normal still capture should remain allowed while a YouTube stream is active."""
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="purple")
@@ -489,19 +496,17 @@ class TestCameraManagerCapture:
         manager.stream.url = AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}active-broadcast")
         manager.stream.started_at = datetime.now(UTC)
 
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
 
-        try:
-            response = await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        response = await manager.capture_jpeg()
 
         assert response.status == ImageCaptureStatus.UPLOADED
         backend.capture_image.assert_awaited_once()
 
-    async def test_capture_allows_video_mode_preview_state(self, tmp_path: Path) -> None:
+    async def test_capture_allows_video_mode_preview_state(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Still capture should keep working while the backend is already in video mode."""
         backend = FakeBackend()
         backend.current_mode = CameraMode.VIDEO
@@ -525,25 +530,20 @@ class TestCameraManagerCapture:
             sink=_StubSink(),
         )
 
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
 
-        try:
-            response = await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        response = await manager.capture_jpeg()
 
         assert response.status == ImageCaptureStatus.UPLOADED
         backend.capture_image.assert_awaited_once()
 
-    async def test_capture_jpeg_writes_atomically(self, tmp_path: Path) -> None:
-        """capture_jpeg must not leave a partially-written JPEG if encoding fails.
+    async def test_capture_jpeg_writes_atomically(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """capture_jpeg must not leave any JPEG behind if encoding fails.
 
-        Regression guard: previously the encode-then-read-bytes sequence ran outside
-        the camera lock and used a non-atomic ``image.save`` call, so disk-full or a
-        racing reader could observe a truncated JPEG. The atomic tmp-rename path must
-        leave neither the ``.tmp`` nor the final file behind on failure.
+        Regression guard: encoding goes straight to memory and the file is only
+        persisted on the upload-queue fallback, so a failed encode must leave
+        neither a ``.tmp`` sidecar nor a final file on disk.
         """
         backend = FakeBackend()
         image = Image.new("RGB", (64, 64), color="blue")
@@ -556,27 +556,73 @@ class TestCameraManagerCapture:
         )
 
         manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
-        original = settings.image_path
-        settings.image_path = tmp_path / "images"
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
         settings.image_path.mkdir()
 
         def _raise_disk_full(*_args: object, **_kwargs: object) -> bytes:
             raise OSError(disk_full_msg)
 
-        try:
-            with pytest.MonkeyPatch.context() as monkeypatch:
-                monkeypatch.setattr(
-                    "app.camera.services.manager._encode_jpeg_atomic",
-                    _raise_disk_full,
-                )
-                with pytest.raises(OSError, match=disk_full_msg):
-                    await manager.capture_jpeg()
-        finally:
-            settings.image_path = original
+        monkeypatch.setattr("app.camera.services.manager._encode_jpeg", _raise_disk_full)
+        with pytest.raises(OSError, match=disk_full_msg):
+            await manager.capture_jpeg()
 
         # Neither the target nor the .tmp sidecar should exist.
         leftover = list((tmp_path / "images").iterdir())
-        assert leftover == [], f"atomic encode leaked files: {leftover}"
+        assert leftover == [], f"failed encode leaked files: {leftover}"
+
+    async def test_capture_rejects_frames_over_pixel_limit(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Capture should reject oversized frames before encoding or upload."""
+        backend = FakeBackend()
+        backend.capture_image.return_value = CaptureResult(
+            image=Image.new("RGB", (4, 4), color="blue"),
+            camera_properties={"Model": "mock-camera"},
+            capture_metadata={"FrameDuration": 33_333},
+        )
+
+        class _StubSink:
+            put = AsyncMock()
+
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend), sink=_StubSink())
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
+        monkeypatch.setattr(settings, "max_capture_pixels", 15)
+        settings.image_path.mkdir()
+
+        with pytest.raises(CaptureFileValidationError, match="pixels"):
+            await manager.capture_jpeg()
+
+        assert _StubSink.put.await_count == 0
+        assert list(settings.image_path.iterdir()) == []
+
+    async def test_capture_rejects_encoded_files_over_byte_limit(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Capture should reject encoded media that exceeds the configured byte limit."""
+        backend = FakeBackend()
+        backend.capture_image.return_value = CaptureResult(
+            image=Image.new("RGB", (64, 64), color="blue"),
+            camera_properties={"Model": "mock-camera"},
+            capture_metadata={"FrameDuration": 33_333},
+        )
+
+        class _StubSink:
+            put = AsyncMock()
+
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend), sink=_StubSink())
+        monkeypatch.setattr(settings, "image_path", tmp_path / "images")
+        monkeypatch.setattr(settings, "max_capture_file_bytes", 16)
+        settings.image_path.mkdir()
+
+        with pytest.raises(CaptureFileValidationError, match="exceeds"):
+            await manager.capture_jpeg()
+
+        assert _StubSink.put.await_count == 0
+        assert list(settings.image_path.iterdir()) == []
 
 
 class TestCameraManagerLocking:
@@ -720,20 +766,14 @@ class TestPreviewThumbnailCapture:
     async def test_returns_jpeg_bytes_from_backend_capture(self) -> None:
         """When idle, the manager should derive a JPEG preview thumbnail from the backend image."""
         backend = FakeBackend()
-        backend.capture_image = AsyncMock(
-            return_value=CaptureResult(
-                image=Image.new("RGB", (1280, 720), color="blue"),
-                camera_properties={"Model": MOCK_CAMERA},
-                capture_metadata={"FrameDuration": 33_333},
-            )
-        )
+        backend.capture_preview_frame = AsyncMock(return_value=Image.new("RGB", (1280, 720), color="blue"))
         manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
 
         result = await manager.capture_preview_thumbnail_jpeg()
 
         assert result is not None
         assert result.startswith(b"\xff\xd8")
-        backend.capture_image.assert_awaited_once()
+        backend.capture_preview_frame.assert_awaited_once()
 
     async def test_returns_none_when_camera_lock_is_busy(self) -> None:
         """A busy camera lock should cause the best-effort thumbnail capture to skip cleanly."""
@@ -752,68 +792,47 @@ class TestPreviewThumbnailCapture:
     async def test_preview_encoder_running_uses_lock_free_fast_path(self) -> None:
         """When the encoder owns the lores buffer, tap it without touching the camera lock."""
         backend = FakeBackend()
-        hw_camera = MagicMock()
-        hw_camera.capture_image.return_value = Image.new("RGB", (640, 480), color="red")
-        backend_camera = PropertyMock(return_value=hw_camera)
-        type(backend).camera = backend_camera  # type: ignore[misc]
+        backend.capture_preview_frame = AsyncMock(return_value=Image.new("RGB", (640, 480), color="red"))
+        manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
+
+        await manager.lock.acquire()  # lock is held; fast path must ignore it
         try:
-            manager = CameraManager(backend=cast("StreamingCameraBackend", backend))
-
-            await manager.lock.acquire()  # lock is held; fast path must ignore it
-            try:
-                result = await manager.capture_preview_thumbnail_jpeg(lock_timeout_s=0.01, preview_encoder_running=True)
-            finally:
-                manager.lock.release()
-
-            assert result is not None
-            assert result.startswith(b"\xff\xd8")
-            hw_camera.capture_image.assert_called_once_with("main")
-            backend.open.assert_not_awaited()
+            result = await manager.capture_preview_thumbnail_jpeg(lock_timeout_s=0.01, preview_encoder_running=True)
         finally:
-            del type(backend).camera  # type: ignore[misc]
+            manager.lock.release()
+
+        assert result is not None
+        assert result.startswith(b"\xff\xd8")
+        backend.capture_preview_frame.assert_awaited_once()
+        backend.open.assert_not_awaited()
 
 
-class TestStreamService:
-    """Tests for focused stream state orchestration."""
+class TestActiveStreamState:
+    """Tests for stream state transitions."""
 
     def test_start_populates_state(self) -> None:
         """Starting a stream should populate stream state."""
-        service = StreamService()
-        service.start(
+        state = ActiveStreamState()
+        state.start(
             StreamStartResult(
                 mode=StreamMode.YOUTUBE,
                 url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
             )
         )
 
-        assert service.state.is_active
-        assert service.state.mode == StreamMode.YOUTUBE
+        assert state.is_active
+        assert state.mode == StreamMode.YOUTUBE
 
     def test_reset_clears_state(self) -> None:
         """Reset should clear active stream state."""
-        service = StreamService()
-        service.start(
+        state = ActiveStreamState()
+        state.start(
             StreamStartResult(
                 mode=StreamMode.YOUTUBE,
                 url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
             )
         )
 
-        service.reset()
+        state.reset()
 
-        assert not service.state.is_active
-
-    def test_build_view_returns_contract_view(self) -> None:
-        """The service should build the public stream view from runtime state."""
-        service = StreamService()
-        service.start(
-            StreamStartResult(
-                mode=StreamMode.YOUTUBE,
-                url=AnyUrl(f"{YOUTUBE_WATCH_URL_PREFIX}valid-broadcast"),
-            )
-        )
-
-        view = service.build_view({"Model": MOCK_CAMERA}, {"FrameDuration": 33_333})
-
-        assert view is not None
-        assert view.mode == StreamMode.YOUTUBE
+        assert not state.is_active

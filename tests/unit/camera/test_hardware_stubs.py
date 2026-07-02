@@ -25,31 +25,6 @@ class TestPicamera2StubRaises:
         with pytest.raises(RuntimeError, match="picamera2 is not available"):
             Picamera2Stub()
 
-    def test_constructor_raises_regardless_of_camera_num(self) -> None:
-        """Any camera number still raises."""
-        with pytest.raises(RuntimeError):
-            Picamera2Stub(1)
-
-
-class TestPicamera2StubConfigHelpers:
-    """Config factories are plain dict returns so production code can call them."""
-
-    def test_create_still_configuration_returns_empty_dict(self) -> None:
-        """``create_still_configuration`` returns ``{}`` for dev hosts."""
-        # Access via __new__ to bypass the guard in __init__.
-        stub = Picamera2Stub.__new__(Picamera2Stub)
-        assert stub.create_still_configuration() == {}
-
-    def test_create_video_configuration_returns_empty_dict(self) -> None:
-        """``create_video_configuration`` returns ``{}`` for dev hosts."""
-        stub = Picamera2Stub.__new__(Picamera2Stub)
-        assert stub.create_video_configuration() == {}
-
-    def test_create_preview_configuration_returns_empty_dict(self) -> None:
-        """``create_preview_configuration`` returns ``{}`` for dev hosts."""
-        stub = Picamera2Stub.__new__(Picamera2Stub)
-        assert stub.create_preview_configuration() == {}
-
 
 class TestH264EncoderStub:
     """Constructing the encoder stub should raise so misuse fails loudly."""

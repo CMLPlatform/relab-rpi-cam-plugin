@@ -51,11 +51,11 @@ def image_metadata_to_exif(metadata: ImageMetadata) -> Exif:
         }
     )
 
-    if metadata.capture_metadata.exposure_time:
+    if metadata.capture_metadata.exposure_time is not None:
         exif[Base.ExposureTime.value] = metadata.capture_metadata.exposure_time / 1_000_000
-    if metadata.capture_metadata.color_temperature:
+    if metadata.capture_metadata.color_temperature is not None:
         exif[Base.WhiteBalance.value] = 1
-    if metadata.capture_metadata.sensor_temperature:
+    if metadata.capture_metadata.sensor_temperature is not None:
         exif[Base.AmbientTemperature.value] = metadata.capture_metadata.sensor_temperature
 
     return exif

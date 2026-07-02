@@ -4,28 +4,31 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.bootstrap import _add_authorized_api_key, apply_relay_credentials
+from app.core.bootstrap import apply_relay_credentials, set_runtime_relay_credentials
 from app.core.runtime_state import RuntimeState
 from app.core.settings import Settings
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL
+from tests.fakes import fresh_p256_pem
 
 RELAY_CAMERA_ID = "cam-1"
 RELAY_AUTH_SCHEME = "device_assertion"
 RELAY_KEY_ID = "key-1"
-RELAY_PRIVATE_KEY_PEM = "private-key"
 ENV_RELAY_BACKEND_URL = "wss://env-backend/ws/connect"
 ENV_RELAY_CAMERA_ID = "env-cam"
 ENV_RELAY_KEY_ID = "env-key"
-ENV_RELAY_PRIVATE_KEY_PEM = "env-private-key"
 
 
-class TestRelayEnabledProperty:
-    """Test for the  `Settings.relay_enabled` property."""
+RELAY_PRIVATE_KEY_PEM = fresh_p256_pem()
+ENV_RELAY_PRIVATE_KEY_PEM = fresh_p256_pem()
+
+
+class TestStaticRelayCredentialsProperty:
+    """Test the static relay bootstrap credential helper."""
 
     def test_disabled_by_default(self) -> None:
         """Relay should be disabled if no fields are set."""
         s = Settings()
-        assert s.relay_enabled is False
+        assert s.has_static_relay_credentials is False
 
     def test_enabled_when_all_fields_set(self) -> None:
         """Relay should be enabled if all required fields are set."""
@@ -36,7 +39,7 @@ class TestRelayEnabledProperty:
             relay_key_id=RELAY_KEY_ID,
             relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
-        assert s.relay_enabled is True
+        assert s.has_static_relay_credentials is True
 
     def test_disabled_when_partial(self) -> None:
         """Partial relay bootstrap config should be rejected."""
@@ -79,7 +82,7 @@ class TestApplyRelayCredentials:
         runtime_state = RuntimeState()
         with (
             patch("app.core.bootstrap.load_relay_credentials", return_value={}),
-            patch("app.auth.dependencies.reload_authorized_hashes"),
+            patch("app.auth.dependencies.reload_authorized_keys"),
         ):
             apply_relay_credentials(runtime_state)
         assert runtime_state.relay_backend_url == ""
@@ -110,6 +113,41 @@ class TestApplyRelayCredentials:
         assert runtime_state.relay_private_key_pem == ENV_RELAY_PRIVATE_KEY_PEM
 
 
+class TestSetRuntimeRelayCredentials:
+    """Tests for relay signing credential validation at the runtime boundary."""
+
+    def test_accepts_valid_device_assertion_credentials(self) -> None:
+        """Valid device assertion credentials should be applied to runtime state."""
+        runtime_state = RuntimeState()
+
+        set_runtime_relay_credentials(
+            runtime_state=runtime_state,
+            relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
+            relay_camera_id=RELAY_CAMERA_ID,
+            relay_auth_scheme=RELAY_AUTH_SCHEME,
+            relay_key_id=RELAY_KEY_ID,
+            relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
+        )
+
+        assert runtime_state.relay_enabled is True
+        assert runtime_state.relay_camera_id == RELAY_CAMERA_ID
+        assert runtime_state.relay_key_id == RELAY_KEY_ID
+
+    def test_rejects_non_device_assertion_auth_scheme(self) -> None:
+        """Credential validation should be wired into the runtime boundary."""
+        # Detailed validation cases live in tests/unit/relay/test_credentials.py;
+        # this guards that set_runtime_relay_credentials actually invokes them.
+        with pytest.raises(ValueError, match="device_assertion"):
+            set_runtime_relay_credentials(
+                runtime_state=RuntimeState(),
+                relay_backend_url=EXAMPLE_RELAY_BACKEND_URL,
+                relay_camera_id=RELAY_CAMERA_ID,
+                relay_auth_scheme="bearer",
+                relay_key_id=RELAY_KEY_ID,
+                relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
+            )
+
+
 class TestAuthorizedApiKeysMutation:
     """Tests for atomic authorized-key updates."""
 
@@ -118,7 +156,7 @@ class TestAuthorizedApiKeysMutation:
         runtime_state = RuntimeState(authorized_api_keys=frozenset({"one", "two"}))
         original_keys = runtime_state.authorized_api_keys
 
-        _add_authorized_api_key(runtime_state, "three")
+        runtime_state.add_authorized_api_key("three")
 
         assert runtime_state.authorized_api_keys == frozenset({"one", "two", "three"})
         assert runtime_state.authorized_api_keys is not original_keys
@@ -128,6 +166,6 @@ class TestAuthorizedApiKeysMutation:
         runtime_state = RuntimeState(authorized_api_keys=frozenset({"one", "two"}))
         original_keys = runtime_state.authorized_api_keys
 
-        _add_authorized_api_key(runtime_state, "two")
+        runtime_state.add_authorized_api_key("two")
 
         assert runtime_state.authorized_api_keys is original_keys

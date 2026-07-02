@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.auth.dependencies import reload_authorized_hashes, verify_request
+from app.auth.dependencies import reload_authorized_keys, verify_request
 from app.camera.services.manager import CameraManager
 from app.core.runtime import AppRuntime, set_active_runtime
 from app.main import app
-from tests.support.fakes import build_test_runtime, make_camera_manager
+from tests.fakes import build_test_runtime, make_camera_manager
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -22,15 +22,10 @@ if TYPE_CHECKING:
 
 TEST_API_KEY = "test-api-key-12345"
 _SLOW_TEST_FRAGMENTS = (
-    "tests/unit/test_upload_queue.py::TestUploadQueueWorker",
-    "tests/unit/test_thermal_governor.py::TestLifecycle",
+    "tests/unit/upload/test_queue.py::TestUploadQueueWorker",
+    "tests/unit/media/test_thermal_governor.py::TestLifecycle",
     "tests/integration/test_main_lifespan.py",
 )
-
-
-def _ensure_test_api_key() -> None:
-    """Make the standard test API key available to auth-protected routes."""
-    return
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -52,12 +47,6 @@ def pytest_collection_modifyitems(items: list[Item]) -> None:
             item.add_marker(pytest.mark.slow)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _authorized_test_api_key() -> None:
-    """Seed the test auth key once for the whole suite."""
-    _ensure_test_api_key()
-
-
 @pytest.fixture
 def camera_manager() -> CameraManager:
     """Return a camera manager with a typed fake provider-neutral backend."""
@@ -69,7 +58,7 @@ def app_runtime(camera_manager: CameraManager) -> AppRuntime:
     """Return a runtime wired to the test camera manager."""
     runtime = build_test_runtime(camera_manager=camera_manager)
     runtime.runtime_state.add_authorized_api_key(TEST_API_KEY)
-    reload_authorized_hashes(runtime.runtime_state)
+    reload_authorized_keys(runtime.runtime_state)
     return runtime
 
 

@@ -5,9 +5,12 @@ from httpx import AsyncClient
 
 from app.core.runtime import AppRuntime
 from app.pairing.routers import local_key as local_key_router
+from tests.constants import NO_STORE_CACHE_CONTROL
 
 LOCAL_KEY_PATH = "/local-key"
 TEST_LOCAL_KEY = "test-local-api-key"
+NO_CACHE_PRAGMA = "no-cache"
+EXPIRES_IMMEDIATELY = "0"
 
 
 @pytest.fixture
@@ -23,20 +26,34 @@ class TestLocalKeyEndpoint:
     async def test_returns_key_to_local_clients(
         self,
         monkeypatch: pytest.MonkeyPatch,
-        unauthed_client: AsyncClient,
+        client: AsyncClient,
     ) -> None:
-        """Local clients should receive the plain-text key."""
+        """Authenticated local clients should receive the plain-text key."""
         monkeypatch.setattr(local_key_router, "is_local_client", lambda _host: True)
-        resp = await unauthed_client.get(LOCAL_KEY_PATH)
+        resp = await client.get(LOCAL_KEY_PATH)
         assert resp.status_code == 200
         assert resp.text.strip() == TEST_LOCAL_KEY
+        assert resp.headers["cache-control"] == NO_STORE_CACHE_CONTROL
+        assert resp.headers["pragma"] == NO_CACHE_PRAGMA
+        assert resp.headers["expires"] == EXPIRES_IMMEDIATELY
+        assert "content-disposition" not in resp.headers
 
-    async def test_rejects_non_local_clients(
+    async def test_rejects_unauthenticated_local_clients(
         self,
         monkeypatch: pytest.MonkeyPatch,
         unauthed_client: AsyncClient,
     ) -> None:
+        """Local network access alone should not reveal the key."""
+        monkeypatch.setattr(local_key_router, "is_local_client", lambda _host: True)
+        resp = await unauthed_client.get(LOCAL_KEY_PATH)
+        assert resp.status_code == 401
+
+    async def test_rejects_non_local_clients(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        client: AsyncClient,
+    ) -> None:
         """Remote clients should be blocked from reading the key."""
         monkeypatch.setattr(local_key_router, "is_local_client", lambda _host: False)
-        resp = await unauthed_client.get(LOCAL_KEY_PATH)
+        resp = await client.get(LOCAL_KEY_PATH)
         assert resp.status_code == 403
