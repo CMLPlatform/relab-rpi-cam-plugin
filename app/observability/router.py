@@ -1,14 +1,45 @@
-"""System HTTP surfaces: Prometheus metrics and device telemetry."""
+"""System HTTP surfaces: liveness, Prometheus metrics, and device telemetry."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
 from relab_rpi_cam_models.telemetry import TelemetrySnapshot, ThermalState
 
 from app.observability.telemetry import collect_telemetry
+from app.utils.network import is_local_client
 
 router = APIRouter()
+public_router = APIRouter()
 
 _PROM_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
+
+SERVICE_NAME = "relab-rpi-cam"
+
+
+class HealthStatus(BaseModel):
+    """Liveness payload returned to unauthenticated local-network probes."""
+
+    status: str = "ok"
+    service: str = SERVICE_NAME
+
+
+@public_router.get(
+    "/healthz",
+    summary="Liveness probe for local-network clients",
+    tags=["system"],
+    responses={403: {"description": "Caller is not on the local network."}},
+)
+async def get_health(request: Request) -> HealthStatus:
+    """Report liveness without requiring the device API key.
+
+    Deliberately unauthenticated: the app probes candidate LAN addresses to find a
+    direct link *before* it holds the device key, so an authenticated probe can
+    never succeed on a first connection. Restricted to local clients and returns
+    no device data — only enough for a prober to tell this is an RPi cam.
+    """
+    if not is_local_client(request.client.host if request.client else None):
+        raise HTTPException(status_code=403, detail="Liveness is only available from the local network")
+    return HealthStatus()
 
 
 def _gauge(name: str, help_text: str, value: float, labels: dict[str, str] | None = None) -> list[str]:
