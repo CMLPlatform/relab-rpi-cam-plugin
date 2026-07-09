@@ -18,9 +18,10 @@ router = APIRouter()
 for r in [auth_router, landing_router]:
     router.include_router(r, include_in_schema=False)
 
-# Unauthenticated surfaces: HLS preview and setup UI.
+# Unauthenticated surfaces: HLS preview, setup UI, and the liveness probe.
 router.include_router(camera.public_router)
 router.include_router(pairing.public_router)
+router.include_router(observability.public_router)
 
 # Authenticated surfaces: camera controls/captures/stream, local-access
 # bootstrap, system telemetry, and metrics.
