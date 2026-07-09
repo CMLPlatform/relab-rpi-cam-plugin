@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.0 (2026-07-09)
+
+### Feat
+
+- **observability**: add unauthenticated local-network liveness probe
+
 ## v0.4.0 (2026-07-01)
 
 ### Feat
