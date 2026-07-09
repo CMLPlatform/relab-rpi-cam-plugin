@@ -39,7 +39,7 @@
   ]
 
   requires-python = ">=3.13,<3.14" # Python 3.13 is needed in Debian Trixie for picamera2
-  version         = "0.4.0"        # NOTE: Versioning is handled by commitizen
+  version         = "0.5.0"        # NOTE: Versioning is handled by commitizen
 
   [project.urls]
     Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
