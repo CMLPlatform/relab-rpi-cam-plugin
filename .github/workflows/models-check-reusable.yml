@@ -34,12 +34,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
-      - name: Ruff check
-        run: uv run ruff check --no-fix relab_rpi_cam_models/src/relab_rpi_cam_models tests/unit/core/test_contract_package.py
-
-      - name: Ruff format check
-        run: uv run ruff format --check relab_rpi_cam_models/src/relab_rpi_cam_models tests/unit/core/test_contract_package.py
-
+      # No ruff here: CI's `pre-commit run --all-files` already lints and formats this
+      # source repo-wide. The contract test stays — on the publish path it is the only
+      # check that runs against the exact tagged commit.
       - name: Run contract package tests
         run: uv run pytest tests/unit/core/test_contract_package.py -q
 

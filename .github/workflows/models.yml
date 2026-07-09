@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+# Gated by workflow-level `paths:` rather than a `changes` job — GitHub evaluates
+# these for free, where a paths-filter job costs a whole hosted runner.
+# `pyproject.toml`/`uv.lock` are included because the models wheel is built and
+# resolved against the root workspace lock, not just its own subpackage manifest.
+
+name: Models
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'relab_rpi_cam_models/**'
+      - 'tests/unit/core/test_contract_package.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/models.yml'
+      - '.github/workflows/models-check-reusable.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'relab_rpi_cam_models/**'
+      - 'tests/unit/core/test_contract_package.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/models.yml'
+      - '.github/workflows/models-check-reusable.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  models-check:
+    uses: ./.github/workflows/models-check-reusable.yml
+    with:
+      python_version: "3.13"
