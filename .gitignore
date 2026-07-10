@@ -1,4 +1,4 @@
-#.gitignore for Relab RPi Cam Plugin API
+#.gitignore for ReLab RPi Cam Plugin API
 ## Python
 # Byte-compiled / optimized / DLL files
 __pycache__/

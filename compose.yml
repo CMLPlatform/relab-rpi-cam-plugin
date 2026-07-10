@@ -1,9 +1,9 @@
 # Docker Compose stack for the RPi camera plugin.
 #
-# Paired mode (default — captures push to the RElab backend):
+# Paired mode (default — captures push to the ReLab backend):
 #   docker compose up -d
 #
-# Standalone mode (no RElab backend — captures land in a local RustFS bucket):
+# Standalone mode (no ReLab backend — captures land in a local RustFS bucket):
 #   Set APP_BUILD_TARGET=runtime-standalone and COMPOSE_PROFILES=standalone in
 #   .env, then ``docker compose up -d``. The standalone build target adds
 #   aioboto3; configure IMAGE_SINK=s3 and S3_* vars alongside it.
