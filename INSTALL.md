@@ -18,7 +18,7 @@ This guide is for operators installing and running the RPI Camera Plugin on a Ra
 - Raspberry Pi OS 64-bit
 - Python 3.13+
 - Docker Compose for the recommended runtime
-- Network access to the RELab backend for paired mode
+- Network access to the ReLab backend for paired mode
 
 ## Prepare The Pi
 
@@ -40,9 +40,9 @@ This guide is for operators installing and running the RPI Camera Plugin on a Ra
    cp .env.example .env
    ```
 
-## Paired RELab Mode
+## Paired ReLab Mode
 
-Paired mode connects the Pi to RELab through an outbound WebSocket relay. The Pi does not need a public IP address or inbound port forwarding.
+Paired mode connects the Pi to ReLab through an outbound WebSocket relay. The Pi does not need a public IP address or inbound port forwarding.
 
 Set the pairing backend URL in `.env`:
 
@@ -77,7 +77,7 @@ Treat `/setup` and pairing logs as local/operator-only during pairing. The code 
 
 The setup page polls `GET /pairing/state` so it can reload when pairing or unpairing completes. That endpoint is intentionally public and returns only low-detail state (`status` and `relay_enabled`); it does not expose the pairing code, relay credentials, local API key, backend URLs, or camera IDs.
 
-Enter the code in the native RELab app under Cameras > Add Camera. The Pi receives relay credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
+Enter the code in the native ReLab app under Cameras > Add Camera. The Pi receives relay credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
 
 To rotate the code without deleting relay credentials, use **Generate a new pairing code** on `/setup`.
 To rotate relay credentials, unpair the camera and pair it again. Unpairing clears the stored relay key first, and the next pairing creates a fresh key pair.
@@ -86,11 +86,11 @@ Docker Compose stores runtime credentials in a named volume mounted at `/home/rp
 
 The relay signing key is stored in `relay_credentials.json` with `0o600` permissions. Against SD-card theft, use full-disk encryption (LUKS); to keep the key off disk entirely, skip pairing and inject `RELAY_PRIVATE_KEY_PEM` (with `RELAY_CAMERA_ID`, `RELAY_KEY_ID`, `RELAY_AUTH_SCHEME`) via env.
 
-The HTTPS-served RELab web frontend cannot auto-probe the Pi's plain-HTTP local API because browsers block mixed content. Use the native app for pairing and direct-mode setup.
+The HTTPS-served ReLab web frontend cannot auto-probe the Pi's plain-HTTP local API because browsers block mixed content. Use the native app for pairing and direct-mode setup.
 
 ## Standalone Mode
 
-Standalone mode stores captures in an S3-compatible bucket instead of the RELab backend. The bundled standalone profile starts a local RustFS sidecar.
+Standalone mode stores captures in an S3-compatible bucket instead of the ReLab backend. The bundled standalone profile starts a local RustFS sidecar.
 
 Set these values in `.env`:
 
@@ -139,7 +139,7 @@ Local direct mode is enabled by default. On first boot, the plugin generates and
 X-API-Key: <local-api-key>
 ```
 
-Paired RELab apps can fetch the key through the relay and switch to LAN/Ethernet direct access for lower preview latency. Custom clients can use the key without pairing.
+Paired ReLab apps can fetch the key through the relay and switch to LAN/Ethernet direct access for lower preview latency. Custom clients can use the key without pairing.
 
 Retrieve the key from an SSH session:
 

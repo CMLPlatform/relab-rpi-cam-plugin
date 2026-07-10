@@ -1,65 +1,62 @@
 {% extends 'base.html' %}
 
-{% block title %}RPi Camera{% endblock %}
+{% block title %}
+  RPi Camera
+{% endblock %}
 
-{% block body_class %}setup-page{% endblock %}
+{% block body_class %}
+  setup-page
+{% endblock %}
 
 {% block site_header_nav %}
-<nav class="site-header__nav" aria-label="Primary">
-  <a href="{{ url_for('setup_page') }}" class="btn btn--ghost btn--nav-primary">Setup</a>
-  {% if api_docs_enabled %}
-  <a href="{{ url_for('swagger_ui_html') }}" class="btn btn--ghost">API Docs</a>
-  {% endif %}
-</nav>
+  <nav class="site-header__nav" aria-label="Primary">
+    <a href="{{ url_for('setup_page') }}" class="btn btn--ghost btn--nav-primary">Setup</a>
+    {% if api_docs_enabled %}
+      <a href="{{ url_for('swagger_ui_html') }}" class="btn btn--ghost">API Docs</a>
+    {% endif %}
+  </nav>
 {% endblock %}
 
 {% block extra_scripts %}
-<script
-  src="https://cdn.jsdelivr.net/npm/hls.js@1.6.16/dist/hls.min.js"
-  nonce="{{ request.state.csp_nonce }}"
-  integrity="sha384-5E8B0pTlZZJMabWpC0fyYf6OUpe15jJij34BqBAh4NXoHAlLNOjCPRrwtOXOQFAn"
-  crossorigin="anonymous"
-  defer
-></script>
-<script src="{{ url_for('static', path='homepage-preview.js') }}" nonce="{{ request.state.csp_nonce }}" type="module"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.16/dist/hls.min.js" nonce="{{ request.state.csp_nonce }}" integrity="sha384-5E8B0pTlZZJMabWpC0fyYf6OUpe15jJij34BqBAh4NXoHAlLNOjCPRrwtOXOQFAn" crossorigin="anonymous" defer></script>
+  <script src="{{ url_for('static', path='homepage-preview.js') }}" nonce="{{ request.state.csp_nonce }}" type="module"></script>
 {% endblock %}
 
 {% block body %}
-<main class="setup-shell">
-  <section class="setup-hero">
-    <div class="setup-eyebrow">Reverse Engineering Lab</div>
-    <h1>Raspberry Pi Camera</h1>
-    <p>Remotely capture images and stream video from a Raspberry Pi camera. Learn more about RELab on the <a
-        href="https://github.com/CMLplatform/relab" target="_blank" rel="noopener">GitHub page</a>.</p>
-  </section>
+  <main class="setup-shell">
+    <section class="setup-hero">
+      <div class="setup-eyebrow">Reverse Engineering Lab</div>
+      <h1>Raspberry Pi Camera</h1>
+      <p>
+        Remotely capture images and stream video from a Raspberry Pi camera. Learn more about ReLab on the <a href="https://github.com/CMLplatform/relab" target="_blank" rel="noopener">GitHub page</a>.
+      </p>
+    </section>
 
-  <section class="setup-status">
-    <div class="setup-status-grid">
-      <div class="status-chip status-chip--muted" id="preview-chip">Preview</div>
-      <h2>Camera Preview</h2>
-      <p class="setup-status__lead">The thumbnail below refreshes periodically. Start a live preview to check framing or
-        focus.</p>
-      <img id="preview-thumbnail" class="preview-video" src="{{ url_for('preview_thumbnail') }}"
-        alt="Latest camera preview thumbnail" />
-      <video id="preview-video" class="preview-video" controls playsinline muted hidden></video>
-      <p id="preview-msg" class="preview-message"></p>
-      <div class="setup-actions">
-        <button class="btn" id="preview-btn" data-preview-toggle type="button">Load Preview</button>
+    <section class="setup-status">
+      <div class="setup-status-grid">
+        <div class="status-chip status-chip--muted" id="preview-chip">Preview</div>
+        <h2>Camera Preview</h2>
+        <p class="setup-status__lead">The thumbnail below refreshes periodically. Start a live preview to check framing or focus.</p>
+        <img id="preview-thumbnail" class="preview-video" src="{{ url_for('preview_thumbnail') }}" alt="Latest camera preview thumbnail" />
+        <video id="preview-video" class="preview-video" controls playsinline muted hidden></video>
+        <p id="preview-msg" class="preview-message"></p>
+        <div class="setup-actions">
+          <button class="btn" id="preview-btn" data-preview-toggle type="button">Load Preview</button>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  {% if youtube_url %}
-  <section class="setup-status">
-    <div class="setup-status-grid">
-      <div class="status-chip status-chip--live">Live</div>
-      <h2>YouTube Stream</h2>
-      <p>A YouTube stream is currently active.</p>
-      <div>
-        <a href="{{ youtube_url }}" target="_blank" rel="noopener" class="btn">Watch on YouTube &rarr;</a>
-      </div>
-    </div>
-  </section>
-  {% endif %}
-</main>
+    {% if youtube_url %}
+      <section class="setup-status">
+        <div class="setup-status-grid">
+          <div class="status-chip status-chip--live">Live</div>
+          <h2>YouTube Stream</h2>
+          <p>A YouTube stream is currently active.</p>
+          <div>
+            <a href="{{ youtube_url }}" target="_blank" rel="noopener" class="btn">Watch on YouTube &rarr;</a>
+          </div>
+        </div>
+      </section>
+    {% endif %}
+  </main>
 {% endblock %}

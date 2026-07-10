@@ -9,7 +9,7 @@
     "Topic :: Multimedia :: Video :: Capture",
     "Topic :: System :: Hardware",
   ]
-  description = "Shared Pydantic models for RElab Raspberry Pi Camera plugin models"
+  description = "Shared Pydantic models for ReLab Raspberry Pi Camera plugin models"
   license = "AGPL-3.0-or-later"
   maintainers = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
   name = "relab-rpi-cam-models"
