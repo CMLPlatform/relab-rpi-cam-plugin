@@ -47,7 +47,7 @@ def get_image_sink(settings: Settings) -> ImageSink:
             return BackendPushSink()
         msg = (
             "No image sink configured. Set IMAGE_SINK=backend with PAIRING_BACKEND_URL "
-            "for paired-to-ReLab mode, or IMAGE_SINK=s3 with the S3_* variables for "
+            "for paired-to-Relab mode, or IMAGE_SINK=s3 with the S3_* variables for "
             "standalone mode. See docker-compose.standalone.yml for a MinIO-backed example."
         )
         raise ImageSinkConfigError(msg)

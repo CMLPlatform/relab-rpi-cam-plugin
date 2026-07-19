@@ -1,9 +1,9 @@
-"""Pairing mode: auto-register with the ReLab backend without manual credential entry.
+"""Pairing mode: auto-register with the Relab backend without manual credential entry.
 
 When the RPi boots without relay credentials but has a `pairing_backend_url` configured,
 it enters pairing mode:
 1. Generates a 6-character code and registers it with the backend.
-2. Displays the code on its setup page for the user to enter in the ReLab app.
+2. Displays the code on its setup page for the user to enter in the Relab app.
 3. Polls the backend until the user claims the code.
 4. Receives credentials, saves them to a separate JSON file, and starts the relay.
 """
@@ -214,7 +214,7 @@ def normalize_pairing_backend_base_url(base_url: str) -> str:
     """Rewrite loopback backends to the Docker host alias when needed.
 
     Inside a container, http://localhost points back at the container itself.
-    For local development where the ReLab backend runs on the host machine,
+    For local development where the Relab backend runs on the host machine,
     transparently switch to host.docker.internal so the plugin can reach it.
     """
     parsed = urlparse(base_url)
@@ -252,7 +252,7 @@ def _format_pairing_ready_message(code: str) -> str:
         f"  PAIRING CODE: {_sanitize_log_value(code)}\n"
         f"  Setup    : {_pairing_setup_location()}\n"
         f"  Backend  : {app_settings.pairing_backend_url.rstrip('/')}\n"
-        f"  Claim in : ReLab app > Cameras > Add Camera\n"
+        f"  Claim in : Relab app > Cameras > Add Camera\n"
         f"{sep}"
     )
 

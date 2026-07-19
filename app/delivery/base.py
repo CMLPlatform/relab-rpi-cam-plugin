@@ -2,11 +2,11 @@
 
 The Pi has two ways to park a captured JPEG:
 
-1. ``BackendPushSink`` — push to the paired ReLab backend via HTTPS + device
-   JWT. This is the default for a camera paired to a user's ReLab account.
+1. ``BackendPushSink`` — push to the paired Relab backend via HTTPS + device
+   JWT. This is the default for a camera paired to a user's Relab account.
 2. ``S3CompatibleSink`` — PUT directly into a user-owned S3-compatible bucket
    (MinIO, Backblaze B2, Cloudflare R2, Wasabi, plain AWS S3). This makes the
-   "standalone Pi camera" use case work without any ReLab backend.
+   "standalone Pi camera" use case work without any Relab backend.
 
 Both satisfy the same :class:`ImageSink` Protocol so callers (the
 ``CameraManager.capture_jpeg`` happy path and the ``UploadQueue`` retry loop)

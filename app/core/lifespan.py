@@ -44,7 +44,7 @@ def _log_startup_banner(runtime: AppRuntime) -> None:
     if mode is ConnectionMode.PAIRED:
         mode_line = f"PAIRED      camera_id={runtime.runtime_state.relay_camera_id}"
     elif mode is ConnectionMode.PAIRING:
-        mode_line = "PAIRING     waiting for code to be claimed in the ReLab app"
+        mode_line = "PAIRING     waiting for code to be claimed in the Relab app"
     else:
         mode_line = "IDLE        set PAIRING_BACKEND_URL in .env to enable pairing"
 
@@ -55,7 +55,7 @@ def _log_startup_banner(runtime: AppRuntime) -> None:
     sep = "═" * 54
     banner = (
         f"\n{sep}\n"
-        f"  ReLab RPi Camera  v{version}\n"
+        f"  Relab RPi Camera  v{version}\n"
         f"  Setup    : {setup_url}\n"
         f"  Mode     : {mode_line}\n"
         f"{pairing_hint_line}"

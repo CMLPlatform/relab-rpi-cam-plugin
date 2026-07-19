@@ -2,12 +2,12 @@
 
 This document is for maintainers and agents changing the plugin internals. Operator setup lives in [INSTALL.md](INSTALL.md); contributor workflow lives in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-The plugin is a FastAPI app running on a Raspberry Pi. It captures images and video, serves local setup and preview surfaces, opens an outbound relay to ReLab, and uploads captures either to the ReLab backend or to S3-compatible storage.
+The plugin is a FastAPI app running on a Raspberry Pi. It captures images and video, serves local setup and preview surfaces, opens an outbound relay to Relab, and uploads captures either to the Relab backend or to S3-compatible storage.
 
 ## Request Flow
 
 ```text
-ReLab backend / local browser
+Relab backend / local browser
         |
         | outbound WebSocket relay or local HTTP
         v
@@ -73,7 +73,7 @@ Transport policy is enforced at the settings/runtime boundary. Relay URLs use `w
 
 Outbound connections are fixed at startup and kept narrow:
 
-- pairing API, relay WebSocket, and upload callbacks go to ReLab
+- pairing API, relay WebSocket, and upload callbacks go to Relab
 - relay local dispatch is allowlisted first, then gets the relay-local API key
 - MediaMTX stays on localhost
 - S3 uses HTTPS remotely
@@ -108,13 +108,13 @@ Protected feature routers are included with the shared `verify_request` dependen
 
 Browser sessions are server-side, in-memory tokens for the local operator UI. Login replaces any existing cookie, sessions expire after 30 minutes of inactivity or 12 hours from creation, and logout or restart clears them.
 
-The plugin does not manage local user accounts, admin roles, MFA, account-disable workflows, or federated identity sessions. Those controls live in the ReLab platform/backend identity boundary. This device plugin only checks local API keys and its own short-lived operator UI sessions.
+The plugin does not manage local user accounts, admin roles, MFA, account-disable workflows, or federated identity sessions. Those controls live in the Relab platform/backend identity boundary. This device plugin only checks local API keys and its own short-lived operator UI sessions.
 
 Local login attempts are rate-limited at the auth boundary. Request schemas own edge validation for camera controls, focus mode consistency, stream keys, upload metadata, and other bounded user-controlled payloads before work reaches services.
 
 The setup page is intentionally public during pairing so headless operators can read the pairing code. Because that code is short-lived, `/setup` and pairing logs should be treated as operator-only during pairing.
 
-Authorization is route based and local to the device. The ReLab backend handles per-user and tenant authorization before sending relay commands; the plugin just keeps the device side narrow:
+Authorization is route based and local to the device. The Relab backend handles per-user and tenant authorization before sending relay commands; the plugin just keeps the device side narrow:
 
 - public setup/status routes are `/`, `/setup`, `/pairing/state`, and local-network preview media
 - protected routes include camera controls, captures, preview, streaming, telemetry, metrics, `local-key`, `local-access`, unpair, and pairing-code rotation
@@ -165,7 +165,7 @@ Capture requests produce image bytes and bounded metadata, then pass them to the
 
 `app/delivery/base.py::ImageSink` abstracts capture persistence:
 
-- backend sink uploads to the paired ReLab backend
+- backend sink uploads to the paired Relab backend
 - S3 sink uploads to an S3-compatible bucket
 
 `IMAGE_SINK=auto` infers the sink from config. Explicit sink configuration fails loudly when required fields are missing. The upload queue is sink-agnostic: failed synchronous uploads are persisted to disk, retried with exponential backoff, and dead-lettered after exhaustion. Queue capacity and dead-letter retention settings are the single retention policy for failed local captures.

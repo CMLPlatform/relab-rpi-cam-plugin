@@ -139,7 +139,7 @@ async def unpair(request: Request) -> Response:
     100 ms later in a background task.
 
     Called two ways:
-    - By the ReLab backend through the relay when a camera is deleted.
+    - By the Relab backend through the relay when a camera is deleted.
     - By the local browser UI "Unpair" button on the setup page.
     """
     runtime = get_request_runtime(request)

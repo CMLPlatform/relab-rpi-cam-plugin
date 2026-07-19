@@ -1,1 +1,1 @@
-"""ReLab backend API client and contract adapters."""
+"""Relab backend API client and contract adapters."""

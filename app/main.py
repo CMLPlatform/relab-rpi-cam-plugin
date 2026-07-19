@@ -43,8 +43,8 @@ app = FastAPI(
     title="Raspberry Pi Camera API",
     description=(
         "This API allows you to remotely capture images and stream video from a Raspberry Pi camera. "
-        "It is used as a plugin for the ReLab platform."
-        '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank">ReLab GitHub</a>.'
+        "It is used as a plugin for the Relab platform."
+        '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank">Relab GitHub</a>.'
     ),
     docs_url="/docs" if settings.api_docs_enabled else None,
     openapi_url="/openapi.json" if settings.api_docs_enabled else None,

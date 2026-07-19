@@ -6,24 +6,27 @@
     <meta name="color-scheme" content="light dark" />
     <script src="{{ url_for('static', path='theme-init.js') }}" nonce="{{ request.state.csp_nonce }}"></script>
     {% block head_extra %}
+
     {% endblock %}
     <title>
       {% block title %}
-        ReLab RPi Camera
+        Relab RPi Camera
       {% endblock %}
     </title>
     <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
     {% block extra_scripts %}
+
     {% endblock %}
   </head>
   <body class="{% block body_class %}
+
     {% endblock %}">
     <div class="site-backdrop" aria-hidden="true"></div>
     <div class="site-wash" aria-hidden="true"></div>
     <div class="site-frame">
       <header class="site-header">
-        <a href="{{ url_for('homepage') }}" class="site-header__brand" aria-label="ReLab RPi Camera home">
-          <img src="{{ url_for('static', path='logo.png') }}" alt="ReLab logo" class="site-header__logo" width="64" height="64" />
+        <a href="{{ url_for('homepage') }}" class="site-header__brand" aria-label="Relab RPi Camera home">
+          <img src="{{ url_for('static', path='logo.png') }}" alt="Relab logo" class="site-header__logo" width="64" height="64" />
           <div class="site-header__brand-copy">
             <span class="site-header__eyebrow">Reverse Engineering Lab</span>
             <span class="site-header__title">Raspberry Pi Camera</span>
@@ -31,6 +34,7 @@
         </a>
         <div class="site-header__controls">
           {% block site_header_nav %}
+
           {% endblock %}
           {% if operator_authenticated %}
             <form action="{{ url_for('logout') }}" method="post" class="site-header__logout">
@@ -55,6 +59,7 @@
         </div>
       </header>
       {% block body %}
+
       {% endblock %}
     </div>
     <script src="{{ url_for('static', path='site.js') }}" nonce="{{ request.state.csp_nonce }}" type="module"></script>

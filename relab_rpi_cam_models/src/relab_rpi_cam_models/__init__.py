@@ -1,4 +1,4 @@
-"""Public contract surface for ReLab Raspberry Pi camera integrations."""
+"""Public contract surface for Relab Raspberry Pi camera integrations."""
 
 from .camera import CameraMode, CameraStatusView
 from .device_seam import (

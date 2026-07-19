@@ -1,4 +1,4 @@
-"""Image sink that pushes captures to the paired ReLab backend."""
+"""Image sink that pushes captures to the paired Relab backend."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class BackendPushSink:
         capture_metadata: Mapping[str, object],
         upload_metadata: Mapping[str, object],
     ) -> StoredImage:
-        """Push the capture to the ReLab backend and return its stored URL."""
+        """Push the capture to the Relab backend and return its stored URL."""
         del image_id
         try:
             uploaded = await upload_image(

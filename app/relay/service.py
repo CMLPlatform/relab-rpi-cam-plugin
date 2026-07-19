@@ -64,7 +64,7 @@ class RelayService:
         self._settings = app_settings
 
     async def run_forever(self) -> None:
-        """Maintain a persistent WebSocket connection to the ReLab backend."""
+        """Maintain a persistent WebSocket connection to the Relab backend."""
         if not self.is_configured():
             logger.info("WebSocket relay not configured; relay will not start.")
             return

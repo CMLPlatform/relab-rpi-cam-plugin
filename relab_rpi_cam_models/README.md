@@ -1,6 +1,6 @@
 # relab-rpi-cam-models
 
-Shared transport contracts for the [ReLab Raspberry Pi Camera plugin](https://github.com/CMLPlatform/relab-rpi-cam-plugin) and the [ReLab platform](https://github.com/CMLPlatform/relab), part of the [CML ReLab project](https://cml-relab.org).
+Shared transport contracts for the [Relab Raspberry Pi Camera plugin](https://github.com/CMLPlatform/relab-rpi-cam-plugin) and the [Relab platform](https://github.com/CMLPlatform/relab), part of the [CML Relab project](https://cml-relab.org).
 
 ## Overview
 
