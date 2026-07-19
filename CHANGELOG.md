@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.6.0 (2026-07-19)
+
+### Feat
+
+- **models**: add a shared relay command timeout constant so the backend can align its per-command wait with the Pi's own deadline
+
+### Refactor
+
+- **relay**: dispatch relayed commands in-process via `ASGITransport`, removing the loopback TCP hop and its dependence on `base_url` being reachable
+
 ## v0.5.0 (2026-07-09)
 
 ### Feat
