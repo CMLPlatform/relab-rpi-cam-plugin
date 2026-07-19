@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.6.0 (2026-07-19)
+## v0.6.0 (2026-07-20)
 
 ### Feat
 
@@ -9,6 +9,7 @@
 ### Refactor
 
 - **relay**: dispatch relayed commands in-process via `ASGITransport`, removing the loopback TCP hop and its dependence on `base_url` being reachable
+- Standardize the project name to Relab
 
 ## v0.5.0 (2026-07-09)
 
