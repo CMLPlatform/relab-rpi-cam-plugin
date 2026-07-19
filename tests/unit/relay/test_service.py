@@ -74,9 +74,7 @@ async def _noop_asgi_app(_scope: Any, _receive: Any, _send: Any) -> None:
 async def _json_ok_asgi_app(scope: Any, _receive: Any, send: Any) -> None:
     """Minimal ASGI app returning {"ok": true} for any HTTP request."""
     assert scope["type"] == "http"
-    await send(
-        {"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]}
-    )
+    await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": b'{"ok": true}'})
 
 
