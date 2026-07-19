@@ -67,6 +67,17 @@ def _log_record(caplog: pytest.LogCaptureFixture, event: str) -> Any:
     return cast("Any", next(record for record in caplog.records if getattr(record, "event", "") == event))
 
 
+async def _noop_asgi_app(_scope: Any, _receive: Any, _send: Any) -> None:
+    """ASGI stand-in for receive-loop tests that never dispatch a request."""
+
+
+async def _json_ok_asgi_app(scope: Any, _receive: Any, send: Any) -> None:
+    """Minimal ASGI app returning {"ok": true} for any HTTP request."""
+    assert scope["type"] == "http"
+    await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+    await send({"type": "http.response.body", "body": b'{"ok": true}'})
+
+
 class TestRelayServiceConfig:
     """Tests for runtime-backed relay configuration detection."""
 
@@ -158,6 +169,7 @@ class TestWebsocketConnect:
             relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
         service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        service.configure(_noop_asgi_app)
         iter_connections = MagicMock(return_value=_ConnectionIterator([_Conn()]))
         monkeypatch.setattr(relay_mod, "_iter_websocket_connections", iter_connections)
         monkeypatch.setattr(relay_mod, "_receive_loop", AsyncMock(side_effect=asyncio.CancelledError()))
@@ -216,18 +228,33 @@ class TestReceiveLoop:
     async def test_ignores_binary_frames(self) -> None:
         """Should ignore binary frames without crashing."""
         ws = _Conn([b"\x00binary"])
-        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        await _receive_loop(
+            cast("ClientConnection", ws),
+            asgi_app=_noop_asgi_app,
+            relay_state=RelayRuntimeState(),
+            runtime_state=RuntimeState(),
+        )
         # Should not crash, just log and continue until connection closes
 
     async def test_ignores_invalid_json(self) -> None:
         """Should ignore frames that aren't valid JSON without crashing."""
         ws = _Conn(["not json {{{"])
-        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        await _receive_loop(
+            cast("ClientConnection", ws),
+            asgi_app=_noop_asgi_app,
+            relay_state=RelayRuntimeState(),
+            runtime_state=RuntimeState(),
+        )
 
     async def test_handles_ping(self) -> None:
         """Should respond to ping messages with a pong."""
         ws = _Conn([json.dumps({"type": "ping"})])
-        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        await _receive_loop(
+            cast("ClientConnection", ws),
+            asgi_app=_noop_asgi_app,
+            relay_state=RelayRuntimeState(),
+            runtime_state=RuntimeState(),
+        )
         # Should have sent a pong
         ws.send.assert_awaited_once()
         pong = json.loads(ws.send.await_args_list[0].args[0])
@@ -236,7 +263,12 @@ class TestReceiveLoop:
     async def test_ignores_unknown_type(self) -> None:
         """Should ignore messages with unknown type without crashing."""
         ws = _Conn([json.dumps({"type": "unknown"})])
-        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        await _receive_loop(
+            cast("ClientConnection", ws),
+            asgi_app=_noop_asgi_app,
+            relay_state=RelayRuntimeState(),
+            runtime_state=RuntimeState(),
+        )
 
     async def test_ignores_non_object_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Valid JSON frames that are not objects should not dispatch commands."""
@@ -244,7 +276,12 @@ class TestReceiveLoop:
         handler = AsyncMock()
         monkeypatch.setattr(relay_mod, "_handle_command", handler)
 
-        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        await _receive_loop(
+            cast("ClientConnection", ws),
+            asgi_app=_noop_asgi_app,
+            relay_state=RelayRuntimeState(),
+            runtime_state=RuntimeState(),
+        )
 
         handler.assert_not_awaited()
 
@@ -254,7 +291,12 @@ class TestReceiveLoop:
         monkeypatch.setattr(relay_mod.asyncio, "create_task", lambda coro: asyncio.get_running_loop().create_task(coro))
         handler = AsyncMock()
         monkeypatch.setattr(relay_mod, "_handle_command", handler)
-        await _receive_loop(cast("ClientConnection", ws), relay_state=RelayRuntimeState(), runtime_state=RuntimeState())
+        await _receive_loop(
+            cast("ClientConnection", ws),
+            asgi_app=_noop_asgi_app,
+            relay_state=RelayRuntimeState(),
+            runtime_state=RuntimeState(),
+        )
         await asyncio.sleep(0)
         handler.assert_awaited_once()
 
@@ -436,6 +478,41 @@ class TestHandleCommand:
             payload = json.loads(ws.send.call_args.args[0])
             assert payload["data"] == {"ok": True}
 
+    async def test_local_dispatch_timeout_sends_504(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ASGITransport ignores httpx timeouts, so the explicit deadline must fire."""
+        monkeypatch.setattr(relay_mod, "RELAY_COMMAND_TIMEOUT_SECONDS", 0.01)
+        http = AsyncMock()
+
+        async def _hang(*_args: object, **_kwargs: object) -> httpx.Response:
+            await asyncio.sleep(5)
+            unreachable = "unreachable"
+            raise AssertionError(unreachable)
+
+        http.request = _hang
+        ws = AsyncMock()
+
+        await _handle_command(ws, http, {"id": "msg-slow", "method": "GET", "path": CAMERA_PATH})
+
+        payload = json.loads(ws.send.call_args.args[0])
+        assert payload["status"] == 504
+        assert payload["data"]["detail"] == "Local dispatch timed out."
+
+    async def test_receive_loop_dispatches_command_through_asgi_app(self) -> None:
+        """A relayed command must reach the bound ASGI app in-process and answer over the socket."""
+        ws = _Conn([json.dumps({"type": "request", "id": "msg-asgi", "method": "GET", "path": CAMERA_PATH})])
+
+        await _receive_loop(
+            cast("ClientConnection", ws),
+            asgi_app=_json_ok_asgi_app,
+            relay_state=RelayRuntimeState(),
+            runtime_state=RuntimeState(),
+        )
+
+        payload = json.loads(ws.send.await_args_list[-1].args[0])
+        assert payload["id"] == "msg-asgi"
+        assert payload["status"] == 200
+        assert payload["data"] == {"ok": True}
+
     async def test_http_error_sends_503(self) -> None:
         """Transport errors should be translated into a 503 response."""
         http = AsyncMock()
@@ -523,6 +600,7 @@ class TestRelayServiceRunForever:
             relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
         service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        service.configure(_noop_asgi_app)
         first = _Conn([ConnectionClosedOK(None, None)])
         second = _Conn([asyncio.CancelledError()])
         iter_connections = MagicMock(return_value=_ConnectionIterator([first, second]))
@@ -548,6 +626,7 @@ class TestRelayServiceRunForever:
             relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
         service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        service.configure(_noop_asgi_app)
         iter_connections = MagicMock(return_value=_ConnectionIterator([_Conn([asyncio.CancelledError()])]))
         monkeypatch.setattr(relay_mod, "_iter_websocket_connections", iter_connections)
 
@@ -570,6 +649,7 @@ class TestRelayServiceRunForever:
             relay_private_key_pem=RELAY_PRIVATE_KEY_PEM,
         )
         service = RelayService(state=RelayRuntimeState(), runtime_state=runtime_state)
+        service.configure(_noop_asgi_app)
         response = Response(401, "Unauthorized", Headers(), b"unauthorized")
         monkeypatch.setattr(
             relay_mod, "_iter_websocket_connections", lambda _url, _state: _HandshakeIteratorFailure(response)

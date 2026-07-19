@@ -3,7 +3,8 @@
 When enabled, this module maintains a persistent WebSocket connection to the
 backend so the camera can be reached without a public IP address or port
 forwarding. The backend sends HTTP-like command messages; this module dispatches
-them to the local FastAPI app and sends the response back.
+them in-process to the local FastAPI app (httpx.ASGITransport, so the full
+middleware/auth stack still runs) and sends the response back.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from app.relay.device_jwt import build_device_assertion
 from app.relay.state import RelayRuntimeState
 from relab_rpi_cam_models import (
     RELAY_COMMAND_FORBIDDEN_DETAIL,
+    RELAY_COMMAND_TIMEOUT_SECONDS,
     RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
     RelayCommandEnvelope,
     RelayMessageType,
@@ -38,13 +40,12 @@ from relab_rpi_cam_models import (
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator
 
+    from starlette.types import ASGIApp
     from websockets.asyncio.client import ClientConnection
 
 _RELAY_WS_MAX_QUEUE = 8
 _RELAY_RECONNECT_INITIAL_DELAY_S = 1.0
 _RELAY_RECONNECT_MAX_DELAY_S = 60.0
-_LOCAL_DISPATCH_TIMEOUT = httpx.Timeout(connect=2.0, read=30.0, write=30.0, pool=2.0)
-_LOCAL_DISPATCH_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +63,20 @@ class RelayService:
         self._state = state
         self._runtime_state = runtime_state
         self._settings = app_settings
+        self._asgi_app: ASGIApp | None = None
+
+    def configure(self, asgi_app: ASGIApp) -> None:
+        """Bind the local ASGI app that relayed commands are dispatched to."""
+        self._asgi_app = asgi_app
 
     async def run_forever(self) -> None:
         """Maintain a persistent WebSocket connection to the Relab backend."""
         if not self.is_configured():
             logger.info("WebSocket relay not configured; relay will not start.")
             return
+        if self._asgi_app is None:
+            err_msg = "RelayService requires configure(asgi_app=...) before run_forever()"
+            raise RuntimeError(err_msg)
 
         url = self.build_url()
 
@@ -77,6 +86,7 @@ class RelayService:
                 logger.info("Relay connected to %s. Waiting for commands.", url, extra=build_log_extra())
                 await _receive_loop(
                     ws,
+                    asgi_app=self._asgi_app,
                     relay_state=self._state,
                     runtime_state=self._runtime_state,
                     app_settings=self._settings,
@@ -161,6 +171,7 @@ async def _iter_websocket_connections(url: str, runtime_state: RuntimeState) -> 
 async def _receive_loop(
     ws: ClientConnection,
     *,
+    asgi_app: ASGIApp,
     relay_state: RelayRuntimeState,
     runtime_state: RuntimeState,
     app_settings: Settings = settings,
@@ -183,11 +194,16 @@ async def _receive_loop(
         if exc is not None:
             logger.debug("Command task failed", exc_info=exc, extra=build_log_extra())
 
+    # In-process dispatch: no TCP hop, no dependence on base_url being
+    # reachable. base_url still supplies the scheme/host the app sees in
+    # request URLs. Unhandled app errors come back as plain 500 responses
+    # (raise_app_exceptions=False) exactly like they would from the server.
+    # ASGITransport ignores httpx timeouts, so _handle_command enforces the
+    # command deadline with asyncio.timeout instead.
     async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=asgi_app, raise_app_exceptions=False),
         base_url=str(app_settings.base_url).rstrip("/"),
         headers=auth_headers,
-        timeout=_LOCAL_DISPATCH_TIMEOUT,
-        limits=_LOCAL_DISPATCH_LIMITS,
     ) as http:
         try:
             async for raw in ws:
@@ -338,14 +354,17 @@ async def _handle_command(
         # unquoted form (repeated-unquote + `..` rejection) — the strictly
         # more-decoded form Starlette also routes on. Keep the check at least as
         # aggressive as request routing if the normalizer is ever loosened.
-        response = await http.request(
-            method,
-            path,
-            params=params,
-            json=body,
-            headers=request_headers or None,
-            timeout=30.0,
-        )
+        async with asyncio.timeout(RELAY_COMMAND_TIMEOUT_SECONDS):
+            response = await http.request(
+                method,
+                path,
+                params=params,
+                json=body,
+                headers=request_headers or None,
+            )
+    except TimeoutError:
+        await _send_error(ws, msg_id, 504, "Local dispatch timed out.")
+        return
     except httpx.HTTPError as exc:
         await _send_error(ws, msg_id, 503, str(exc))
         return

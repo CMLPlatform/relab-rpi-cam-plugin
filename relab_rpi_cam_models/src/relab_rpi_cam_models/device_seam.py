@@ -174,6 +174,12 @@ _SAFE_RELAY_TRACE_HEADERS: frozenset[str] = frozenset({"traceparent", "tracestat
 RELAY_WS_TEXT_FRAME_LIMIT_BYTES = 64 * 1024
 """Maximum JSON/text relay frame size shared by the backend and Pi."""
 
+RELAY_COMMAND_TIMEOUT_SECONDS = 30.0
+"""Pi-side deadline for dispatching one relayed command to its local API.
+
+The backend's per-command wait must exceed this (plus grace) so the Pi's own
+timeout response reaches the caller instead of a backend-side TimeoutError."""
+
 RELAY_COMMAND_FORBIDDEN_DETAIL = "Relay command is not allowed."
 """Canonical detail returned when a relay command is outside the allowlist."""
 

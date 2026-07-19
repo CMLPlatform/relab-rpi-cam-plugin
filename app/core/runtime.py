@@ -194,11 +194,11 @@ class AppRuntime:
 def ensure_app_runtime(app: FastAPI) -> AppRuntime:
     """Attach and return the runtime container for the given app."""
     runtime = getattr(app.state, "runtime", None)
-    if isinstance(runtime, AppRuntime):
-        set_active_runtime(runtime)
-        return runtime
-    runtime = AppRuntime()
-    app.state.runtime = runtime
+    if not isinstance(runtime, AppRuntime):
+        runtime = AppRuntime()
+        app.state.runtime = runtime
+    # Relayed commands dispatch in-process to this app via ASGITransport.
+    runtime.relay_service.configure(app)
     set_active_runtime(runtime)
     return runtime
 
