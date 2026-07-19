@@ -225,6 +225,64 @@ class TestAuthMiddleware:
 
         assert resp.status_code == 200
 
+    @pytest.mark.parametrize(
+        "origin",
+        [
+            pytest.param("not-a-url", id="no-scheme"),
+            pytest.param("http://", id="no-host"),
+            pytest.param("http://test:not-a-port", id="unparseable-port"),
+            pytest.param("https://test", id="scheme-mismatch"),
+            pytest.param("http://test:8080", id="port-mismatch"),
+        ],
+    )
+    async def test_cookie_authenticated_write_rejects_unusable_origin(
+        self, unauthed_client: AsyncClient, origin: str
+    ) -> None:
+        """An Origin that is malformed or not an exact scheme/host/port match is never same-origin."""
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
+
+        resp = await unauthed_client.put(
+            "/camera/focus",
+            json={"mode": "manual", "lens_position": 1.5},
+            headers={"Origin": origin},
+        )
+
+        assert resp.status_code == 403
+
+    async def test_cookie_authenticated_write_accepts_same_origin_referer(self, unauthed_client: AsyncClient) -> None:
+        """Browsers that omit Origin still prove same-origin via Referer."""
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
+
+        resp = await unauthed_client.put(
+            "/camera/focus",
+            json={"mode": "manual", "lens_position": 1.5},
+            headers={"Referer": f"{SAME_ORIGIN}/index.html"},
+        )
+
+        assert resp.status_code == 200
+
+    async def test_cookie_authenticated_write_rejects_cross_site_referer(self, unauthed_client: AsyncClient) -> None:
+        """A Referer from another site must not satisfy the same-origin proof."""
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
+
+        resp = await unauthed_client.put(
+            "/camera/focus",
+            json={"mode": "manual", "lens_position": 1.5},
+            headers={"Referer": f"{CROSS_SITE_ORIGIN}/attack.html"},
+        )
+
+        assert resp.status_code == 403
+
+    async def test_cookie_authenticated_write_without_origin_or_referer_is_rejected(
+        self, unauthed_client: AsyncClient
+    ) -> None:
+        """No browser signal at all means no same-origin proof."""
+        unauthed_client.cookies.set(settings.browser_session_cookie_name, create_session())
+
+        resp = await unauthed_client.put("/camera/focus", json={"mode": "manual", "lens_position": 1.5})
+
+        assert resp.status_code == 403
+
     async def test_api_key_cross_site_write_bypasses_csrf(self, unauthed_client: AsyncClient) -> None:
         """Explicit API-key writes are not ambient browser auth and should bypass CSRF."""
         resp = await unauthed_client.put(

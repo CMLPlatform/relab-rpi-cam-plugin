@@ -202,6 +202,33 @@ class TestIterPending:
         assert len(entries) == 1
         assert entries[0].image_path == image_path
 
+    def test_skips_unreadable_metadata_without_dropping_siblings(self, queue_root: Path, sink: _FakeSink) -> None:
+        """A truncated sidecar must not poison the whole drain pass."""
+        good_id, corrupt_id = image_id(1), image_id(2)
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
+        for capture_id in (good_id, corrupt_id):
+            (queue_root / f"{capture_id}.jpg").write_bytes(_jpeg_bytes())
+        (queue_root / f"{good_id}.json").write_text(f'{{"image_id": "{good_id}"}}')
+        (queue_root / f"{corrupt_id}.json").write_text('{"image_id": ')
+
+        entries = queue.iter_pending()
+
+        assert [e.image_id for e in entries] == [good_id]
+        # Left in place: unreadable is not the same as invalid, so a human can inspect it.
+        assert (queue_root / f"{corrupt_id}.json").exists()
+
+    def test_cleans_up_metadata_with_invalid_image_id(self, queue_root: Path, sink: _FakeSink) -> None:
+        """A sidecar whose stem is not a valid capture id can never be uploaded, so it is removed."""
+        queue = UploadQueue(queue_root, sink=cast("ImageSink", sink))
+        metadata_path = queue_root / "not-a-capture-id.json"
+        image_path = queue_root / "not-a-capture-id.jpg"
+        image_path.write_bytes(_jpeg_bytes())
+        metadata_path.write_text('{"image_id": "not-a-capture-id"}')
+
+        assert queue.iter_pending() == []
+        assert not metadata_path.exists()
+        assert not image_path.exists()
+
 
 class TestDrainOnce:
     """Tests for drain_once happy-path and failure-path."""
