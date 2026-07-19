@@ -159,6 +159,8 @@ The relay allowlist is part of the private backend-to-plugin protocol. It belong
 
 Preview publishes to a local MediaMTX sidecar over RTSP; browsers consume the stream via LL-HLS. Worker-owned hibernation (`PreviewSleeper`) stops the encoder after relay idleness and restarts it on the next HLS request. The `ThermalGovernor` drops the encoder bitrate when the SoC runs hot. The thumbnail worker keeps the setup UI preview current while preview is active.
 
+Remote (relay-proxied) preview deliberately stays on LL-HLS; the rationale and the WebRTC/WHEP migration conditions are recorded in [ADR 0001](docs/adr/0001-preview-streaming-hls-over-relay.md).
+
 Capture requests produce image bytes and bounded metadata, then pass them to the configured `ImageSink`.
 
 ## Image Sinks And Upload Queue
