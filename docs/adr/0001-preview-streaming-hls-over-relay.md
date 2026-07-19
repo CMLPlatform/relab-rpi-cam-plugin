@@ -57,10 +57,10 @@ camera pipeline:
 
 1. Allowlist one relay command for WHEP signaling (SDP offer/answer exchange
    with MediaMTX) — small JSON, a perfect fit for the existing tunnel.
-2. Media then flows browser ↔ Pi directly: on-LAN via host candidates
+1. Media then flows browser ↔ Pi directly: on-LAN via host candidates
    (no new infra), across NAT via STUN + a TURN relay (coturn) that must be
    deployed and paid for.
-3. Delete the `GET /preview/hls/` prefix from the relay allowlist; keep
+1. Delete the `GET /preview/hls/` prefix from the relay allowlist; keep
    local-direct LL-HLS or WHEP for the LAN case.
 
 Revisit this ADR when any of these hold:
