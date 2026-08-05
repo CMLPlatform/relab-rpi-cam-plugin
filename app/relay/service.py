@@ -365,7 +365,10 @@ async def _handle_command(
     except TimeoutError:
         await _send_error(ws, msg_id, 504, "Local dispatch timed out.")
         return
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        # httpx.InvalidURL is a plain Exception subclass, not an HTTPError, so it
+        # would otherwise escape this handler and kill the command task silently
+        # (the backend then burns its full command timeout waiting for a reply).
         await _send_error(ws, msg_id, 503, str(exc))
         return
 
