@@ -52,6 +52,8 @@ _RelayParamName = Annotated[StrictStr, Field(min_length=1, max_length=64, patter
 _RelayParamValue = Annotated[StrictStr, Field(max_length=256)] | StrictInt | FiniteFloat | StrictBool
 _RelayHeaderName = Annotated[StrictStr, Field(min_length=1, max_length=64, pattern=_SAFE_IDENTIFIER_PATTERN)]
 _RelayHeaderValue = Annotated[StrictStr, Field(max_length=512, pattern=r"^[\x20-\x7e]*$")]
+# NOTE: P-256 base64url coordinates are 43 chars; 42 leaves one char of slack for
+# encoders that trim a leading zero byte.
 _JwkCoordinate = Annotated[str, Field(min_length=42, max_length=64, pattern=_JWK_COORDINATE_PATTERN)]
 _PARENT_PATH_SEGMENT = ".."
 _BINARY_MEDIA_TYPE_PREFIXES = ("image/", "video/")
@@ -147,6 +149,9 @@ class PairingPollResponse(BaseModel):
         return cls(status=PairingStatus.PAIRED, **payload.model_dump())
 
 
+# NOTE: this record and PairingClaimedRecord are stored in Redis by the backend and
+# reparsed on upgrade under extra="forbid" — adding a field later requires either a
+# default (old records lack it) and never removing one within a record's TTL window.
 class PairingPendingRecord(BaseModel):
     """Redis-stored pairing record before a user claims the code."""
 
