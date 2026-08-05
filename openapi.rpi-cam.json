@@ -683,6 +683,7 @@
         "type": "object"
       },
       "LocalAccessInfo": {
+        "additionalProperties": false,
         "description": "Plugin -> backend -> frontend local direct-connection bootstrap payload.",
         "properties": {
           "candidate_urls": {
