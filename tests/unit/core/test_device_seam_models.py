@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
@@ -9,6 +11,7 @@ from relab_rpi_cam_models import (
     PAIRING_CODE_ALPHABET,
     PAIRING_CODE_LENGTH,
     PAIRING_CODE_PATTERN,
+    PAIRING_TTL_CEILING_SECONDS,
     RELAY_ALLOWED_EXACT_COMMANDS,
     RELAY_ALLOWED_PREFIX_COMMANDS,
     DeviceImageUploadAck,
@@ -17,6 +20,7 @@ from relab_rpi_cam_models import (
     LocalAccessInfo,
     PairingClaimedBootstrap,
     PairingCode,
+    PairingPendingRecord,
     PairingPollResponse,
     PairingRegisterRequest,
     PairingRegisterResponse,
@@ -33,11 +37,15 @@ from relab_rpi_cam_models import (
 CAMERA_ID = "cam-1"
 PAIRING_WS_URL = "wss://backend.example/v1/plugins/rpi-cam/ws/connect"
 BACKEND_OWNED_RELAY_METHOD = "CONNECT"
-BACKEND_OWNED_RELAY_PATH = "relative path checked by runtime"
+BACKEND_OWNED_RELAY_PATH = "relative-path-checked-by-runtime"
 RELAY_GET_METHOD = "GET"
 EXPECTED_PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 EXPECTED_PAIRING_CODE_PATTERN = r"^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$"
 VALID_PAIRING_CODE = "ABC234"
+# 32-byte P-256 coordinates, base64url-encoded without padding: 43 chars, as
+# real Pi-generated JWKs look (see app.pairing.services.service._b64url_uint).
+VALID_JWK_X = "x" * 43
+VALID_JWK_Y = "y" * 43
 
 ALLOWED_RELAY_COMMAND_EXAMPLES = sorted(
     RELAY_ALLOWED_EXACT_COMMANDS
@@ -68,8 +76,8 @@ def test_pairing_register_request_round_trips() -> None:
         public_key_jwk=DevicePublicKeyJWK(
             kty="EC",
             crv="P-256",
-            x="x-value",
-            y="y-value",
+            x=VALID_JWK_X,
+            y=VALID_JWK_Y,
             kid="kid-12345",
         ),
         key_id="kid-12345",
@@ -375,3 +383,177 @@ def test_relay_response_envelope_rejects_invalid_wire_shape(payload: dict[str, o
     """Relay response envelopes should stay small and HTTP-shaped."""
     with pytest.raises(ValidationError):
         RelayResponseEnvelope.model_validate(payload)
+
+
+# --- Fingerprint charset (non-ASCII/control chars must never reach hmac.compare_digest) ---
+
+
+@pytest.mark.parametrize(
+    "fingerprint",
+    [
+        "fingerprint-Ω",  # non-ASCII: would raise TypeError in hmac.compare_digest downstream
+        "finger\r\nprint",  # CRLF injection
+        "finger print",  # bare space
+        "short",  # below min_length
+    ],
+)
+def test_pairing_register_request_rejects_unsafe_fingerprints(fingerprint: str) -> None:
+    """Device fingerprints must stay within the backend's ASCII-safe charset."""
+    with pytest.raises(ValidationError):
+        PairingRegisterRequest(
+            code="ABC234",
+            rpi_fingerprint=fingerprint,
+            public_key_jwk=DevicePublicKeyJWK(kty="EC", crv="P-256", x=VALID_JWK_X, y=VALID_JWK_Y, kid="kid-12345"),
+            key_id="kid-12345",
+        )
+
+
+def test_pairing_register_request_accepts_real_pi_generated_fingerprint() -> None:
+    """The Pi's actual generator (secrets.token_urlsafe(16), ~22 chars) must stay valid."""
+    fingerprint = secrets.token_urlsafe(16)
+    request = PairingRegisterRequest(
+        code="ABC234",
+        rpi_fingerprint=fingerprint,
+        public_key_jwk=DevicePublicKeyJWK(kty="EC", crv="P-256", x=VALID_JWK_X, y=VALID_JWK_Y, kid="kid-12345"),
+        key_id="kid-12345",
+    )
+    assert request.rpi_fingerprint == fingerprint
+
+
+# --- JWK field bounds ---
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("x", "too-short"),
+        ("y", "too-short"),
+        ("x", "x" * 43 + "!"),  # invalid charset
+        ("use", "u" * 65),
+        ("kid", "k" * 65),
+    ],
+)
+def test_device_public_key_jwk_rejects_out_of_bounds_fields(field: str, value: str) -> None:
+    """JWK coordinates and metadata fields should stay bounded and URL-safe."""
+    payload = {"kty": "EC", "crv": "P-256", "x": VALID_JWK_X, "y": VALID_JWK_Y, field: value}
+    with pytest.raises(ValidationError):
+        DevicePublicKeyJWK.model_validate(payload)
+
+
+def test_device_public_key_jwk_accepts_real_p256_coordinate_length() -> None:
+    """32-byte P-256 coordinates, base64url-encoded without padding, are exactly 43 chars."""
+    jwk = DevicePublicKeyJWK(kty="EC", crv="P-256", x=VALID_JWK_X, y=VALID_JWK_Y)
+    assert len(jwk.x) == 43
+    assert len(jwk.y) == 43
+
+
+# --- extra="forbid" on pairing seam models ---
+
+
+def test_pairing_register_response_rejects_extra_fields() -> None:
+    """Backend pairing-register responses should reject unknown fields."""
+    with pytest.raises(ValidationError):
+        PairingRegisterResponse.model_validate({"code": "ABC234", "expires_in": 600, "extra": "field"})
+
+
+def test_pairing_poll_response_rejects_extra_fields() -> None:
+    """Pairing poll responses should reject unknown fields."""
+    with pytest.raises(ValidationError):
+        PairingPollResponse.model_validate({"status": "waiting", "extra": "field"})
+
+
+def test_pairing_pending_record_rejects_extra_fields() -> None:
+    """Redis-stored pending pairing records should reject unknown fields."""
+    with pytest.raises(ValidationError):
+        PairingPendingRecord.model_validate(
+            {
+                "rpi_fingerprint": "fingerprint-123",
+                "public_key_jwk": {"kty": "EC", "crv": "P-256", "x": VALID_JWK_X, "y": VALID_JWK_Y},
+                "key_id": "kid-12345",
+                "extra": "field",
+            }
+        )
+
+
+def test_pairing_claimed_bootstrap_rejects_extra_fields() -> None:
+    """Claimed bootstrap payloads (and their Redis-stored record subclass) should reject unknown fields."""
+    with pytest.raises(ValidationError):
+        PairingClaimedBootstrap.model_validate(
+            {
+                "camera_id": CAMERA_ID,
+                "ws_url": PAIRING_WS_URL,
+                "auth_scheme": RelayAuthScheme.DEVICE_ASSERTION,
+                "key_id": "kid-12345",
+                "extra": "field",
+            }
+        )
+
+
+def test_local_access_info_rejects_extra_fields() -> None:
+    """Local access info should reject unknown fields."""
+    with pytest.raises(ValidationError):
+        LocalAccessInfo.model_validate(
+            {
+                "local_api_key": "LOCAL_123",
+                "candidate_urls": ["http://192.168.1.20:8018"],
+                "extra": "field",
+            }
+        )
+
+
+def test_device_upload_acks_reject_extra_fields() -> None:
+    """Upload acknowledgements should reject unknown fields."""
+    with pytest.raises(ValidationError):
+        DeviceImageUploadAck.model_validate({"image_id": "a" * 32, "image_url": "/x", "extra": "field"})
+    with pytest.raises(ValidationError):
+        DevicePreviewThumbnailAck.model_validate({"preview_thumbnail_url": "/x", "extra": "field"})
+
+
+# --- Relay path control-character rejection ---
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/camera\r\n",
+        "/cam era",
+        "/camera\x00",
+        "/camera\t/controls",
+    ],
+)
+def test_relay_command_envelope_rejects_control_chars_in_path(path: str) -> None:
+    """Relay command paths must stay within printable, non-space ASCII."""
+    with pytest.raises(ValidationError):
+        RelayCommandEnvelope.model_validate({"id": "msg-1", "method": "GET", "path": path})
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    ALLOWED_RELAY_COMMAND_EXAMPLES,
+)
+def test_relay_command_policy_truth_table_unchanged_for_allowed_commands(method: str, path: str) -> None:
+    """The allowlist truth table (accept side) must not change after tightening path validation."""
+    assert relay_command_is_allowed(method, path)
+    RelayCommandEnvelope.model_validate({"id": "msg-1", "method": method, "path": path})
+
+
+# --- Relay header value charset ---
+
+
+def test_relay_command_envelope_rejects_control_chars_in_header_value() -> None:
+    """Relay header values must stay within printable ASCII."""
+    with pytest.raises(ValidationError):
+        RelayCommandEnvelope.model_validate(
+            {"id": "msg-1", "method": "GET", "path": "/camera", "headers": {"traceparent": "bad\r\nvalue"}}
+        )
+
+
+# --- Pairing TTL ceiling ---
+
+
+def test_pairing_ttl_ceiling_matches_backend_contract() -> None:
+    """The exported ceiling constant should match the backend's PAIRING_TTL_SECONDS."""
+    assert PAIRING_TTL_CEILING_SECONDS == 600
+    PairingRegisterResponse(code="ABC234", expires_in=PAIRING_TTL_CEILING_SECONDS)
+    with pytest.raises(ValidationError):
+        PairingRegisterResponse(code="ABC234", expires_in=PAIRING_TTL_CEILING_SECONDS + 1)

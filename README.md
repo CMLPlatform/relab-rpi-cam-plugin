@@ -67,3 +67,15 @@ See [INSTALL.md#observability](INSTALL.md#observability) for operator configurat
 ## Troubleshooting
 
 Use [INSTALL.md#troubleshooting](INSTALL.md#troubleshooting) for operator issues. Use [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and test workflow.
+
+## Licensing
+
+| What                                                     | Licence                          |
+| -------------------------------------------------------- | -------------------------------- |
+| Plugin software                                          | [AGPL-3.0-or-later](LICENSE)     |
+| The published API specification (`openapi.rpi-cam.json`) | [Apache-2.0](LICENSE-APACHE-2.0) |
+
+The specification is carved out so that anyone writing a client or an integration against this
+camera API does not inherit the plugin's copyleft. This mirrors the same split in the
+[Relab platform repository](https://github.com/CMLPlatform/relab), so every published Relab API
+schema answers the licensing question the same way.

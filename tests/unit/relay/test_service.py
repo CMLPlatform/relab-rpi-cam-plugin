@@ -525,6 +525,18 @@ class TestHandleCommand:
         assert payload["status"] == 503
         assert payload["data"]["detail"] == RELAY_COMMAND_ERROR
 
+    async def test_invalid_url_sends_503(self) -> None:
+        """httpx.InvalidURL (not an HTTPError subclass) must not escape the command handler."""
+        http = AsyncMock()
+        http.request = AsyncMock(side_effect=httpx.InvalidURL(RELAY_COMMAND_ERROR))
+        ws = AsyncMock()
+
+        await _handle_command(ws, http, {"id": "msg-invalid-url", "method": "GET", "path": CAMERA_PATH})
+
+        payload = json.loads(ws.send.call_args.args[0])
+        assert payload["status"] == 503
+        assert payload["data"]["detail"] == RELAY_COMMAND_ERROR
+
     async def test_403_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """A 403 from the local API should emit a warning."""
 
