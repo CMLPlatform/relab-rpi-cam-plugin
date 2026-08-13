@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.1 (2026-08-13)
+
+### Fix
+
+- **docker**: pin the runtime image back to Python 3.13
+- **docker**: drop pip from the runtime image
+- device seam validation and licensing update (#24)
+
 ## v0.6.0 (2026-07-20)
 
 ### Feat
