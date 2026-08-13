@@ -52,6 +52,11 @@ jobs:
           load: true
           pull: true
           tags: relab-rpi-cam-plugin:${{ github.sha }}
+      # The venv and the apt-installed picamera2 are only importable when the
+      # runtime interpreter matches the 3.13 they were built for; a base image
+      # bump to a newer Python breaks that silently. This catches it.
+      - name: Smoke-test imports
+        run: docker run --rm --entrypoint python relab-rpi-cam-plugin:${{ github.sha }} -c "import fastapi, picamera2"
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:

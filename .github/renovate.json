@@ -35,6 +35,16 @@
       ]
     },
     {
+      "description": "picamera2 in Debian Trixie is a CPython 3.13 build; the runtime image has to match it",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "allowedVersions": "<3.14"
+    },
+    {
       "groupName": "docker",
       "matchManagers": [
         "dockerfile",

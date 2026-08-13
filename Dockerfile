@@ -43,7 +43,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable --no-dev --group s3
 
 # Runtime stage: minimal paired-mode image (no S3 dependencies).
-FROM python:3.14-slim-trixie@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS runtime
+# Must stay on 3.13: the venv copied from the builder is a 3.13 venv, and the
+# picamera2 extensions in /usr/lib/python3/dist-packages are cpython-313 builds.
+# A newer interpreter here silently hides both from ``import``.
+FROM python:3.13-slim-trixie@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS runtime
 
 WORKDIR /app
 
