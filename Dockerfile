@@ -50,6 +50,8 @@ WORKDIR /app
 # Configure Raspberry Pi repository and install runtime dependencies.
 # apt cache mounts keep package lists in the build cache (not in the image
 # layer), so there is no need for a separate ``rm -rf /var/lib/apt/lists/*``.
+# pip is dropped: the venv is built by uv in the builder stage, so nothing here
+# needs it, and its vendored copies of msgpack/setuptools keep tripping Trivy.
 COPY --from=rpi-keyring /usr/share/keyrings/raspberrypi-archive-keyring.gpg /usr/share/keyrings/
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -58,7 +60,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg python3-picamera2 && \
-    useradd --create-home --uid 1000 --gid video rpicam
+    useradd --create-home --uid 1000 --gid video rpicam && \
+    pip uninstall -y pip
 
 ENV PYTHONPATH="/app:/usr/lib/python3/dist-packages" \
     PYTHONUNBUFFERED=1 \
