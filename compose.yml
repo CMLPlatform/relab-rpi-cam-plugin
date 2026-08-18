@@ -67,7 +67,7 @@ services:
     # ``-ffmpeg`` variant is required because ``runOnReady`` shells out to
     # ffmpeg and the default image doesn't ship it. Runs on the host network so
     # all three listeners (8554/8888/9997) are reachable from the app container.
-    image: bluenviron/mediamtx:1.20.0-ffmpeg@sha256:4be33da5a77ca41d9052b58a8fe4708c4908d901bd604253fa56dd3257833809
+    image: bluenviron/mediamtx:1.20.1-ffmpeg@sha256:16c56911dbd1fd7a85455042fa8320779fc8bf6575c6903f74023b202c1a620c
     restart: unless-stopped
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
