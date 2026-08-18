@@ -62,7 +62,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     > /etc/apt/sources.list.d/raspi.sources && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    ffmpeg python3-picamera2 && \
+    ffmpeg python3-picamera2 util-linux && \
     useradd --create-home --uid 1000 --gid video rpicam && \
     pip uninstall -y pip
 
