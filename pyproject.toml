@@ -51,7 +51,7 @@
     { include-group = "test" },
     { include-group = "s3" },
     "commitizen>=4.8.3",
-    "pre-commit>=4.2.0",
+    "prek>=0.4.11",
     "ruff>=0.9.6",
     "ty>=0.0.29",
   ]
@@ -79,7 +79,7 @@
   name                     = "cz_conventional_commits"
   tag_format               = "v$version"
   update_changelog_on_bump = true
-  version_files            = ["app/__version__.py"]
+  version_files            = ["app/__version__.py", "openapi.rpi-cam.json:\"version\""]
   version_provider         = "pep621"
   version_scheme           = "semver2"
 

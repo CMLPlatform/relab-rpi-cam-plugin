@@ -47,7 +47,7 @@ Before opening a PR, run:
 just check
 ```
 
-Use `pre-commit run --all-files` when changing hooks or repository policy files.
+Use `prek run --all-files` when changing hooks or repository policy files.
 
 ## Security Maintenance
 

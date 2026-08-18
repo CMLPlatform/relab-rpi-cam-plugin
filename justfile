@@ -38,8 +38,8 @@ openapi:
 openapi-check:
     uv run python -m scripts.export_openapi --check
 
-pre-commit:
-    uv run pre-commit run --all-files
+prek:
+    uv run prek run --all-files
 
 check:
     just lint

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 # spell-checker: ignore gacts
 
-# secret-scan runs on every push. It cannot be folded into the pre-commit hook that
+# secret-scan runs on every push. It cannot be folded into the prek hook that
 # CI already runs: the gitleaks hook scans the *staged* range, so on a clean CI
 # checkout it scans zero bytes. This job, with fetch-depth: 0, is the only real
 # secret gate in CI.

@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Options:
 #   --dev    Create a development environment (install dev deps) and install
-#            pre-commit hooks.
+#            prek hooks.
 
 DEV_MODE=false
 while [ "$#" -gt 0 ]; do
@@ -20,7 +20,7 @@ while [ "$#" -gt 0 ]; do
 			echo "Usage: $0 [--dev]"
 			echo ""
 			echo "Arguments:"
-			echo "  --dev    Create a development environment (install dev deps and install pre-commit hooks)."
+			echo "  --dev    Create a development environment (install dev deps and install prek hooks)."
 			exit 0
 			;;
 		*)
@@ -62,12 +62,12 @@ else
 	uv sync --frozen --no-dev
 fi
 
-# Install pre-commit hooks only in dev mode
+# Install prek hooks only in dev mode
 if [ "$DEV_MODE" = true ]; then
-	echo "Installing pre-commit hooks ..."
-	uv run pre-commit install
+	echo "Installing prek hooks ..."
+	uv run prek install
 	echo "Local setup complete. To run the application, use 'uv run fastapi dev app/main.py'"
 else
-	echo "Skipping pre-commit install in non-dev mode"
+	echo "Skipping prek install in non-dev mode"
 	echo "Local setup complete. To run the application, use 'uv run fastapi run app/main.py --port 8018'"
 fi

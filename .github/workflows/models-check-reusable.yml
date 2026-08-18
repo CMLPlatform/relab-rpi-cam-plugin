@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
-      # No ruff here: CI's `pre-commit run --all-files` already lints and formats this
+      # No ruff here: CI's `prek run --all-files` already lints and formats this
       # source repo-wide. The contract test stays — on the publish path it is the only
       # check that runs against the exact tagged commit.
       - name: Run contract package tests
