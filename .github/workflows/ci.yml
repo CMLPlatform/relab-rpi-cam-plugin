@@ -2,13 +2,10 @@
 
 name: CI
 
+# No push trigger: main only advances through a PR, so a push run repeats the
+# check that already passed on the PR head. security.yml keeps its push trigger
+# on purpose — a secret reaching main is exactly what a post-merge scan is for.
 on:
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
-      - 'LICENSE'
   pull_request:
     branches: [ main ]
     paths-ignore:
