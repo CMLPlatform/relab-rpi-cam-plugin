@@ -277,6 +277,7 @@ Check the CSI cable orientation, camera seating, and camera module compatibility
 - Confirm the Pi has outbound internet access.
 - Confirm `~/.config/relab/relay_credentials.json` exists after pairing.
 - Check logs: `docker compose logs app`
+- `refusing to connect`: pairing returned a relay host that differs from the hostname in `PAIRING_BACKEND_URL`. The device only authenticates to the backend it paired with, so point `PAIRING_BACKEND_URL` at the host the backend actually serves the relay from. A different port on the same host is fine.
 - If the backend sits behind Cloudflare, add a WAF bypass for `/v1/plugins/rpi-cam/pairing/*`, `/v1/plugins/rpi-cam/device/*`, and `/v1/plugins/rpi-cam/ws/connect`.
 
 ### Pairing Code Not Showing
