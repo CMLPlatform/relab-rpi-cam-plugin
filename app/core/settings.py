@@ -123,6 +123,32 @@ def validate_relay_backend_url(value: str, *, app_env: str) -> str:
     return value
 
 
+def validate_relay_url_origin(value: str, *, pairing_backend_url: str, app_env: str) -> str:
+    """Reject a relay URL pointing somewhere other than the backend this device paired with.
+
+    The relay URL arrives inside the pairing response, and the device authenticates to
+    whatever it names with a signed assertion. A backend naming another host would hand
+    that assertion to a third party, so the host is pinned to the one the device chose
+    to trust in its own configuration.
+
+    Only the hostname is compared: a different port on the same host reaches the same
+    operator, while the loopback rewrite in ``normalize_pairing_backend_base_url`` makes
+    the two hosts legitimately differ in development, where this is relaxed.
+    """
+    if not value or app_env == APP_ENV_DEVELOPMENT:
+        return value
+
+    relay_host = (urlparse(value).hostname or "").lower()
+    pairing_host = (urlparse(pairing_backend_url).hostname or "").lower()
+    if pairing_host and relay_host != pairing_host:
+        msg = (
+            f"Pairing returned a relay host ({relay_host or 'none'}) that is not the backend "
+            f"this device paired with ({pairing_host}); refusing to connect."
+        )
+        raise ValueError(msg)
+    return value
+
+
 class Settings(BaseSettings):
     """Settings class to store all the configurations for the app."""
 

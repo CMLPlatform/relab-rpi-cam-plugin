@@ -333,6 +333,71 @@ class TestPairingHelpers:
         save_credentials.assert_not_called()
         on_paired.assert_not_awaited()
 
+    async def test_complete_pairing_rejects_a_relay_host_the_device_never_chose(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A relay URL naming another host must not receive this device's assertion.
+
+        The device signs an assertion for whatever host the pairing response names, so
+        accepting an unrelated one would hand a working credential to a third party.
+        """
+        monkeypatch.setattr(settings, "app_env", APP_ENV_PRODUCTION)
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+        state = pairing_mod.PairingState()
+        on_paired = AsyncMock()
+        save_credentials = Mock()
+        monkeypatch.setattr(pairing_mod, "save_relay_credentials", save_credentials)
+
+        with pytest.raises(ValueError, match="not the backend this device paired with"):
+            await pairing_mod._complete_pairing_state(
+                state,
+                pairing_mod.PairingClaimedBootstrap.model_validate(
+                    {
+                        "camera_id": RELAY_CAMERA_ID,
+                        "ws_url": "wss://attacker.example/v1/plugins/rpi-cam/ws/connect",
+                        "auth_scheme": RELAY_AUTH_SCHEME,
+                        "key_id": RELAY_KEY_ID,
+                    }
+                ),
+                pairing_mod._generate_private_key(),
+                on_paired,
+                RuntimeState(),
+            )
+
+        save_credentials.assert_not_called()
+        on_paired.assert_not_awaited()
+
+    async def test_complete_pairing_accepts_the_paired_backends_own_relay_host(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The ordinary case: the relay lives on the backend the device paired with."""
+        monkeypatch.setattr(settings, "app_env", APP_ENV_PRODUCTION)
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+        state = pairing_mod.PairingState()
+        on_paired = AsyncMock()
+        save_credentials = Mock()
+        monkeypatch.setattr(pairing_mod, "save_relay_credentials", save_credentials)
+
+        await pairing_mod._complete_pairing_state(
+            state,
+            pairing_mod.PairingClaimedBootstrap.model_validate(
+                {
+                    "camera_id": RELAY_CAMERA_ID,
+                    "ws_url": EXAMPLE_RELAY_BACKEND_URL,
+                    "auth_scheme": RELAY_AUTH_SCHEME,
+                    "key_id": RELAY_KEY_ID,
+                }
+            ),
+            pairing_mod._generate_private_key(),
+            on_paired,
+            RuntimeState(),
+        )
+
+        save_credentials.assert_called_once()
+        on_paired.assert_awaited_once()
+
 
 class TestRunPairing:
     """Tests for the top-level pairing loop."""
@@ -764,6 +829,8 @@ class TestPairingCycle:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The module-level complete helper should persist creds and update runtime state."""
+        # The relay host is pinned to the paired backend, so both must name one origin.
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
         state = pairing_mod.PairingState(
             code=PAIRING_CODE_1,
             fingerprint=FINGERPRINT_1,
