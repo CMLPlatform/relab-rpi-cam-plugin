@@ -107,7 +107,7 @@ class AppRuntime:
             if not done_task.cancelled():
                 exc = done_task.exception()
                 if exc is not None:
-                    logger.exception("Managed task '%s' failed", done_task.get_name(), exc_info=exc)
+                    logger.error("Managed task '%s' failed", done_task.get_name(), exc_info=exc)
             task_set.discard(done_task)
             if self.managed_tasks_by_name.get(done_task.get_name()) is done_task:
                 del self.managed_tasks_by_name[done_task.get_name()]
