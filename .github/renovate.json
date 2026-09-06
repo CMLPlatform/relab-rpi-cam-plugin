@@ -3,6 +3,7 @@
   "extends": [
     "config:best-practices",
     ":approveMajorUpdates",
+    ":enablePreCommit",
     ":maintainLockFilesWeekly",
     ":preserveSemverRanges",
     "schedule:weekly"
@@ -35,10 +36,7 @@
       ]
     },
     {
-      "description": "picamera2 in Debian Trixie is a CPython 3.13 build; the runtime image has to match it",
-      "matchDatasources": [
-        "docker"
-      ],
+      "description": "picamera2 in Debian Trixie is a CPython 3.13 build; the runtime image and requires-python have to match it",
       "matchPackageNames": [
         "python"
       ],
