@@ -28,6 +28,7 @@ from app.core.runtime_context import get_active_runtime_state
 from app.core.settings import (
     APP_ENV_DEVELOPMENT,
     PAIRING_LOOPBACK_CONTAINER_ERROR,
+    RelayUrlError,
     validate_relay_backend_url,
     validate_relay_url_origin,
 )
@@ -136,6 +137,12 @@ class PairingService:
                         status="error",
                         error="Pairing backend is reachable, but the pairing API was not found at the configured URL.",
                     )
+                    return
+                except RelayUrlError as exc:
+                    # A relay URL the device will never accept: retrying only burns
+                    # pairing codes, so stop and show the operator the real reason.
+                    logger.exception("Pairing returned an unusable relay URL | stopping pairing")
+                    _clear_transient_pairing_state(self.state, status="error", error=str(exc))
                     return
                 except httpx.HTTPStatusError as exc:
                     _log_pairing_http_status_error(exc)

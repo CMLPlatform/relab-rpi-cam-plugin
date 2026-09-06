@@ -106,6 +106,14 @@ def validate_absolute_url_template_transport(value: str, *, setting_name: str, a
     validate_endpoint_transport(value, setting_name=setting_name, app_env=app_env)
 
 
+class RelayUrlError(ValueError):
+    """A relay URL that is permanently unusable, as opposed to a transient pairing failure.
+
+    Subclasses ``ValueError`` so pydantic field validation still reports it, while giving
+    the pairing loop something narrower than ``ValueError`` to stop on.
+    """
+
+
 def validate_relay_backend_url(value: str, *, app_env: str) -> str:
     """Validate the relay WebSocket URL transport policy."""
     if not value:
@@ -113,13 +121,13 @@ def validate_relay_backend_url(value: str, *, app_env: str) -> str:
     scheme = urlparse(value).scheme
     if scheme not in {RELAY_WSS_SCHEME, RELAY_WS_SCHEME}:
         msg = "relay_backend_url must use the wss:// (or ws://) scheme, not http/https"
-        raise ValueError(msg)
+        raise RelayUrlError(msg)
     if scheme == RELAY_WS_SCHEME and app_env != APP_ENV_DEVELOPMENT:
         msg = (
             "relay_backend_url uses unencrypted ws://. "
             "Set APP_ENV=development for local development, or switch to wss://."
         )
-        raise ValueError(msg)
+        raise RelayUrlError(msg)
     return value
 
 
@@ -127,15 +135,17 @@ def validate_relay_url_origin(value: str, *, pairing_backend_url: str, app_env: 
     """Reject a relay URL pointing somewhere other than the backend this device paired with.
 
     The relay URL arrives inside the pairing response, and the device authenticates to
-    whatever it names with a signed assertion. A backend naming another host would hand
-    that assertion to a third party, so the host is pinned to the one the device chose
-    to trust in its own configuration.
+    whatever it names with a signed assertion, so a backend naming another host would
+    hand that assertion to a third party.
 
-    Only the hostname is compared: a different port on the same host reaches the same
-    operator, while the loopback rewrite in ``normalize_pairing_backend_base_url`` makes
-    the two hosts legitimately differ in development, where this is relaxed.
+    Only the hostname is pinned: a different port on the same host reaches the same
+    operator. The pin is relaxed only against a loopback pairing backend in development,
+    where the container rewrite in ``normalize_pairing_backend_base_url`` legitimately
+    changes the host.
     """
-    if not value or app_env == APP_ENV_DEVELOPMENT:
+    if not value:
+        return value
+    if app_env == APP_ENV_DEVELOPMENT and is_loopback_url(pairing_backend_url):
         return value
 
     relay_host = (urlparse(value).hostname or "").lower()
@@ -145,7 +155,7 @@ def validate_relay_url_origin(value: str, *, pairing_backend_url: str, app_env: 
             f"Pairing returned a relay host ({relay_host or 'none'}) that is not the backend "
             f"this device paired with ({pairing_host}); refusing to connect."
         )
-        raise ValueError(msg)
+        raise RelayUrlError(msg)
     return value
 
 
