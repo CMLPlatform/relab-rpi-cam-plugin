@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.6.2 (2026-09-07)
+
+### Fix
+
+- **pairing**: pin the relay host to the paired backend (#31)
+- **docker**: install util-linux security update
+
 ## v0.6.1 (2026-08-13)
 
 ### Fix
