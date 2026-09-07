@@ -6,8 +6,15 @@ import pytest
 
 from app.core.bootstrap import apply_relay_credentials, set_runtime_relay_credentials
 from app.core.runtime_state import RuntimeState
-from app.core.settings import Settings
-from tests.constants import EXAMPLE_RELAY_BACKEND_URL
+from app.core.settings import (
+    APP_ENV_DEVELOPMENT,
+    APP_ENV_PRODUCTION,
+    RelayUrlError,
+    Settings,
+    settings,
+    validate_relay_url_origin,
+)
+from tests.constants import EXAMPLE_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL
 from tests.fakes import fresh_p256_pem
 
 RELAY_CAMERA_ID = "cam-1"
@@ -54,6 +61,11 @@ class TestStaticRelayCredentialsProperty:
 
 class TestApplyRelayCredentials:
     """Tests for the `apply_relay_credentials` function."""
+
+    @pytest.fixture(autouse=True)
+    def _pair_with_the_example_backend(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Relay URLs in these tests belong to the backend the device paired with."""
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
 
     def test_loads_credentials_from_file(self) -> None:
         """Should load credentials from the file and apply to runtime state."""
@@ -116,6 +128,11 @@ class TestApplyRelayCredentials:
 class TestSetRuntimeRelayCredentials:
     """Tests for relay signing credential validation at the runtime boundary."""
 
+    @pytest.fixture(autouse=True)
+    def _pair_with_the_example_backend(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Relay URLs in these tests belong to the backend the device paired with."""
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+
     def test_accepts_valid_device_assertion_credentials(self) -> None:
         """Valid device assertion credentials should be applied to runtime state."""
         runtime_state = RuntimeState()
@@ -169,3 +186,75 @@ class TestAuthorizedApiKeysMutation:
         runtime_state.add_authorized_api_key("two")
 
         assert runtime_state.authorized_api_keys is original_keys
+
+
+FOREIGN_RELAY_BACKEND_URL = "wss://attacker.example/v1/plugins/rpi-cam/ws/connect"
+LOOPBACK_BACKEND_URL = "http://127.0.0.1:8000"
+
+
+class TestValidateRelayUrlOrigin:
+    """Tests for the relay host pin applied to backend-supplied relay URLs."""
+
+    def test_accepts_the_paired_host_on_another_port(self) -> None:
+        """A different port on the paired host still reaches the same operator."""
+        value = "wss://example.com:8443/v1/plugins/rpi-cam/ws/connect"
+        assert (
+            validate_relay_url_origin(value, pairing_backend_url=EXAMPLE_BACKEND_URL, app_env=APP_ENV_PRODUCTION)
+            == value
+        )
+
+    def test_rejects_a_foreign_host(self) -> None:
+        """A relay URL naming another host must never receive this device's assertion."""
+        with pytest.raises(RelayUrlError, match="not the backend this device paired with"):
+            validate_relay_url_origin(
+                FOREIGN_RELAY_BACKEND_URL,
+                pairing_backend_url=EXAMPLE_BACKEND_URL,
+                app_env=APP_ENV_PRODUCTION,
+            )
+
+    def test_rejects_a_foreign_host_in_development_against_a_remote_backend(self) -> None:
+        """Development only relaxes the pin for a loopback backend, not a remote one."""
+        with pytest.raises(RelayUrlError, match="not the backend this device paired with"):
+            validate_relay_url_origin(
+                FOREIGN_RELAY_BACKEND_URL,
+                pairing_backend_url=EXAMPLE_BACKEND_URL,
+                app_env=APP_ENV_DEVELOPMENT,
+            )
+
+    def test_relaxes_the_pin_for_a_loopback_backend_in_development(self) -> None:
+        """The container rewrite legitimately moves a loopback backend to another host."""
+        value = "ws://host.docker.internal:8000/v1/plugins/rpi-cam/ws/connect"
+        assert (
+            validate_relay_url_origin(value, pairing_backend_url=LOOPBACK_BACKEND_URL, app_env=APP_ENV_DEVELOPMENT)
+            == value
+        )
+
+    def test_accepts_an_empty_relay_url(self) -> None:
+        """An unset relay URL is not this validator's concern."""
+        assert validate_relay_url_origin("", pairing_backend_url=EXAMPLE_BACKEND_URL, app_env=APP_ENV_PRODUCTION) == ""
+
+
+class TestPersistedRelayCredentialsOrigin:
+    """The pin must also cover credentials restored from disk, not just fresh pairings."""
+
+    def test_rejects_a_persisted_relay_host_the_device_never_paired_with(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A foreign host in the credentials file leaves the relay disabled, not the app dead."""
+        monkeypatch.setattr(settings, "app_env", APP_ENV_PRODUCTION)
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+        creds = {
+            "relay_backend_url": FOREIGN_RELAY_BACKEND_URL,
+            "relay_camera_id": RELAY_CAMERA_ID,
+            "relay_auth_scheme": RELAY_AUTH_SCHEME,
+            "relay_key_id": RELAY_KEY_ID,
+            "relay_private_key_pem": RELAY_PRIVATE_KEY_PEM,
+        }
+        runtime_state = RuntimeState()
+
+        with patch("app.core.bootstrap.load_relay_credentials", return_value=creds):
+            apply_relay_credentials(runtime_state)
+
+        assert runtime_state.relay_backend_url == ""
+        assert not runtime_state.relay_enabled

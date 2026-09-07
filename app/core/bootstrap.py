@@ -13,10 +13,12 @@ from app.core.settings import (
     IMAGE_SINK_BACKEND,
     IMAGE_SINK_S3,
     PAIRING_LOOPBACK_CONTAINER_ERROR,
+    RelayUrlError,
     Settings,
     is_loopback_url,
     settings,
     validate_relay_backend_url,
+    validate_relay_url_origin,
 )
 from app.pairing.services.credentials import _CREDENTIALS_FILE, load_relay_credentials
 from app.relay.credentials import validate_relay_credentials
@@ -46,14 +48,19 @@ def apply_relay_credentials(runtime_state: RuntimeState) -> None:
         return
     creds = load_relay_credentials()
     if creds and creds.get("relay_backend_url"):
-        set_runtime_relay_credentials(
-            runtime_state=runtime_state,
-            relay_backend_url=str(creds.get("relay_backend_url", "")),
-            relay_camera_id=str(creds.get("relay_camera_id", "")),
-            relay_auth_scheme=str(creds.get("relay_auth_scheme", "device_assertion")),
-            relay_key_id=str(creds.get("relay_key_id", "")),
-            relay_private_key_pem=str(creds.get("relay_private_key_pem", "")),
-        )
+        try:
+            set_runtime_relay_credentials(
+                runtime_state=runtime_state,
+                relay_backend_url=str(creds.get("relay_backend_url", "")),
+                relay_camera_id=str(creds.get("relay_camera_id", "")),
+                relay_auth_scheme=str(creds.get("relay_auth_scheme", "device_assertion")),
+                relay_key_id=str(creds.get("relay_key_id", "")),
+                relay_private_key_pem=str(creds.get("relay_private_key_pem", "")),
+            )
+        except RelayUrlError:
+            # Leave the relay disabled rather than failing startup: the device stays
+            # reachable on the LAN and re-pairs against the configured backend.
+            logger.exception("Persisted relay credentials rejected; relay disabled")
 
 
 def resolve_image_sink_choice(app_settings: Settings = settings) -> str:
@@ -127,6 +134,11 @@ def set_runtime_relay_credentials(
 ) -> None:
     """Apply relay credentials at runtime and refresh dependent auth state."""
     validate_relay_backend_url(relay_backend_url, app_env=app_settings.app_env)
+    validate_relay_url_origin(
+        relay_backend_url,
+        pairing_backend_url=app_settings.pairing_backend_url,
+        app_env=app_settings.app_env,
+    )
     validate_relay_credentials(
         relay_camera_id=relay_camera_id,
         relay_auth_scheme=relay_auth_scheme,

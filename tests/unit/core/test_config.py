@@ -8,9 +8,10 @@ from pydantic import HttpUrl
 
 import app.core.bootstrap as config_mod
 from app.core.runtime_state import RuntimeState
-from app.core.settings import Settings, is_loopback_url
+from app.core.settings import Settings, is_loopback_url, settings
 from app.utils.files import is_running_in_container
 from tests.constants import (
+    EXAMPLE_BACKEND_URL,
     EXAMPLE_RELAY_BACKEND_URL,
     EXAMPLE_RELAY_BACKEND_URL_UNSECURE,
     EXAMPLE_RELAY_HTTP_URL,
@@ -401,6 +402,11 @@ class TestEndpointTransportValidation:
 class TestConfigBootstrapHelpers:
     """Tests for runtime bootstrap helpers in config."""
 
+    @pytest.fixture(autouse=True)
+    def _pair_with_the_example_backend(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Relay URLs in these tests belong to the backend the device paired with."""
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+
     def test_is_running_in_container_checks_dockerenv(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Container detection should be a thin /.dockerenv existence check."""
         monkeypatch.setattr("app.utils.files.Path.exists", lambda _self: True)
@@ -529,7 +535,7 @@ class TestConfigBootstrapHelpers:
     def test_set_runtime_relay_credentials_allows_plaintext_in_development(self) -> None:
         """The local-development APP_ENV setting should also apply to persisted credentials."""
         runtime_state = RuntimeState(local_relay_api_key="relay-local-key")
-        app_settings = Settings(app_env=APP_ENV_DEVELOPMENT)
+        app_settings = Settings(app_env=APP_ENV_DEVELOPMENT, pairing_backend_url=EXAMPLE_BACKEND_URL)
 
         config_mod.set_runtime_relay_credentials(
             runtime_state,

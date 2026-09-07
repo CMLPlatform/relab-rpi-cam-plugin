@@ -80,7 +80,7 @@ async def camera_initialization_exception_handler(
     exc: Exception,
 ) -> JSONResponse:
     """Handle camera initialization errors."""
-    logger.exception("Camera initialization failed", exc_info=(type(exc), exc, exc.__traceback__))
+    logger.error("Camera initialization failed", exc_info=exc)
     return JSONResponse(
         status_code=500,
         content={"detail": client_error_detail("Camera initialization failed")},
@@ -92,9 +92,9 @@ async def unhandled_exception_handler(
     exc: Exception,
 ) -> JSONResponse:
     """Handle unexpected exceptions with client-safe output and full server logs."""
-    logger.exception(
+    logger.error(
         "Unhandled application exception",
-        exc_info=(type(exc), exc, exc.__traceback__),
+        exc_info=exc,
         extra=build_security_log_extra(
             event="error.unhandled",
             outcome="failure",

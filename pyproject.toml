@@ -107,8 +107,9 @@
       "W191",   # tab-indentation
 
       # Overly strict rules
-      "D105", # undocumented-magic-method (magic methods are often self-explanatory)
-      "D107", # undocumented-public-init (__init__ methods are often self-explanatory)
+      "D105",   # undocumented-magic-method (magic methods are often self-explanatory)
+      "D107",   # undocumented-public-init (__init__ methods are often self-explanatory)
+      "CPY001", # missing-copyright (not relevant for this project)
 
     ]
 

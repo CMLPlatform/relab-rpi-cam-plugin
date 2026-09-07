@@ -25,7 +25,13 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.core.bootstrap import set_runtime_relay_credentials
 from app.core.runtime_context import get_active_runtime_state
-from app.core.settings import APP_ENV_DEVELOPMENT, PAIRING_LOOPBACK_CONTAINER_ERROR, validate_relay_backend_url
+from app.core.settings import (
+    APP_ENV_DEVELOPMENT,
+    PAIRING_LOOPBACK_CONTAINER_ERROR,
+    RelayUrlError,
+    validate_relay_backend_url,
+    validate_relay_url_origin,
+)
 from app.core.settings import settings as app_settings
 from app.observability.logging import build_log_extra
 from app.pairing.services.client import PairingClient
@@ -131,6 +137,12 @@ class PairingService:
                         status="error",
                         error="Pairing backend is reachable, but the pairing API was not found at the configured URL.",
                     )
+                    return
+                except RelayUrlError as exc:
+                    # A relay URL the device will never accept: retrying only burns
+                    # pairing codes, so stop and show the operator the real reason.
+                    logger.exception("Pairing returned an unusable relay URL | stopping pairing")
+                    _clear_transient_pairing_state(self.state, status="error", error=str(exc))
                     return
                 except httpx.HTTPStatusError as exc:
                     _log_pairing_http_status_error(exc)
@@ -432,6 +444,11 @@ async def _complete_pairing_state(
     private_key_pem = _private_key_pem(private_key)
     validate_relay_backend_url(
         relay_backend_url,
+        app_env=app_settings.app_env,
+    )
+    validate_relay_url_origin(
+        relay_backend_url,
+        pairing_backend_url=app_settings.pairing_backend_url,
         app_env=app_settings.app_env,
     )
 

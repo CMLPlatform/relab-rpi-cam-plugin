@@ -14,7 +14,7 @@ import pytest
 from app.auth.dependencies import reload_authorized_keys
 from app.core.runtime import AppRuntime, set_active_runtime
 from app.core.runtime_state import RuntimeState
-from app.core.settings import settings
+from app.core.settings import RelayUrlError, settings
 from app.pairing.services import credentials as pairing_credentials
 from app.pairing.services import service as pairing_mod
 from tests.constants import (
@@ -333,6 +333,41 @@ class TestPairingHelpers:
         save_credentials.assert_not_called()
         on_paired.assert_not_awaited()
 
+    async def test_complete_pairing_rejects_a_relay_host_the_device_never_chose(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A relay URL naming another host must not receive this device's assertion.
+
+        The device signs an assertion for whatever host the pairing response names, so
+        accepting an unrelated one would hand a working credential to a third party.
+        """
+        monkeypatch.setattr(settings, "app_env", APP_ENV_PRODUCTION)
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+        state = pairing_mod.PairingState()
+        on_paired = AsyncMock()
+        save_credentials = Mock()
+        monkeypatch.setattr(pairing_mod, "save_relay_credentials", save_credentials)
+
+        with pytest.raises(ValueError, match="not the backend this device paired with"):
+            await pairing_mod._complete_pairing_state(
+                state,
+                pairing_mod.PairingClaimedBootstrap.model_validate(
+                    {
+                        "camera_id": RELAY_CAMERA_ID,
+                        "ws_url": "wss://attacker.example/v1/plugins/rpi-cam/ws/connect",
+                        "auth_scheme": RELAY_AUTH_SCHEME,
+                        "key_id": RELAY_KEY_ID,
+                    }
+                ),
+                pairing_mod._generate_private_key(),
+                on_paired,
+                RuntimeState(),
+            )
+
+        save_credentials.assert_not_called()
+        on_paired.assert_not_awaited()
+
 
 class TestRunPairing:
     """Tests for the top-level pairing loop."""
@@ -365,6 +400,32 @@ class TestRunPairing:
         on_paired.assert_not_awaited()
         assert PAIRING_API_NOT_FOUND_LOG in caplog.text
         assert TRACEBACK_TEXT in caplog.text
+
+    async def test_stops_when_the_backend_returns_an_unusable_relay_url(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A relay URL the device will never accept is fatal, not something to retry forever.
+
+        Retrying burns a fresh pairing code every cycle while the operator only ever sees
+        a generic failure; the INSTALL.md remedy needs the real reason on the setup page.
+        """
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
+        service = pairing_mod.PairingService()
+        message = "Pairing returned a relay host (attacker.example) that is not the backend"
+
+        async def fake_pairing_cycle(_client: object, _base_url: str, _on_paired: object) -> None:
+            raise RelayUrlError(message)
+
+        monkeypatch.setattr(service, "_pairing_cycle", fake_pairing_cycle)
+        monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: FakeClient([], []))
+        on_paired = AsyncMock()
+
+        await service.run_forever(on_paired)
+
+        on_paired.assert_not_awaited()
+        assert service.state.status == "error"
+        assert service.state.error == message
 
     async def test_rewrites_loopback_backend_to_host_docker_internal(
         self,
@@ -764,6 +825,8 @@ class TestPairingCycle:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The module-level complete helper should persist creds and update runtime state."""
+        # The relay host is pinned to the paired backend, so both must name one origin.
+        monkeypatch.setattr(settings, "pairing_backend_url", EXAMPLE_BACKEND_URL)
         state = pairing_mod.PairingState(
             code=PAIRING_CODE_1,
             fingerprint=FINGERPRINT_1,
