@@ -16,7 +16,7 @@ jobs:
     name: Release
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -24,37 +24,55 @@ jobs:
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
           python-version: "3.13"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      # push: false so the lockfile can be folded into the bump commit below; the
-      # action would otherwise push the commit and tag before we can amend them.
+      # cz runs here rather than through commitizen-action so the pre_bump_hooks in
+      # pyproject.toml can reach uv: the hook regenerates uv.lock and stages it before
+      # cz commits, so the lockfile lands in the bump commit itself. Running cz directly
+      # also means nothing is pushed until the verify step below has passed.
+      # Exit 21 is commitizen's "no bumpable commits", which is not a failure.
       - name: Bump version
         id: cz
-        uses: commitizen-tools/commitizen-action@338bbd841b75aaee6bf5340e1fa12f6ab58ff9ff # 0.27.1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          push: false
-
-      # commitizen bumps pyproject.toml, app/__version__.py and the exported OpenAPI
-      # JSON, but not the lockfile's own project version, so every release left uv.lock
-      # a version behind. Amend rather than append, so the tag never points at a stale
-      # lockfile. Git identity is already configured by the action above.
-      - name: Sync the lockfile into the bump commit
-        if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
         run: |
-          uv lock
-          git add uv.lock
-          git commit --amend --no-edit
-          git tag -f "v${{ steps.cz.outputs.next_version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set +e
+          uvx --from commitizen cz bump --yes
+          code=$?
+          set -e
+          if [ "$code" -eq 21 ]; then
+            echo "No bumpable commits; nothing to release."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$code" -eq 0 ] || exit "$code"
+          echo "bumped=true" >> "$GITHUB_OUTPUT"
+          echo "version=$(uvx --from commitizen cz version --project)" >> "$GITHUB_OUTPUT"
+
+      # ci.yml has no push trigger because main normally only advances through a pull
+      # request — this workflow is the one exception, so the bump commit is content no
+      # pull request ever checked. Run the same gate here, before anything is pushed.
+      - name: Verify the release commit
+        if: steps.cz.outputs.bumped == 'true'
+        run: |
+          uv sync --locked --all-groups
+          uv run prek run --all-files
+          uv run pytest
 
       # The tags commitizen creates are lightweight, which --follow-tags skips, so both
       # refs are named explicitly.
       - name: Push version bump and tag
-        if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
-        run: git push origin "HEAD:${{ github.ref_name }}" "v${{ steps.cz.outputs.next_version }}"
+        if: steps.cz.outputs.bumped == 'true'
+        run: git push origin "HEAD:${{ github.ref_name }}" "v${{ steps.cz.outputs.version }}"
 
       - name: Create GitHub release
-        if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
+        if: steps.cz.outputs.bumped == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "v${{ steps.cz.outputs.next_version }}" --title "v${{ steps.cz.outputs.next_version }}" --generate-notes
+        run: gh release create "v${{ steps.cz.outputs.version }}" --title "v${{ steps.cz.outputs.version }}" --generate-notes
