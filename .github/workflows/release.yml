@@ -22,15 +22,36 @@ jobs:
         with:
           fetch-depth: 0 # commitizen needs full history to find the last tag
 
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.13"
+
+      # push: false so the lockfile can be folded into the bump commit below; the
+      # action would otherwise push the commit and tag before we can amend them.
       - name: Bump version
         id: cz
         uses: commitizen-tools/commitizen-action@338bbd841b75aaee6bf5340e1fa12f6ab58ff9ff # 0.27.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          push: false
 
+      # commitizen bumps pyproject.toml, app/__version__.py and the exported OpenAPI
+      # JSON, but not the lockfile's own project version, so every release left uv.lock
+      # a version behind. Amend rather than append, so the tag never points at a stale
+      # lockfile. Git identity is already configured by the action above.
+      - name: Sync the lockfile into the bump commit
+        if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
+        run: |
+          uv lock
+          git add uv.lock
+          git commit --amend --no-edit
+          git tag -f "v${{ steps.cz.outputs.next_version }}"
+
+      # The tags commitizen creates are lightweight, which --follow-tags skips, so both
+      # refs are named explicitly.
       - name: Push version bump and tag
         if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
-        run: git push --follow-tags
+        run: git push origin "HEAD:${{ github.ref_name }}" "v${{ steps.cz.outputs.next_version }}"
 
       - name: Create GitHub release
         if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
