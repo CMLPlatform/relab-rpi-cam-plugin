@@ -1309,7 +1309,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.9" }]
 
 [[package]]
 name = "relab-rpi-cam-plugin"
-version = "0.6.1"
+version = "0.6.2"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },

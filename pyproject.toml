@@ -75,6 +75,8 @@
   show_missing = true
 
 [tool.commitizen]
+  # The models subpackage carries its own tags; they are not app releases.
+  ignored_tag_formats      = ["relab-rpi-cam-models-v$version"]
   major_version_zero       = true
   name                     = "cz_conventional_commits"
   tag_format               = "v$version"
