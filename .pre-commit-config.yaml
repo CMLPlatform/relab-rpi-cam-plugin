@@ -28,7 +28,7 @@ repos:
                 - mdformat-gfm # Support GitHub Flavored Markdown.
 
     - repo: https://github.com/astral-sh/ruff-pre-commit # Lint and format Python code with Ruff.
-      rev: v0.16.3
+      rev: v0.16.6
       hooks:
           - id: ruff-check
           - id: ruff-format
