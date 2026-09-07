@@ -16,7 +16,7 @@ jobs:
     name: Release
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -24,7 +24,13 @@ jobs:
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
           python-version: "3.13"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
       # push: false so the lockfile can be folded into the bump commit below; the
       # action would otherwise push the commit and tag before we can amend them.
@@ -46,6 +52,16 @@ jobs:
           git add uv.lock
           git commit --amend --no-edit
           git tag -f "v${{ steps.cz.outputs.next_version }}"
+
+      # ci.yml has no push trigger because main normally only advances through a pull
+      # request — this workflow is the one exception, so the bump commit is content no
+      # pull request ever checked. Run the same gate here, before anything is pushed.
+      - name: Verify the release commit
+        if: steps.cz.outputs.next_version != steps.cz.outputs.previous_version
+        run: |
+          uv sync --locked --all-groups
+          uv run prek run --all-files
+          uv run pytest
 
       # The tags commitizen creates are lightweight, which --follow-tags skips, so both
       # refs are named explicitly.
