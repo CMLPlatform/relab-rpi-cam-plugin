@@ -67,7 +67,7 @@ services:
     # ``-ffmpeg`` variant is required because ``runOnReady`` shells out to
     # ffmpeg and the default image doesn't ship it. Runs on the host network so
     # all three listeners (8554/8888/9997) are reachable from the app container.
-    image: bluenviron/mediamtx:1.21.0-ffmpeg@sha256:9d148b5f29906618dee627ea3232c75d4ed60da8d40a3ad7276ca87c1ec4f19e
+    image: bluenviron/mediamtx:1.21.1-ffmpeg@sha256:00ef3d1a243f3769ca36769b47df241a0c269c83a7735005b817505c49adb651
     restart: unless-stopped
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
@@ -83,7 +83,7 @@ services:
 
   alloy:
     <<: *runtime-hardening
-    image: grafana/alloy:v1.19.2@sha256:b8ec653c44235fbe910879145dac3597d66b0aaecf60bcbbe82580767771a839
+    image: grafana/alloy:v1.20.0@sha256:f111cce835516c5f99166342be7038496b52ced16667be5a11e19258a3e4cd30
     restart: unless-stopped
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
