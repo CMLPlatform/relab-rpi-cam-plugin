@@ -17,11 +17,10 @@ from app.core.lifespan import lifespan
 from app.core.middleware import register_middleware
 from app.core.runtime import ensure_app_runtime
 from app.core.settings import settings
-from app.observability.logging import build_security_log_extra, setup_logging
+from app.observability.logging import build_security_log_extra
 from app.observability.tracing import setup_observability
 from app.router import router as main_router
 
-setup_logging()
 logger = logging.getLogger(__name__)
 
 _ALLOWED_STATIC_EXTENSIONS = frozenset({".css", ".ico", ".js", ".png"})

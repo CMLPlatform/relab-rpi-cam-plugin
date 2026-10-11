@@ -18,7 +18,7 @@ from app.core.bootstrap import bootstrap_runtime_state
 from app.core.runtime import AppRuntime, ensure_app_runtime
 from app.core.runtime_state import ConnectionMode, connection_mode
 from app.core.settings import settings
-from app.observability.logging import configure_library_loggers
+from app.observability.logging import setup_logging
 from app.utils.files import cleanup_images, setup_directory
 
 if TYPE_CHECKING:
@@ -71,8 +71,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     Note that the camera is set up lazily to avoid unnecessary resource use.
     """
-    # Re-apply our logger normalization after Uvicorn/FastAPI have finished bootstrapping.
-    configure_library_loggers()
+    # Set up logging here, not at import, so importing the app has no filesystem side effects.
+    # Running after Uvicorn/FastAPI have configured their own loggers also keeps ours in charge.
+    setup_logging()
     runtime = ensure_app_runtime(app)
 
     bootstrap_runtime_state(runtime.runtime_state)

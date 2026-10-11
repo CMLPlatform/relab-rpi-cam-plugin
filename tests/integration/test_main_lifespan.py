@@ -2,6 +2,10 @@
 
 import asyncio
 import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock
 
@@ -61,7 +65,17 @@ def runtime(monkeypatch: pytest.MonkeyPatch) -> AppRuntime:
     monkeypatch.setattr(runtime, "_upload_worker_run_calls", lambda: upload_worker_run_calls, raising=False)
 
     monkeypatch.setattr(lifespan_mod, "ensure_app_runtime", lambda _app: runtime)
+    # Real logging setup would replace caplog's root handler and write ./logs.
+    monkeypatch.setattr(lifespan_mod, "setup_logging", lambda: None)
     return runtime
+
+
+def test_importing_app_does_not_create_log_dir(tmp_path: Path) -> None:
+    """Importing the app must not touch the filesystem; logging is set up at startup."""
+    log_dir = tmp_path / "logs"
+    env = {**os.environ, "LOG_PATH": str(log_dir)}
+    subprocess.run([sys.executable, "-c", "import app.main"], check=True, env=env, timeout=60)
+    assert not log_dir.exists()
 
 
 async def _run_lifespan_once(app: FastAPI) -> None:
