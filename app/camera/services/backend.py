@@ -1,10 +1,12 @@
 """Backend abstraction for hardware-specific camera implementations.
 
 The core ``CameraBackend`` Protocol covers what every camera must do: open,
-capture a still, and clean up. Backends for non-standard sensors (infrared,
-hyperspectral, etc.) only have to satisfy this core. Backends that also do live
-video streaming additionally implement ``StreamingCameraBackend``; the camera
-manager uses ``isinstance`` checks to gate streaming operations.
+capture a still and a preview frame, attach and detach the lores H264 encoder
+that feeds the LL-HLS preview, and clean up. Backends for non-standard sensors
+(infrared, hyperspectral, etc.) must satisfy all of this core, including the
+encoder hooks. Backends that also do live video streaming additionally
+implement ``StreamingCameraBackend``; the camera manager uses ``isinstance``
+checks to gate streaming operations.
 """
 
 from __future__ import annotations

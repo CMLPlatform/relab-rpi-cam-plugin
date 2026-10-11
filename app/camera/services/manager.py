@@ -187,8 +187,8 @@ class CameraManager:
         """Capture a still, push it to the backend, and fall back to the local queue on failure.
 
         This is a pure push flow: the Pi never serves captured bytes via HTTP. On
-        a successful synchronous upload the local file is deleted. On failure the
-        file is moved into the upload queue for exponential-backoff retry.
+        failure the bytes are written to a file in the upload queue for
+        exponential-backoff retry.
 
         The camera lock is held across capture and encode so a concurrent stream
         start cannot race the encoder. Encoding goes straight to memory: on the

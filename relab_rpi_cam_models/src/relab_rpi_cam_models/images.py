@@ -123,5 +123,8 @@ class ImageCaptureResponse(BaseModel):
         AwareDatetime | None, PlainSerializer(lambda dt: serialize_datetime_with_z(dt) if dt is not None else None)
     ] = Field(
         default=None,
-        description="Expiration time for queue entries; None for successfully uploaded images.",
+        description=(
+            "When the stored image expires, if the storage backend reports an expiry. "
+            "None for queued captures, and None today for uploads too, since no sink sets it."
+        ),
     )
