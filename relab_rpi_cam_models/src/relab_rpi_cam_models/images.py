@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import Annotated
 
 from pydantic import (
+    AliasChoices,
     AliasGenerator,
     AnyUrl,
     AwareDatetime,
@@ -62,7 +63,12 @@ class CaptureMetadata(BaseModel):
 
     exposure_time: PositiveInt | None = Field(default=None, description="Exposure time in microseconds")
     frame_duration: PositiveInt | None = Field(default=None, description="Frame duration in microseconds")
-    color_temperature: PositiveInt | None = Field(default=None, description="Color temperature in K")
+    # libcamera spells this control "ColourTemperature", which to_pascal cannot produce.
+    color_temperature: PositiveInt | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ColourTemperature", "ColorTemperature", "color_temperature"),
+        description="Color temperature in K",
+    )
     analogue_gain: float | None = Field(default=None)
     digital_gain: float | None = Field(default=None)
     lux: PositiveFloat | None = Field(default=None, description="Illuminance in lux")

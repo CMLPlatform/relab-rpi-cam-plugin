@@ -41,6 +41,24 @@ class TestContractAdapters:
         assert metadata.image_properties.height == 240
         assert metadata.camera_properties.camera_model == MOCK_CAMERA_MODEL
 
+    def test_build_image_metadata_reads_libcamera_spelled_controls(self) -> None:
+        """Picamera2 metadata uses libcamera's British spellings, e.g. ColourTemperature."""
+        image = Image.new("RGB", (100, 100), color="red")
+        capture_metadata = {
+            "ExposureTime": 1_000,
+            "FrameDuration": 33_333,
+            "ColourTemperature": 5_000,
+            "ColourGains": (1.8, 1.5),
+            "AnalogueGain": 1.0,
+            "DigitalGain": 1.0,
+            "Lux": 400.0,
+            "SensorTemperature": 42.0,
+        }
+        metadata = build_image_metadata(image, {"Model": MOCK_CAMERA_MODEL}, capture_metadata)
+        assert metadata.capture_metadata.color_temperature == 5_000
+        assert metadata.capture_metadata.analogue_gain == 1.0
+        assert metadata.capture_metadata.lux == 400.0
+
     def test_image_metadata_to_exif_adds_required_tags(self) -> None:
         """Plugin-local EXIF conversion should remain outside the shared package."""
         image = Image.new("RGB", (100, 100), color="red")
