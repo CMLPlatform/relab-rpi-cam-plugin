@@ -41,7 +41,7 @@ class ImageProperties(BaseModel):
 class CameraProperties(BaseModel):
     """Static camera properties from libcamera.
 
-    For more info, see https://libcamera.org/api-html/namespacelibcamera_1_1properties.html.
+    For more info, see https://github.com/raspberrypi/libcamera/blob/main/src/libcamera/property_ids_core.yaml.
     """
 
     camera_model: str | None = Field(default=None, alias="Model")
@@ -58,7 +58,7 @@ class CameraProperties(BaseModel):
 class CaptureMetadata(BaseModel):
     """Dynamic capture metadata from libcamera.
 
-    For more info, see https://libcamera.org/api-html/namespacelibcamera_1_1controls.html.
+    For more info, see https://github.com/raspberrypi/libcamera/blob/main/src/libcamera/control_ids_core.yaml.
     """
 
     exposure_time: PositiveInt | None = Field(default=None, description="Exposure time in microseconds")
