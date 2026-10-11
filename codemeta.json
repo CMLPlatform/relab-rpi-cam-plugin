@@ -1,0 +1,37 @@
+{
+  "@context": "https://w3id.org/codemeta/4.0",
+  "@type": "SoftwareSourceCode",
+  "name": "relab-rpi-cam-plugin",
+  "description": "Device-side software for automated image capture on Raspberry Pi, integrated with the Reverse Engineering Lab (Relab) platform. A FastAPI service captures still images with per-capture camera metadata, serves a live preview, pairs to Relab over an outbound WebSocket relay with device-signed tokens, and uploads captures with a disk-backed retry queue.",
+  "version": "0.6.2",
+  "datePublished": "2026-09-07",
+  "license": "https://spdx.org/licenses/AGPL-3.0-or-later",
+  "codeRepository": "https://github.com/CMLPlatform/relab-rpi-cam-plugin",
+  "issueTracker": "https://github.com/CMLPlatform/relab-rpi-cam-plugin/issues",
+  "url": "https://cml-relab.org",
+  "programmingLanguage": "Python 3.13",
+  "runtimePlatform": "Python 3.13",
+  "operatingSystem": "Raspberry Pi OS (64-bit)",
+  "developmentStatus": "active",
+  "author": [
+    {
+      "@type": "Person",
+      "@id": "https://orcid.org/0009-0006-6953-909X",
+      "givenName": "Simon",
+      "familyName": "van Lierde",
+      "email": "s.n.van.lierde@cml.leidenuniv.nl",
+      "affiliation": {
+        "@type": "Organization",
+        "name": "Department of Industrial Ecology, Institute of Environmental Sciences (CML), Leiden University"
+      }
+    }
+  ],
+  "keywords": [
+    "Raspberry Pi",
+    "image capture",
+    "computer vision",
+    "research software",
+    "circular economy",
+    "industrial ecology"
+  ]
+}
