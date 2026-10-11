@@ -1,13 +1,15 @@
 """Tests for plugin-owned adapters around shared contract DTOs."""
 
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 
 import pytest
 from PIL import Image
-from PIL.ExifTags import Base
+from PIL.ExifTags import IFD, Base
 from pydantic import AnyUrl
 from relab_rpi_cam_models.stream import StreamMode
 
+from app.__version__ import version
 from app.backend.contract_adapters import (
     build_image_metadata,
     build_stream_metadata,
@@ -65,7 +67,7 @@ class TestContractAdapters:
         metadata = build_image_metadata(image, {"Model": MOCK_CAMERA_MODEL}, {"ExposureTime": 1_000})
         exif = image_metadata_to_exif(metadata)
         assert exif[Base.Make.value] == "Raspberry Pi"
-        assert exif[Base.Software.value] == "picamera2"
+        assert exif[Base.Software.value] == f"relab-rpi-cam-plugin {version}"
         assert exif[Base.ImageWidth.value] == 100
         assert exif[Base.ImageLength.value] == 100
 
@@ -74,7 +76,26 @@ class TestContractAdapters:
         image = Image.new("RGB", (100, 100), color="red")
         metadata = build_image_metadata(image, {"Model": MOCK_CAMERA_MODEL}, {"SensorTemperature": 0.0})
         exif = image_metadata_to_exif(metadata)
-        assert exif[Base.AmbientTemperature.value] == 0.0
+        assert exif.get_ifd(IFD.Exif)[Base.AmbientTemperature.value] == 0.0
+
+    def test_image_metadata_to_exif_survives_jpeg_round_trip(self) -> None:
+        """Tags must sit in the IFD that EXIF readers look in, after a real JPEG encode."""
+        image = Image.new("RGB", (100, 100), color="red")
+        metadata = build_image_metadata(
+            image, {"Model": MOCK_CAMERA_MODEL}, {"ExposureTime": 1_000, "ColourTemperature": 5_000}
+        )
+        buffer = BytesIO()
+        image.save(buffer, exif=image_metadata_to_exif(metadata), format="JPEG")
+        exif = Image.open(buffer).getexif()
+        sub_ifd = exif.get_ifd(IFD.Exif)
+
+        assert exif[Base.Model.value] == MOCK_CAMERA_MODEL
+        assert exif[Base.Software.value] == f"relab-rpi-cam-plugin {version}"
+        assert Base.ExposureTime.value not in exif
+        assert sub_ifd[Base.ExposureTime.value] == pytest.approx(0.001)
+        assert sub_ifd[Base.OffsetTime.value] == "+00:00"
+        # A colour temperature is reported under auto white balance too, so it says nothing about the mode.
+        assert Base.WhiteBalance.value not in sub_ifd
 
 
 class TestActiveStreamState:
