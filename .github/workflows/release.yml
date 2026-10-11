@@ -19,6 +19,9 @@ jobs:
     permissions:
       contents: write # push the bump commit and tag, create the GitHub release
     timeout-minutes: 20
+    outputs:
+      bumped: ${{ steps.cz.outputs.bumped }}
+      version: ${{ steps.cz.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -78,3 +81,55 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release create "v${{ steps.cz.outputs.version }}" --title "v${{ steps.cz.outputs.version }}" --generate-notes
+
+  # A separate job so the OIDC token that signs the attestations is never available
+  # to the release job, which runs the whole test suite.
+  assets:
+    name: Release assets
+    needs: release
+    if: needs.release.outputs.bumped == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # upload the assets to the GitHub release
+      id-token: write # sign the attestations through Sigstore
+      attestations: write # store the attestations on the repository
+    timeout-minutes: 10
+    env:
+      TAG: v${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version: "3.13"
+
+      # The SBOM lists the locked runtime dependencies, which is what the container
+      # image installs. It does not cover the Debian packages in the image.
+      - name: Build the distributions and the SBOM
+        run: |
+          uv build --out-dir dist --clear
+          uv export --format cyclonedx1.5 --preview-features sbom-export --locked --no-dev \
+            --output-file dist/relab-rpi-cam-plugin.cdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+
+      - name: Attest the SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*.whl
+          sbom-path: dist/relab-rpi-cam-plugin.cdx.json
+
+      - name: Upload the release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" dist/*.whl dist/*.tar.gz dist/relab-rpi-cam-plugin.cdx.json --repo "$GITHUB_REPOSITORY"
