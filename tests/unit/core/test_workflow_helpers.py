@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from scripts import validate_models_package_tag
+from scripts import check_models_release, validate_models_package_tag
 
 if TYPE_CHECKING:
     import pytest
@@ -48,3 +48,17 @@ def test_validate_models_package_tag_rejects_wrong_prefix(
 
     assert validate_models_package_tag.main() == 1
     assert UNEXPECTED_TAG_MESSAGE in capsys.readouterr().err
+
+
+def test_models_release_drift_flags_unpublished_untagged_version() -> None:
+    """A workspace version missing from PyPI with no release tag is drift."""
+    problem = check_models_release.find_drift("0.5.1", {"0.5.0"}, tag_exists=False)
+
+    assert problem is not None
+    assert "0.5.1" in problem
+
+
+def test_models_release_drift_accepts_published_or_tagged_version() -> None:
+    """A published version, or one whose tag is pushed and publishing, is in step."""
+    assert check_models_release.find_drift("0.5.0", {"0.5.0"}, tag_exists=False) is None
+    assert check_models_release.find_drift("0.5.1", {"0.5.0"}, tag_exists=True) is None
