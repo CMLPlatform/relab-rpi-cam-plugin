@@ -30,7 +30,7 @@ ASSERTION_WARNING_LOG = "notify_self_unpair: could not mint device assertion"
 ACKNOWLEDGED_UNPAIR_LOG = "backend acknowledged unpair"
 UNEXPECTED_STATUS_LOG = "backend returned HTTP 500"
 NETWORK_WARNING_LOG = "network error reaching backend"
-DEVICE_UPLOAD_PATH = "/v1/plugins/rpi-cam/device/cameras/"
+DEVICE_UPLOAD_PATH = "/v1/plugins/r9cam/device/cameras/"
 PREVIEW_THUMBNAIL_URL = "https://backend.example/uploads/rpi-cam/previews/cam.jpg"
 REMOTE_HTTP_IMAGE_URL = "http://backend.example/uploads/rpi-cam/images/abc.jpg"
 REMOTE_HTTP_PREVIEW_THUMBNAIL_URL = "http://backend.example/uploads/rpi-cam/previews/cam.jpg"
@@ -361,9 +361,12 @@ class TestNotifySelfUnpair:
         with _patch_async_client(response) as patched_client, caplog.at_level(logging.INFO):
             await backend_client_mod.notify_self_unpair()
 
-        patched_client.return_value.delete.assert_awaited_once()
+        # A 404 on the r9cam prefix is retried once on the legacy rpi-cam prefix.
+        legacy_retry = status_code == 404
+        assert patched_client.return_value.delete.await_count == (2 if legacy_retry else 1)
         args, kwargs = patched_client.return_value.delete.await_args
-        assert str(args[0]).startswith(f"https://backend.example{DEVICE_UPLOAD_PATH}")
+        expected_path = DEVICE_UPLOAD_PATH.replace("r9cam", "rpi-cam") if legacy_retry else DEVICE_UPLOAD_PATH
+        assert str(args[0]).startswith(f"https://backend.example{expected_path}")
         assert str(args[0]).endswith("/self")
         assert kwargs["headers"]["Authorization"] == AUTHORIZATION_HEADER
         assert ACKNOWLEDGED_UNPAIR_LOG in caplog.text

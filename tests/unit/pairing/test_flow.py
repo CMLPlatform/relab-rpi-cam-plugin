@@ -207,7 +207,7 @@ class TestPairingHelpers:
 
     def test_log_pairing_http_status_error_variants(self, caplog: pytest.LogCaptureFixture) -> None:
         """Register-specific 403s and 5xx failures should both be logged."""
-        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register")
+        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/register")
         forbidden = httpx.HTTPStatusError(
             "forbidden",
             request=request,
@@ -233,7 +233,7 @@ class TestPairingHelpers:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Very long 4xx backend bodies should be trimmed in logs."""
-        request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/poll")
+        request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/poll")
         long_body = "x" * 300
         error = httpx.HTTPStatusError(
             "bad",
@@ -301,8 +301,8 @@ class TestPairingHelpers:
 
         http_client.post.assert_awaited_once()
         http_client.get.assert_awaited_once()
-        assert http_client.post.await_args.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register"
-        assert http_client.get.await_args.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/poll"
+        assert http_client.post.await_args.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/register"
+        assert http_client.get.await_args.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/poll"
 
     async def test_complete_pairing_rejects_plaintext_relay_url_before_persisting(
         self,
@@ -355,7 +355,7 @@ class TestPairingHelpers:
                 pairing_mod.PairingClaimedBootstrap.model_validate(
                     {
                         "camera_id": RELAY_CAMERA_ID,
-                        "ws_url": "wss://attacker.example/v1/plugins/rpi-cam/ws/connect",
+                        "ws_url": "wss://attacker.example/v1/plugins/r9cam/ws/connect",
                         "auth_scheme": RELAY_AUTH_SCHEME,
                         "key_id": RELAY_KEY_ID,
                     }
@@ -389,7 +389,7 @@ class TestRunPairing:
         monkeypatch.setattr(
             pairing_mod.httpx,
             "AsyncClient",
-            lambda *_args, **_kwargs: FakeClient([FakeResponse(404)], []),
+            lambda *_args, **_kwargs: FakeClient([FakeResponse(404), FakeResponse(404)], []),
         )
         on_paired = AsyncMock()
         service = pairing_mod.PairingService()
@@ -478,7 +478,7 @@ class TestRunPairing:
 
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock(side_effect=_record_sleep))
         service = pairing_mod.PairingService()
-        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register")
+        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/register")
         error = httpx.HTTPStatusError("boom", request=request, response=httpx.Response(500, request=request))
         attempts = {"count": 0}
 
@@ -621,6 +621,7 @@ class TestPairingCycle:
             post_responses=[FakeResponse(201), FakeResponse(201)],
             get_responses=[
                 FakeResponse(404),
+                FakeResponse(404),  # legacy-prefix retry
                 FakeResponse(
                     200,
                     {
@@ -675,7 +676,7 @@ class TestPairingCycle:
                 ),
             ],
         )
-        timeout_request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register")
+        timeout_request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/register")
         client.post = AsyncMock(
             side_effect=[httpx.ReadTimeout("register timed out", request=timeout_request), FakeResponse(201)]
         )
@@ -714,7 +715,7 @@ class TestPairingCycle:
                 "key_id": RELAY_KEY_ID,
             },
         )
-        timeout_request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/poll")
+        timeout_request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/poll")
         client.get = AsyncMock(
             side_effect=[
                 httpx.ReadTimeout("poll timed out", request=timeout_request),
@@ -802,7 +803,7 @@ class TestPairingCycle:
     ) -> None:
         """Three register timeouts in one cycle should surface a runtime error."""
         state = pairing_mod.PairingState()
-        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/rpi-cam/pairing/register")
+        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/register")
         client = cast("Any", FakeClient([], []))
         client.post = AsyncMock(
             side_effect=[

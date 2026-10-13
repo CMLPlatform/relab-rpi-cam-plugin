@@ -5,13 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from app.backend.plugin_api import send_with_legacy_fallback
 from r9cam_models import DevicePublicKeyJWK, PairingPollResponse, PairingRegisterRequest
 
 if TYPE_CHECKING:
     import httpx
 
-PAIRING_REGISTER_PATH = "/v1/plugins/rpi-cam/pairing/register"
-PAIRING_POLL_PATH = "/v1/plugins/rpi-cam/pairing/poll"
+PAIRING_REGISTER_PATH = "/pairing/register"
+PAIRING_POLL_PATH = "/pairing/poll"
 
 
 @dataclass(frozen=True)
@@ -36,16 +37,16 @@ class PairingClient:
             public_key_jwk=DevicePublicKeyJWK.model_validate(public_key_jwk),
             key_id=key_id,
         )
-        return await self.http_client.post(
-            f"{self.base_url}{PAIRING_REGISTER_PATH}",
-            json=request.model_dump(mode="json"),
+        payload = request.model_dump(mode="json")
+        return await send_with_legacy_fallback(
+            lambda path: self.http_client.post(f"{self.base_url}{path}", json=payload), PAIRING_REGISTER_PATH
         )
 
     async def poll(self, *, code: str, fingerprint: str) -> httpx.Response:
         """Submit one poll request."""
-        return await self.http_client.get(
-            f"{self.base_url}{PAIRING_POLL_PATH}",
-            params={"code": code, "fingerprint": fingerprint},
+        params = {"code": code, "fingerprint": fingerprint}
+        return await send_with_legacy_fallback(
+            lambda path: self.http_client.get(f"{self.base_url}{path}", params=params), PAIRING_POLL_PATH
         )
 
     @staticmethod

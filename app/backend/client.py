@@ -3,7 +3,7 @@
 The Pi authenticates every upload with a fresh short-lived device assertion
 (ES256 JWT signed by the relay private key, verified by the backend against
 the public key it stored during pairing). The backend accepts the bytes via
-``POST /v1/plugins/rpi-cam/device/cameras/{camera_id}/image-upload`` and returns a
+``POST /v1/plugins/r9cam/device/cameras/{camera_id}/image-upload`` and returns a
 small JSON envelope with the stored image's id and URL.
 """
 
@@ -19,6 +19,7 @@ from urllib.parse import quote
 import httpx
 from pydantic import AnyUrl
 
+from app.backend.plugin_api import send_with_legacy_fallback
 from app.core.runtime_context import get_active_runtime_state
 from app.core.settings import settings, validate_endpoint_transport
 from app.observability.logging import build_log_extra
@@ -32,9 +33,9 @@ logger = logging.getLogger(__name__)
 
 _UPLOAD_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=5.0)
 _UPLOAD_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
-_UPLOAD_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/image-upload"
-_PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/preview-thumbnail-upload"
-_SELF_UNPAIR_ENDPOINT_TEMPLATE = "/v1/plugins/rpi-cam/device/cameras/{camera_id}/self"
+_UPLOAD_ENDPOINT_TEMPLATE = "/device/cameras/{camera_id}/image-upload"
+_PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE = "/device/cameras/{camera_id}/preview-thumbnail-upload"
+_SELF_UNPAIR_ENDPOINT_TEMPLATE = "/device/cameras/{camera_id}/self"
 _SELF_UNPAIR_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
 
 
@@ -90,14 +91,17 @@ class UploadedPreviewThumbnailInfo:
 
 async def _post_file(
     *,
-    url: str,
+    base_url: str,
+    suffix: str,
     files: dict,
     headers: dict,
     data: dict | None = None,
     upload_label: str,
 ) -> dict:
     try:
-        response = await _get_client().post(url, files=files, data=data, headers=headers)
+        response = await send_with_legacy_fallback(
+            lambda path: _get_client().post(f"{base_url}{path}", files=files, data=data, headers=headers), suffix
+        )
     except httpx.HTTPError as exc:
         msg = f"Network error during {upload_label}: {exc}"
         raise BackendUploadError(msg) from exc
@@ -141,9 +145,9 @@ async def upload_image(
 ) -> UploadedImageInfo:
     """Push a captured JPEG to the backend. Raises BackendUploadError on any failure."""
     base_url, camera_id, assertion = await _get_upload_context()
-    url = f"{base_url}{_camera_endpoint(_UPLOAD_ENDPOINT_TEMPLATE, camera_id)}"
     payload = await _post_file(
-        url=url,
+        base_url=base_url,
+        suffix=_camera_endpoint(_UPLOAD_ENDPOINT_TEMPLATE, camera_id),
         files={"file": (filename, image_bytes, "image/jpeg")},
         data={
             "capture_metadata": json.dumps(dict(capture_metadata)),
@@ -170,9 +174,9 @@ async def upload_preview_thumbnail(
 ) -> UploadedPreviewThumbnailInfo:
     """Push a cached preview thumbnail to the backend. Raises BackendUploadError on failure."""
     base_url, camera_id, assertion = await _get_upload_context()
-    url = f"{base_url}{_camera_endpoint(_PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE, camera_id)}"
     payload = await _post_file(
-        url=url,
+        base_url=base_url,
+        suffix=_camera_endpoint(_PREVIEW_THUMBNAIL_ENDPOINT_TEMPLATE, camera_id),
         files={"file": (filename, image_bytes, "image/jpeg")},
         headers={"Authorization": f"Bearer {assertion}"},
         upload_label="preview thumbnail upload",
@@ -209,8 +213,7 @@ async def notify_self_unpair() -> None:
         return
 
     base_url = settings.pairing_backend_url.rstrip("/")
-    endpoint = _camera_endpoint(_SELF_UNPAIR_ENDPOINT_TEMPLATE, runtime_state.relay_camera_id)
-    url = f"{base_url}{endpoint}"
+    suffix = _camera_endpoint(_SELF_UNPAIR_ENDPOINT_TEMPLATE, runtime_state.relay_camera_id)
 
     try:
         assertion = build_device_assertion(runtime_state)
@@ -220,7 +223,10 @@ async def notify_self_unpair() -> None:
 
     headers = {"Authorization": f"Bearer {assertion}"}
     try:
-        response = await _get_client().delete(url, headers=headers, timeout=_SELF_UNPAIR_TIMEOUT)
+        response = await send_with_legacy_fallback(
+            lambda path: _get_client().delete(f"{base_url}{path}", headers=headers, timeout=_SELF_UNPAIR_TIMEOUT),
+            suffix,
+        )
         if response.status_code in (204, 200, 404):
             logger.info(
                 "notify_self_unpair: backend acknowledged unpair of camera %s",
