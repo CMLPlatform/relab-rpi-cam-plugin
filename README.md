@@ -6,6 +6,7 @@
 [![Security](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/security.yml/badge.svg)](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/security.yml)
 [![codecov](https://codecov.io/gh/CMLPlatform/relab-rpi-cam-plugin/graph/badge.svg)](https://codecov.io/gh/CMLPlatform/relab-rpi-cam-plugin)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
+[![release](https://img.shields.io/github/v/release/CMLPlatform/relab-rpi-cam-plugin)](https://github.com/CMLPlatform/relab-rpi-cam-plugin/releases/latest)
 
 Device-side software for automated image capture on Raspberry Pi, integrated with the [Reverse Engineering Lab platform](https://cml-relab.org).
 
