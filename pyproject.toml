@@ -78,7 +78,7 @@
 
 [tool.commitizen]
   # The models subpackage carries its own tags; they are not app releases.
-  ignored_tag_formats      = ["r9cam-models-v$version", "r9cam-models-v$version"]
+  ignored_tag_formats      = ["r9cam-models-v$version", "relab-rpi-cam-models-v$version"]
   major_version_zero       = true
   name                     = "cz_conventional_commits"
   # Runs after the version files are written and before cz commits, so the lockfile

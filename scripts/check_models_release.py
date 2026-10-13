@@ -1,6 +1,6 @@
 """Fail when the workspace r9cam-models version is ahead of PyPI with no release tag.
 
-The ReLab backend installs the contract package from PyPI while the plugin builds it from
+The R9lab backend installs the contract package from PyPI while the plugin builds it from
 this workspace. A version bump that is never tagged leaves the two sides of the device seam
 validating against different code.
 """
