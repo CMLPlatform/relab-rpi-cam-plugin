@@ -44,9 +44,10 @@ class PairingClient:
 
     async def poll(self, *, code: str, fingerprint: str) -> httpx.Response:
         """Submit one poll request."""
-        params = {"code": code, "fingerprint": fingerprint}
+        # The backend takes these in a POST body so they stay out of access logs.
+        payload = {"code": code, "fingerprint": fingerprint}
         return await send_with_legacy_fallback(
-            lambda path: self.http_client.get(f"{self.base_url}{path}", params=params), PAIRING_POLL_PATH
+            lambda path: self.http_client.post(f"{self.base_url}{path}", json=payload), PAIRING_POLL_PATH
         )
 
     @staticmethod

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Self, cast
+from typing import TYPE_CHECKING, Any, NoReturn, Self, cast
 from unittest.mock import AsyncMock, Mock
 
 import httpx
@@ -79,15 +79,21 @@ class FakeResponse:
 
 
 class FakeClient:
-    """Async client stub for pairing register/poll requests."""
+    """Async client stub for pairing register/poll requests.
 
-    # Instance-level callables -- allow replacement with `AsyncMock` in tests.
+    Queued items are returned in order; a queued exception is raised instead.
+    """
+
+    # Instance-level callable -- allow replacement with `AsyncMock` in tests.
     post: Any
-    get: Any
 
-    def __init__(self, post_responses: list[FakeResponse], get_responses: list[FakeResponse]) -> None:
-        self._posts = post_responses
-        self._gets = get_responses
+    def __init__(
+        self,
+        register_responses: list[FakeResponse | Exception],
+        poll_responses: list[FakeResponse | Exception],
+    ) -> None:
+        self._registers = register_responses
+        self._polls = poll_responses
 
     async def __aenter__(self) -> Self:
         """Support async context manager usage like httpx.AsyncClient."""
@@ -97,13 +103,16 @@ class FakeClient:
         """No-op async context manager exit."""
         return
 
-    async def post(self, *_: object, **__: object) -> FakeResponse:
-        """Return the next queued POST response."""
-        return self._posts.pop(0)
+    async def post(self, url: str, **_: object) -> FakeResponse:
+        """Return the next queued response for the register or poll endpoint."""
+        item = (self._polls if url.endswith("/pairing/poll") else self._registers).pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
 
-    async def get(self, *_: object, **__: object) -> FakeResponse:
-        """Return the next queued GET response."""
-        return self._gets.pop(0)
+    async def get(self, url: str, **_: object) -> NoReturn:
+        """Fail the test: the backend serves the pairing endpoints over POST only."""
+        pytest.fail(f"unexpected GET {url}")
 
 
 @pytest.fixture(autouse=True)
@@ -233,7 +242,7 @@ class TestPairingHelpers:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Very long 4xx backend bodies should be trimmed in logs."""
-        request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/poll")
+        request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/poll")
         long_body = "x" * 300
         error = httpx.HTTPStatusError(
             "bad",
@@ -299,10 +308,11 @@ class TestPairingHelpers:
         )
         await pairing_client.poll(code=PAIRING_CODE_1, fingerprint=FINGERPRINT_1)
 
-        http_client.post.assert_awaited_once()
-        http_client.get.assert_awaited_once()
-        assert http_client.post.await_args.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/register"
-        assert http_client.get.await_args.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/poll"
+        http_client.get.assert_not_called()
+        register_call, poll_call = http_client.post.await_args_list
+        assert register_call.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/register"
+        assert poll_call.args[0] == f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/poll"
+        assert poll_call.kwargs == {"json": {"code": PAIRING_CODE_1, "fingerprint": FINGERPRINT_1}}
 
     async def test_complete_pairing_rejects_plaintext_relay_url_before_persisting(
         self,
@@ -560,8 +570,8 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_mod, "save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         client: Any = FakeClient(
-            post_responses=[FakeResponse(409), FakeResponse(201)],
-            get_responses=[
+            register_responses=[FakeResponse(409), FakeResponse(201)],
+            poll_responses=[
                 FakeResponse(200, {"status": pairing_mod.STATUS_WAITING}),
                 FakeResponse(
                     200,
@@ -618,8 +628,8 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         service = pairing_mod.PairingService()
         client: Any = FakeClient(
-            post_responses=[FakeResponse(201), FakeResponse(201)],
-            get_responses=[
+            register_responses=[FakeResponse(201), FakeResponse(201)],
+            poll_responses=[
                 FakeResponse(404),
                 FakeResponse(404),  # legacy-prefix retry
                 FakeResponse(
@@ -660,9 +670,10 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_mod, "save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         service = pairing_mod.PairingService()
-        client: Any = FakeClient(
-            post_responses=[FakeResponse(201)],
-            get_responses=[
+        timeout_request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/register")
+        client = FakeClient(
+            register_responses=[httpx.ReadTimeout("register timed out", request=timeout_request), FakeResponse(201)],
+            poll_responses=[
                 FakeResponse(200, {"status": pairing_mod.STATUS_WAITING}),
                 FakeResponse(
                     200,
@@ -675,10 +686,6 @@ class TestPairingCycle:
                     },
                 ),
             ],
-        )
-        timeout_request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/register")
-        client.post = AsyncMock(
-            side_effect=[httpx.ReadTimeout("register timed out", request=timeout_request), FakeResponse(201)]
         )
         monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: client)
         monkeypatch.setattr(pairing_mod, "_generate_code_and_fingerprint", lambda: (PAIRING_CODE_1, FINGERPRINT_1))
@@ -702,8 +709,6 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_mod, "save_relay_credentials", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(pairing_mod.asyncio, "sleep", AsyncMock())
         service = pairing_mod.PairingService()
-        # client.get is overwritten below with an AsyncMock, so get_responses is unused here.
-        client: Any = FakeClient(post_responses=[FakeResponse(201)], get_responses=[])
         waiting_response = FakeResponse(200, {"status": pairing_mod.STATUS_WAITING})
         paired_response = FakeResponse(
             200,
@@ -715,13 +720,14 @@ class TestPairingCycle:
                 "key_id": RELAY_KEY_ID,
             },
         )
-        timeout_request = httpx.Request("GET", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/poll")
-        client.get = AsyncMock(
-            side_effect=[
+        timeout_request = httpx.Request("POST", f"{EXAMPLE_BACKEND_URL}/v1/plugins/r9cam/pairing/poll")
+        client = FakeClient(
+            register_responses=[FakeResponse(201)],
+            poll_responses=[
                 httpx.ReadTimeout("poll timed out", request=timeout_request),
                 waiting_response,
                 paired_response,
-            ]
+            ],
         )
         monkeypatch.setattr(pairing_mod.httpx, "AsyncClient", lambda *_args, **_kwargs: client)
         monkeypatch.setattr(pairing_mod, "_generate_code_and_fingerprint", lambda: (PAIRING_CODE_1, FINGERPRINT_1))
