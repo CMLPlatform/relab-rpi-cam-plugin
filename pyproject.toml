@@ -42,9 +42,9 @@
   version         = "0.6.2"        # NOTE: Versioning is handled by commitizen
 
   [project.urls]
-    Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
-    Issues     = "https://github.com/CMLPlatform/relab-rpi-cam-plugin/issues"
-    Repository = "https://github.com/CMLPlatform/relab-rpi-cam-plugin.git"
+    Homepage   = "https://github.com/CMLPlatform/r9cam"
+    Issues     = "https://github.com/CMLPlatform/r9cam/issues"
+    Repository = "https://github.com/CMLPlatform/r9cam.git"
 
 [dependency-groups]
   dev = [

@@ -17,7 +17,7 @@ authors:
     affiliation: "Department of Industrial Ecology, Institute of Environmental Sciences (CML), Leiden University"
 version: 0.6.2
 date-released: 2026-09-07
-repository-code: "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
+repository-code: "https://github.com/CMLPlatform/r9cam"
 url: "https://r9lab.io"
 # The plugin software is AGPL-3.0-or-later. The published API specification
 # (openapi.r9cam.json) and the r9cam-models package are Apache-2.0; see README.md.
