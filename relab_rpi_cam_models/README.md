@@ -67,4 +67,5 @@ Treat anything outside the documented DTOs as private and subject to change.
 
 ## License
 
-AGPL-3.0-or-later
+[Apache-2.0](LICENSE), so a backend or device that imports these models does not take
+on the plugin's AGPL-3.0-or-later copyleft.

@@ -19,8 +19,8 @@ version: 0.6.2
 date-released: 2026-09-07
 repository-code: "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
 url: "https://cml-relab.org"
-# The software, including the relab-rpi-cam-models package, is AGPL-3.0-or-later. The
-# published API specification (openapi.rpi-cam.json) is Apache-2.0; see README.md.
+# The plugin software is AGPL-3.0-or-later. The published API specification
+# (openapi.rpi-cam.json) and the relab-rpi-cam-models package are Apache-2.0; see README.md.
 license: "AGPL-3.0-or-later"
 keywords:
   - "Raspberry Pi"
