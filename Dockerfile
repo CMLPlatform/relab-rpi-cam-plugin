@@ -1,13 +1,13 @@
 # Prep stage: fetch the Raspberry Pi archive keyring once (shared by later stages).
 # The remote .deb is checksum-pinned; only the extracted keyring file is copied forward.
 # See raspberrypi/rpi-image-gen#171 for why we fetch the .deb directly.
-FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS rpi-keyring
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS rpi-keyring
 ADD --checksum=sha256:2e727149d7acb8cc7f604e66d0049161039c8aa1eaf1175e54f9e69d963d60e4 \
     https://archive.raspberrypi.com/debian/pool/main/r/raspberrypi-archive-keyring/raspberrypi-archive-keyring_2025.1+rpt1_all.deb /tmp/keyring.deb
 RUN dpkg -i /tmp/keyring.deb
 
 # Build stage: compile the virtual environment (no S3 dependencies by default).
-FROM ghcr.io/astral-sh/uv:0.12-python3.13-trixie-slim@sha256:3f30222c158072567236642664d80e232204d92f4912f2424d9fd5acdaa4f788 AS builder
+FROM ghcr.io/astral-sh/uv:0.13-python3.13-trixie-slim@sha256:40215b626e22e4ff65839863624c4b885b8829b1a66ce895b7be20eca7fabe6d AS builder
 
 WORKDIR /app
 
@@ -46,7 +46,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Must stay on 3.13: the venv copied from the builder is a 3.13 venv, and the
 # picamera2 extensions in /usr/lib/python3/dist-packages are cpython-313 builds.
 # A newer interpreter here silently hides both from ``import``.
-FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS runtime
+FROM python:3.13-slim-trixie@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f AS runtime
 
 WORKDIR /app
 
