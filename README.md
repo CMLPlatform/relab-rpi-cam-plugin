@@ -32,8 +32,8 @@ Supported hardware is Raspberry Pi 5/4 with Camera Module 3/v2 on Raspberry Pi O
 
 ```mermaid
 flowchart LR
-    app["Relab app<br/>(phone or browser)"]
-    backend["Relab backend"]
+    app["R9lab app<br/>(phone or browser)"]
+    backend["R9lab backend"]
     subgraph station["Raspberry Pi"]
         plugin["This plugin"]
         camera["Camera module"]
@@ -44,9 +44,14 @@ flowchart LR
     backend -. "forwarded over the relay" .-> plugin
     plugin --- camera
     plugin -- "captures uploaded" --> backend
+    app <-.->|"LAN direct: HTTP with the local API key<br/>(set up by the backend over the relay)"| plugin
 ```
 
-The Pi always opens the connection, so the relay needs no open port on the Pi's network. To pair, the Pi shows a short code on its `/setup` page, and you enter that code in the Relab app. After that, the backend sends capture and preview requests down the relay, and the Pi only runs the routes it allows. The [platform docs](https://docs.r9lab.io/architecture/rpi-cam/) have the full diagram, with LAN direct mode, preview streaming and the pairing sequence. [ARCHITECTURE.md](ARCHITECTURE.md) covers the plugin's internals.
+The Pi always opens the connection, so the relay needs no open port on the Pi's network. To pair, the Pi shows a short code on its `/setup` page, and you enter that code in the R9lab app. After that, the backend sends capture and preview requests down the relay, and the Pi only runs the routes it allows.
+
+When the app and the Pi share a network, the app can skip the relay. The backend asks the Pi over the relay for its local API key and LAN addresses, and passes them to the app. The app then talks to the Pi directly over HTTP, for faster preview and capture, without anyone copying a key by hand.
+
+The [platform docs](https://docs.r9lab.io/architecture/rpi-cam/) have the full diagram, with LAN direct mode, preview streaming and the pairing sequence. [ARCHITECTURE.md](ARCHITECTURE.md) covers the plugin's internals.
 
 ## Supported Modes
 
