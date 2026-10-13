@@ -46,7 +46,7 @@ flowchart LR
     plugin -- "captures uploaded" --> backend
 ```
 
-The Pi always opens the connection, so the relay needs no open port on the Pi's network. To pair, the Pi shows a short code on its `/setup` page, and you enter that code in the Relab app. After that, the backend sends capture and preview requests down the relay, and the Pi only runs the routes it allows. [ARCHITECTURE.md](ARCHITECTURE.md) has the details.
+The Pi always opens the connection, so the relay needs no open port on the Pi's network. To pair, the Pi shows a short code on its `/setup` page, and you enter that code in the Relab app. After that, the backend sends capture and preview requests down the relay, and the Pi only runs the routes it allows. The [platform docs](https://docs.r9lab.io/architecture/rpi-cam/) have the full diagram, with LAN direct mode, preview streaming and the pairing sequence. [ARCHITECTURE.md](ARCHITECTURE.md) covers the plugin's internals.
 
 ## Supported Modes
 
