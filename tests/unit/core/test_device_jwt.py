@@ -2,7 +2,7 @@
 
 The ``build_device_assertion`` function is used by both the WebSocket relay
 auth path and the outbound image-upload HTTPS calls. The output must be a
-valid ES256 JWT with the shared ``relab-rpi-cam-relay`` audience, a unique
+valid ES256 JWT with the shared ``r9cam-relay`` audience, a unique
 jti, and the ``kid`` header set to the camera's relay key id.
 """
 

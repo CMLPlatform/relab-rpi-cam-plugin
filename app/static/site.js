@@ -1,4 +1,4 @@
-const THEME_STORAGE_KEY = "relab-theme";
+const THEME_STORAGE_KEY = "r9cam-theme";
 const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 const themeStorage = window["localStorage"];
 const THEME_SEQUENCE = ["auto", "light", "dark"];

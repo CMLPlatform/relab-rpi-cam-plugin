@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 def _get_credentials_file() -> Path:
     """Return the path to the relay credentials file.
 
-    Respects ``RELAB_CREDENTIALS_FILE`` if set; otherwise falls back to
-    ``~/.config/relab/relay_credentials.json`` (XDG-style).
+    Respects ``R9CAM_CREDENTIALS_FILE`` if set; otherwise falls back to
+    ``~/.config/r9cam/relay_credentials.json`` (XDG-style).
     """
-    if env_path := os.getenv("RELAB_CREDENTIALS_FILE"):
+    if env_path := os.getenv("R9CAM_CREDENTIALS_FILE"):
         return Path(env_path)
-    return Path.home() / ".config" / "relab" / "relay_credentials.json"
+    return Path.home() / ".config" / "r9cam" / "relay_credentials.json"
 
 
 _CREDENTIALS_FILE = _get_credentials_file()

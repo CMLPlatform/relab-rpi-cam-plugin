@@ -19,7 +19,7 @@ from tests.constants import NO_STORE_CACHE_CONTROL
 
 VALID_API_KEY = "valid-key"
 BAD_API_KEY = "bad-key"
-AUTH_COOKIE_NAME = "relab_session"
+AUTH_COOKIE_NAME = "r9cam_session"
 SECURE_ATTR = "Secure"
 HTTPONLY_ATTR = "HttpOnly"
 SAMESITE_ATTR = "SameSite=lax"

@@ -1,5 +1,5 @@
 (() => {
-  const storageKey = "relab-theme";
+  const storageKey = "r9cam-theme";
   const themeStorage = window.localStorage;
   const storedTheme = themeStorage ? themeStorage.getItem(storageKey) : null;
   const preferredTheme = storedTheme || "auto";

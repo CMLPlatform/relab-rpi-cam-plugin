@@ -77,12 +77,14 @@ Treat `/setup` and pairing logs as local/operator-only during pairing. The code 
 
 The setup page polls `GET /pairing/state` so it can reload when pairing or unpairing completes. That endpoint is intentionally public and returns only low-detail state (`status` and `relay_enabled`); it does not expose the pairing code, relay credentials, local API key, backend URLs, or camera IDs.
 
-Enter the code in the native R9lab app under Cameras > Add Camera. The Pi receives relay credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
+Enter the code in the native R9lab app under Cameras > Add Camera. The Pi receives relay credentials, saves them to `~/.config/r9cam/relay_credentials.json`, and connects to the backend.
 
 To rotate the code without deleting relay credentials, use **Generate a new pairing code** on `/setup`.
 To rotate relay credentials, unpair the camera and pair it again. Unpairing clears the stored relay key first, and the next pairing creates a fresh key pair.
 
-Docker Compose stores runtime credentials in a named volume mounted at `/home/rpicam/.config/relab`, so paired credentials survive container restarts.
+Docker Compose stores runtime credentials in a named volume mounted at `/home/rpicam/.config/r9cam`, so paired credentials survive container restarts.
+
+**Upgrading from a version that used `~/.config/relab`:** pair every existing Pi again, because the relay now expects a new token audience. Credentials now live in `~/.config/r9cam`, and Docker Compose mounts the named volume at `/home/rpicam/.config/r9cam`, so the old files are no longer read.
 
 The relay signing key is stored in `relay_credentials.json` with `0o600` permissions. Against SD-card theft, use full-disk encryption (LUKS); to keep the key off disk entirely, skip pairing and inject `RELAY_PRIVATE_KEY_PEM` (with `RELAY_CAMERA_ID`, `RELAY_KEY_ID`, `RELAY_AUTH_SCHEME`) via env.
 
@@ -150,7 +152,7 @@ just show-key
 Or read it directly from the credentials file:
 
 ```sh
-python3 -c "import json,pathlib; print(json.loads((pathlib.Path.home()/'.config/relab/relay_credentials.json').read_text()).get('local_api_key',''))"
+python3 -c "import json,pathlib; print(json.loads((pathlib.Path.home()/'.config/r9cam/relay_credentials.json').read_text()).get('local_api_key',''))"
 ```
 
 Disable direct local API access with:
@@ -159,7 +161,7 @@ Disable direct local API access with:
 LOCAL_MODE_ENABLED=false
 ```
 
-To rotate the local API key, stop the app, remove `local_api_key` from `~/.config/relab/relay_credentials.json` or delete the credentials file when you re-pair, then start the app again. Custom clients using the old key will need the new one.
+To rotate the local API key, stop the app, remove `local_api_key` from `~/.config/r9cam/relay_credentials.json` or delete the credentials file when you re-pair, then start the app again. Custom clients using the old key will need the new one.
 
 Transport security:
 
@@ -275,7 +277,7 @@ Check the CSI cable orientation, camera seating, and camera module compatibility
 
 - Confirm `PAIRING_BACKEND_URL` points at the backend API origin.
 - Confirm the Pi has outbound internet access.
-- Confirm `~/.config/relab/relay_credentials.json` exists after pairing.
+- Confirm `~/.config/r9cam/relay_credentials.json` exists after pairing.
 - Check logs: `docker compose logs app`
 - `refusing to connect`: pairing returned a relay host that differs from the hostname in `PAIRING_BACKEND_URL`. The device only authenticates to the backend it paired with, so point `PAIRING_BACKEND_URL` at the host the backend actually serves the relay from. A different port on the same host is fine. Pairing stops instead of retrying and shows this message on the setup page; if the mismatch is in already-stored credentials, the relay stays off at boot with `Persisted relay credentials rejected` in the log and the device re-pairs.
 - If the backend sits behind Cloudflare, add a WAF bypass for `/v1/plugins/r9cam/pairing/*`, `/v1/plugins/r9cam/device/*`, and `/v1/plugins/r9cam/ws/connect`. A backend that still serves the older `/v1/plugins/rpi-cam/` prefix needs the same three rules under that prefix.
@@ -283,7 +285,7 @@ Check the CSI cable orientation, camera seating, and camera module compatibility
 ### Pairing Code Not Showing
 
 - Confirm `PAIRING_BACKEND_URL` is set in `.env`.
-- Remove `~/.config/relab/relay_credentials.json` if pairing should restart.
+- Remove `~/.config/r9cam/relay_credentials.json` if pairing should restart.
 - Check `/setup` and the `PAIRING MODE` / `PAIRING READY` log lines.
 - In Docker, avoid `http://localhost:8011` for host services from inside the container. Use `http://host.docker.internal:8011`, the host LAN IP, or the real HTTPS API URL.
 

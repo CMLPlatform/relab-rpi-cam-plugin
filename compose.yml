@@ -42,7 +42,7 @@ services:
       - /run/udev:/run/udev:ro
       - app_data:/app/data
       - app_logs:/app/logs
-      - relay_credentials:/home/rpicam/.config/relab
+      - relay_credentials:/home/rpicam/.config/r9cam
     env_file:
       - path: .env
         required: false
