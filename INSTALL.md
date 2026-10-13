@@ -35,7 +35,7 @@ This guide is for operators installing and running the RPI Camera Plugin on a Ra
 1. Clone the plugin:
 
    ```sh
-   git clone https://github.com/CMLPlatform/relab-rpi-cam-plugin.git r9cam
+   git clone https://github.com/CMLPlatform/r9cam.git r9cam
    cd r9cam
    cp .env.example .env
    ```

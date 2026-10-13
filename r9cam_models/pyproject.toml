@@ -21,9 +21,9 @@
   dependencies = ["pydantic>=2.9"]
 
   [project.urls]
-    Homepage   = "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
-    Issues     = "https://github.com/CMLPlatform/relab-rpi-cam-plugin/issues"
-    Repository = "https://github.com/CMLPlatform/relab-rpi-cam-plugin.git"
+    Homepage   = "https://github.com/CMLPlatform/r9cam"
+    Issues     = "https://github.com/CMLPlatform/r9cam/issues"
+    Repository = "https://github.com/CMLPlatform/r9cam.git"
 
 [build-system]
   build-backend = "uv_build"

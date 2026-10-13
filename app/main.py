@@ -43,7 +43,7 @@ app = FastAPI(
     description=(
         "This API allows you to remotely capture images and stream video from a Raspberry Pi camera. "
         "It is used as a plugin for the R9lab platform."
-        '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank">R9lab GitHub</a>.'
+        '<br>For more info, visit the <a href="https://github.com/CMLPlatform/r9lab" target="_blank">R9lab GitHub</a>.'
         "<br><br><b>Licensing.</b> This API specification is licensed Apache-2.0 so that anyone may "
         "write clients or integrations against it without inheriting the plugin's copyleft. The "
         "plugin software itself remains AGPL-3.0-or-later."

@@ -1,12 +1,12 @@
 # RPI Camera Plugin
 
-[![CI](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/ci.yml)
-[![Models](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/models.yml/badge.svg)](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/models.yml)
-[![Container](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/container.yml/badge.svg)](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/container.yml)
-[![Security](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/security.yml/badge.svg)](https://github.com/CMLPlatform/relab-rpi-cam-plugin/actions/workflows/security.yml)
-[![codecov](https://codecov.io/gh/CMLPlatform/relab-rpi-cam-plugin/graph/badge.svg)](https://codecov.io/gh/CMLPlatform/relab-rpi-cam-plugin)
+[![CI](https://github.com/CMLPlatform/r9cam/actions/workflows/ci.yml/badge.svg)](https://github.com/CMLPlatform/r9cam/actions/workflows/ci.yml)
+[![Models](https://github.com/CMLPlatform/r9cam/actions/workflows/models.yml/badge.svg)](https://github.com/CMLPlatform/r9cam/actions/workflows/models.yml)
+[![Container](https://github.com/CMLPlatform/r9cam/actions/workflows/container.yml/badge.svg)](https://github.com/CMLPlatform/r9cam/actions/workflows/container.yml)
+[![Security](https://github.com/CMLPlatform/r9cam/actions/workflows/security.yml/badge.svg)](https://github.com/CMLPlatform/r9cam/actions/workflows/security.yml)
+[![codecov](https://codecov.io/gh/CMLPlatform/r9cam/graph/badge.svg)](https://codecov.io/gh/CMLPlatform/r9cam)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
-[![release](https://img.shields.io/github/v/release/CMLPlatform/relab-rpi-cam-plugin)](https://github.com/CMLPlatform/relab-rpi-cam-plugin/releases/latest)
+[![release](https://img.shields.io/github/v/release/CMLPlatform/r9cam)](https://github.com/CMLPlatform/r9cam/releases/latest)
 
 Device-side software for automated image capture on Raspberry Pi, integrated with the [R9lab platform](https://r9lab.io).
 
@@ -83,5 +83,5 @@ Use [INSTALL.md#troubleshooting](INSTALL.md#troubleshooting) for operator issues
 
 The specification and the contract models are carved out so that anyone writing a client, an
 integration or their own device against this camera API does not inherit the plugin's copyleft.
-This mirrors the same split in the [R9lab platform repository](https://github.com/CMLPlatform/relab),
+This mirrors the same split in the [R9lab platform repository](https://github.com/CMLPlatform/r9lab),
 so every published R9lab API schema answers the licensing question the same way.

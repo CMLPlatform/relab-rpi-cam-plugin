@@ -1,6 +1,6 @@
 # r9cam-models
 
-Shared transport contracts for the [R9lab Raspberry Pi Camera plugin](https://github.com/CMLPlatform/relab-rpi-cam-plugin) and the [R9lab platform](https://github.com/CMLPlatform/relab), part of the [R9lab project](https://r9lab.io).
+Shared transport contracts for the [R9lab Raspberry Pi Camera plugin](https://github.com/CMLPlatform/r9cam) and the [R9lab platform](https://github.com/CMLPlatform/r9lab), part of the [R9lab project](https://r9lab.io).
 
 ## Overview
 
