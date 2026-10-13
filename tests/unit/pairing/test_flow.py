@@ -803,6 +803,23 @@ class TestPairingCycle:
         monkeypatch.setattr(pairing_credentials, "_CREDENTIALS_FILE", tmp_path / "missing.json")
         assert pairing_credentials.load_relay_credentials() is None
 
+    async def test_load_relay_credentials_warns_about_legacy_file(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A file left at the pre-rename path is not read, but the log says where to move it."""
+        legacy = tmp_path / "relab" / "relay_credentials.json"
+        legacy.parent.mkdir()
+        legacy.write_text("{}")
+        monkeypatch.setattr(pairing_credentials, "_CREDENTIALS_FILE", tmp_path / "r9cam" / "relay_credentials.json")
+        monkeypatch.setattr(pairing_credentials, "_LEGACY_CREDENTIALS_FILE", legacy)
+
+        with caplog.at_level(logging.WARNING):
+            assert pairing_credentials.load_relay_credentials() is None
+        assert str(legacy) in caplog.text
+
     async def test_register_pairing_code_raises_after_three_timeouts(
         self,
         monkeypatch: pytest.MonkeyPatch,

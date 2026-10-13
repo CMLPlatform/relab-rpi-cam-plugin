@@ -84,7 +84,13 @@ To rotate relay credentials, unpair the camera and pair it again. Unpairing clea
 
 Docker Compose stores runtime credentials in a named volume mounted at `/home/rpicam/.config/r9cam`, so paired credentials survive container restarts.
 
-**Upgrading from a version that used `~/.config/relab`:** pair every existing Pi again, because the relay now expects a new token audience. Credentials now live in `~/.config/r9cam`, and Docker Compose mounts the named volume at `/home/rpicam/.config/r9cam`, so the old files are no longer read.
+**Upgrading from a version that used `~/.config/relab`:** credentials now live in `~/.config/r9cam`. With Docker Compose there is nothing to do: the same named volume is now mounted at `/home/rpicam/.config/r9cam`, so the pairing carries over. Without Docker, move the file before you start the new version, or pair the Pi again:
+
+```sh
+mkdir -p ~/.config/r9cam && mv ~/.config/relab/relay_credentials.json ~/.config/r9cam/
+```
+
+The relay token audience changed to `r9cam-relay`. Backends from the R9lab release after 0.5.0 accept both the old and the new audience; a 0.5.0 backend rejects this version, so update the backend first.
 
 The relay signing key is stored in `relay_credentials.json` with `0o600` permissions. Against SD-card theft, use full-disk encryption (LUKS); to keep the key off disk entirely, skip pairing and inject `RELAY_PRIVATE_KEY_PEM` (with `RELAY_CAMERA_ID`, `RELAY_KEY_ID`, `RELAY_AUTH_SCHEME`) via env.
 

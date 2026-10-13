@@ -31,6 +31,11 @@ def _get_credentials_file() -> Path:
 
 
 _CREDENTIALS_FILE = _get_credentials_file()
+# NOTE: where releases before the r9cam rename kept the file; only checked to warn about it.
+# Drop together with LEGACY_PLUGIN_API_PREFIX.
+_LEGACY_CREDENTIALS_FILE = Path(
+    os.getenv("RELAB_CREDENTIALS_FILE") or Path.home() / ".config" / "relab" / "relay_credentials.json"
+)
 
 
 def save_relay_credentials(
@@ -67,6 +72,12 @@ def save_relay_credentials(
 def load_relay_credentials() -> dict[str, str | bool] | None:
     """Load relay credentials from the JSON file, if it exists."""
     if not _CREDENTIALS_FILE.exists():
+        if _LEGACY_CREDENTIALS_FILE.exists():
+            logger.warning(
+                "Ignoring relay credentials at %s from an older release. Move the file to %s to keep this pairing.",
+                _LEGACY_CREDENTIALS_FILE,
+                _CREDENTIALS_FILE,
+            )
         return None
     try:
         return json.loads(_CREDENTIALS_FILE.read_text())
