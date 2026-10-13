@@ -28,6 +28,26 @@ The plugin runs a lightweight FastAPI server on a Raspberry Pi that:
 
 Supported hardware is Raspberry Pi 5/4 with Camera Module 3/v2 on Raspberry Pi OS 64-bit.
 
+## How It Connects
+
+```mermaid
+flowchart LR
+    app["Relab app<br/>(phone or browser)"]
+    backend["Relab backend"]
+    subgraph station["Raspberry Pi"]
+        plugin["This plugin"]
+        camera["Camera module"]
+    end
+
+    plugin == "outbound WebSocket relay<br/>(opened by the Pi)" ==> backend
+    app -- "capture and preview requests" --> backend
+    backend -. "forwarded over the relay" .-> plugin
+    plugin --- camera
+    plugin -- "captures uploaded" --> backend
+```
+
+The Pi always opens the connection, so the relay needs no open port on the Pi's network. To pair, the Pi shows a short code on its `/setup` page, and you enter that code in the Relab app. After that, the backend sends capture and preview requests down the relay, and the Pi only runs the routes it allows. The [platform docs](https://docs.r9lab.io/architecture/rpi-cam/) have the full diagram, with LAN direct mode, preview streaming and the pairing sequence. [ARCHITECTURE.md](ARCHITECTURE.md) covers the plugin's internals.
+
 ## Supported Modes
 
 | Mode               | Purpose                                                        |
