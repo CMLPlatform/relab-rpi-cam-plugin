@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from pydantic import AnyUrl
-from relab_rpi_cam_models.stream import StreamMode, StreamView
+from r9cam_models.stream import StreamMode, StreamView
 
 from app.backend.contract_adapters import build_stream_metadata
 

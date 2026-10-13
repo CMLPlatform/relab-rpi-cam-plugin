@@ -25,7 +25,7 @@ from app.core.settings import Settings, settings
 from app.observability.logging import build_log_extra, build_security_log_extra
 from app.relay.device_jwt import build_device_assertion
 from app.relay.state import RelayRuntimeState
-from relab_rpi_cam_models import (
+from r9cam_models import (
     RELAY_COMMAND_FORBIDDEN_DETAIL,
     RELAY_COMMAND_TIMEOUT_SECONDS,
     RELAY_WS_TEXT_FRAME_LIMIT_BYTES,
@@ -70,7 +70,7 @@ class RelayService:
         self._asgi_app = asgi_app
 
     async def run_forever(self) -> None:
-        """Maintain a persistent WebSocket connection to the Relab backend."""
+        """Maintain a persistent WebSocket connection to the R9lab backend."""
         if not self.is_configured():
             logger.info("WebSocket relay not configured; relay will not start.")
             return

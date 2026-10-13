@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 
-# Fails when main carries a relab-rpi-cam-models version that is not on PyPI and has
+# Fails when main carries a r9cam-models version that is not on PyPI and has
 # no release tag. Pull requests are left out on purpose: a version bump is tagged after
 # it merges, so a PR run would always fail. The weekly run keeps reporting drift that
 # nobody fixed after the push run went red.
@@ -11,7 +11,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'relab_rpi_cam_models/pyproject.toml'
+      - 'r9cam_models/pyproject.toml'
       - 'scripts/check_models_release.py'
       - '.github/workflows/models-release-drift.yml'
   schedule:

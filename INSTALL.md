@@ -18,7 +18,7 @@ This guide is for operators installing and running the RPI Camera Plugin on a Ra
 - Raspberry Pi OS 64-bit
 - Python 3.13+
 - Docker Compose for the recommended runtime
-- Network access to the Relab backend for paired mode
+- Network access to the R9lab backend for paired mode
 
 ## Prepare The Pi
 
@@ -35,19 +35,19 @@ This guide is for operators installing and running the RPI Camera Plugin on a Ra
 1. Clone the plugin:
 
    ```sh
-   git clone https://github.com/CMLPlatform/relab-rpi-cam-plugin.git
-   cd relab-rpi-cam-plugin
+   git clone https://github.com/CMLPlatform/relab-rpi-cam-plugin.git r9cam
+   cd r9cam
    cp .env.example .env
    ```
 
-## Paired Relab Mode
+## Paired R9lab Mode
 
-Paired mode connects the Pi to Relab through an outbound WebSocket relay. The Pi does not need a public IP address or inbound port forwarding.
+Paired mode connects the Pi to R9lab through an outbound WebSocket relay. The Pi does not need a public IP address or inbound port forwarding.
 
 Set the pairing backend URL in `.env`:
 
 ```sh
-PAIRING_BACKEND_URL=https://api.cml-relab.org
+PAIRING_BACKEND_URL=https://api.r9lab.io
 ```
 
 Start the plugin with Docker Compose:
@@ -77,7 +77,7 @@ Treat `/setup` and pairing logs as local/operator-only during pairing. The code 
 
 The setup page polls `GET /pairing/state` so it can reload when pairing or unpairing completes. That endpoint is intentionally public and returns only low-detail state (`status` and `relay_enabled`); it does not expose the pairing code, relay credentials, local API key, backend URLs, or camera IDs.
 
-Enter the code in the native Relab app under Cameras > Add Camera. The Pi receives relay credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
+Enter the code in the native R9lab app under Cameras > Add Camera. The Pi receives relay credentials, saves them to `~/.config/relab/relay_credentials.json`, and connects to the backend.
 
 To rotate the code without deleting relay credentials, use **Generate a new pairing code** on `/setup`.
 To rotate relay credentials, unpair the camera and pair it again. Unpairing clears the stored relay key first, and the next pairing creates a fresh key pair.
@@ -86,11 +86,11 @@ Docker Compose stores runtime credentials in a named volume mounted at `/home/rp
 
 The relay signing key is stored in `relay_credentials.json` with `0o600` permissions. Against SD-card theft, use full-disk encryption (LUKS); to keep the key off disk entirely, skip pairing and inject `RELAY_PRIVATE_KEY_PEM` (with `RELAY_CAMERA_ID`, `RELAY_KEY_ID`, `RELAY_AUTH_SCHEME`) via env.
 
-The HTTPS-served Relab web frontend cannot auto-probe the Pi's plain-HTTP local API because browsers block mixed content. Use the native app for pairing and direct-mode setup.
+The HTTPS-served R9lab web frontend cannot auto-probe the Pi's plain-HTTP local API because browsers block mixed content. Use the native app for pairing and direct-mode setup.
 
 ## Standalone Mode
 
-Standalone mode stores captures in an S3-compatible bucket instead of the Relab backend. The bundled standalone profile starts a local RustFS sidecar.
+Standalone mode stores captures in an S3-compatible bucket instead of the R9lab backend. The bundled standalone profile starts a local RustFS sidecar.
 
 Set these values in `.env`:
 
@@ -139,7 +139,7 @@ Local direct mode is enabled by default. On first boot, the plugin generates and
 X-API-Key: <local-api-key>
 ```
 
-Paired Relab apps can fetch the key through the relay and switch to LAN/Ethernet direct access for lower preview latency. Custom clients can use the key without pairing.
+Paired R9lab apps can fetch the key through the relay and switch to LAN/Ethernet direct access for lower preview latency. Custom clients can use the key without pairing.
 
 Retrieve the key from an SSH session:
 
@@ -172,7 +172,7 @@ Network notes:
 - MediaMTX RTSP `8554` and HLS `8888` bind to `127.0.0.1`; preview traffic goes through the app.
 - Ethernet link-local addressing (`169.254.x.x`) works when no DHCP server is present.
 - USB gadget mode applies to Raspberry Pi Zero 2W and some Raspberry Pi 4 revisions, not Raspberry Pi 5.
-- mDNS is optional. Install `avahi-daemon` and advertise `_relab-rpi-cam._tcp` on port 8018 to reach the Pi at `<hostname>.local`.
+- mDNS is optional. Install `avahi-daemon` and advertise `_r9cam._tcp` on port 8018 to reach the Pi at `<hostname>.local`.
 
 ## Direct Python Run
 
@@ -188,13 +188,13 @@ uv run fastapi run app/main.py --host 0.0.0.0 --port 8018 --forwarded-allow-ips 
 Once running, check:
 
 - setup and status: `http://your-pi-ip:8018/setup`
-- API reference: <https://docs.cml-relab.org/api/rpi-cam/>
+- API reference: <https://docs.r9lab.io/api/rpi-cam/>
 - HLS preview: `http://your-pi-ip:8018/preview/hls/cam-preview/index.m3u8`
 
 For headless operation, read pairing status from:
 
 - Docker Compose: `docker compose logs app`
-- systemd/journald: `journalctl -u relab-rpi-cam -f`
+- systemd/journald: `journalctl -u r9cam -f`
 - direct shell run: the `PAIRING READY` terminal banner
 
 ## Observability
@@ -278,7 +278,7 @@ Check the CSI cable orientation, camera seating, and camera module compatibility
 - Confirm `~/.config/relab/relay_credentials.json` exists after pairing.
 - Check logs: `docker compose logs app`
 - `refusing to connect`: pairing returned a relay host that differs from the hostname in `PAIRING_BACKEND_URL`. The device only authenticates to the backend it paired with, so point `PAIRING_BACKEND_URL` at the host the backend actually serves the relay from. A different port on the same host is fine. Pairing stops instead of retrying and shows this message on the setup page; if the mismatch is in already-stored credentials, the relay stays off at boot with `Persisted relay credentials rejected` in the log and the device re-pairs.
-- If the backend sits behind Cloudflare, add a WAF bypass for `/v1/plugins/rpi-cam/pairing/*`, `/v1/plugins/rpi-cam/device/*`, and `/v1/plugins/rpi-cam/ws/connect`.
+- If the backend sits behind Cloudflare, add a WAF bypass for `/v1/plugins/r9cam/pairing/*`, `/v1/plugins/r9cam/device/*`, and `/v1/plugins/r9cam/ws/connect`. A backend that still serves the older `/v1/plugins/rpi-cam/` prefix needs the same three rules under that prefix.
 
 ### Pairing Code Not Showing
 

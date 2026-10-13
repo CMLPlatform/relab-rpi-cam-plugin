@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 from PIL.ExifTags import IFD, Base
 from pydantic import AnyUrl
-from relab_rpi_cam_models.stream import StreamMode
+from r9cam_models.stream import StreamMode
 
 from app.__version__ import version
 from app.backend.contract_adapters import (
@@ -67,7 +67,7 @@ class TestContractAdapters:
         metadata = build_image_metadata(image, {"Model": MOCK_CAMERA_MODEL}, {"ExposureTime": 1_000})
         exif = image_metadata_to_exif(metadata)
         assert exif[Base.Make.value] == "Raspberry Pi"
-        assert exif[Base.Software.value] == f"relab-rpi-cam-plugin {version}"
+        assert exif[Base.Software.value] == f"r9cam {version}"
         assert exif[Base.ImageWidth.value] == 100
         assert exif[Base.ImageLength.value] == 100
 
@@ -90,7 +90,7 @@ class TestContractAdapters:
         sub_ifd = exif.get_ifd(IFD.Exif)
 
         assert exif[Base.Model.value] == MOCK_CAMERA_MODEL
-        assert exif[Base.Software.value] == f"relab-rpi-cam-plugin {version}"
+        assert exif[Base.Software.value] == f"r9cam {version}"
         assert Base.ExposureTime.value not in exif
         assert sub_ifd[Base.ExposureTime.value] == pytest.approx(0.001)
         assert sub_ifd[Base.OffsetTime.value] == "+00:00"

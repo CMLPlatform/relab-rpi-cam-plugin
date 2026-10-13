@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app.main import app
 
-DEFAULT_SCHEMA_PATH = Path("openapi.rpi-cam.json")
+DEFAULT_SCHEMA_PATH = Path("openapi.r9cam.json")
 
 
 def _schema_text() -> str:

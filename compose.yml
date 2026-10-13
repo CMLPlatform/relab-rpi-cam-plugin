@@ -1,9 +1,9 @@
 # Docker Compose stack for the RPi camera plugin.
 #
-# Paired mode (default — captures push to the Relab backend):
+# Paired mode (default — captures push to the R9lab backend):
 #   docker compose up -d
 #
-# Standalone mode (no Relab backend — captures land in a local RustFS bucket):
+# Standalone mode (no R9lab backend — captures land in a local RustFS bucket):
 #   Set APP_BUILD_TARGET=runtime-standalone and COMPOSE_PROFILES=standalone in
 #   .env, then ``docker compose up -d``. The standalone build target adds
 #   aioboto3; configure IMAGE_SINK=s3 and S3_* vars alongside it.
@@ -29,7 +29,7 @@ x-runtime-hardening: &runtime-hardening
 services:
   app:
     <<: *runtime-hardening
-    image: relab-rpi-cam-plugin
+    image: r9cam
     build:
       context: .
       # Override to ``runtime-standalone`` in .env for standalone mode.

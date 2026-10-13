@@ -11,7 +11,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'relab_rpi_cam_models/**'
+      - 'r9cam_models/**'
       - 'tests/unit/core/test_contract_package.py'
       - 'pyproject.toml'
       - 'uv.lock'
@@ -20,7 +20,7 @@ on:
   pull_request:
     branches: [ main ]
     paths:
-      - 'relab_rpi_cam_models/**'
+      - 'r9cam_models/**'
       - 'tests/unit/core/test_contract_package.py'
       - 'pyproject.toml'
       - 'uv.lock'

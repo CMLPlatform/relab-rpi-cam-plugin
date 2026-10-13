@@ -55,5 +55,5 @@ repos:
             name: openapi-schema-check
             entry: uv run python -m scripts.export_openapi --check
             language: system
-            files: ^(?:app/.*|scripts/export_openapi\.py|openapi\.rpi-cam\.json|justfile|pyproject\.toml|uv\.lock)$
+            files: ^(?:app/.*|scripts/export_openapi\.py|openapi\.r9cam\.json|justfile|pyproject\.toml|uv\.lock)$
             pass_filenames: false

@@ -1,6 +1,6 @@
 """Tests for the shared contract package surface."""
 
-import relab_rpi_cam_models as contracts
+import r9cam_models as contracts
 
 
 def test_shared_package_exports_only_contract_types() -> None:

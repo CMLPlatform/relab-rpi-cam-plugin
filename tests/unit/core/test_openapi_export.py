@@ -16,7 +16,7 @@ CAMERA_PATH = "/camera"
 
 def test_export_openapi_schema_writes_deterministic_schema(tmp_path: Path) -> None:
     """The export helper should write a stable JSON OpenAPI artifact."""
-    output_path = tmp_path / "openapi.rpi-cam.json"
+    output_path = tmp_path / "openapi.r9cam.json"
 
     export_openapi_schema(output_path)
 
@@ -29,7 +29,7 @@ def test_export_openapi_schema_writes_deterministic_schema(tmp_path: Path) -> No
 
 def test_schema_is_current_detects_stale_file(tmp_path: Path) -> None:
     """The check helper should fail cleanly when a committed schema is stale."""
-    output_path = tmp_path / "openapi.rpi-cam.json"
+    output_path = tmp_path / "openapi.r9cam.json"
     output_path.write_text('{"stale": true}\n', encoding="utf-8")
 
     assert not schema_is_current(output_path)

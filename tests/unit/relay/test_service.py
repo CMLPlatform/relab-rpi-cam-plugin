@@ -25,7 +25,7 @@ from app.relay.service import (
     _send_error,
 )
 from app.relay.state import RelayRuntimeState
-from relab_rpi_cam_models import RELAY_COMMAND_FORBIDDEN_DETAIL, RELAY_WS_TEXT_FRAME_LIMIT_BYTES
+from r9cam_models import RELAY_COMMAND_FORBIDDEN_DETAIL, RELAY_WS_TEXT_FRAME_LIMIT_BYTES
 from tests.constants import EXAMPLE_RELAY_BACKEND_URL, EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID
 
 if TYPE_CHECKING:

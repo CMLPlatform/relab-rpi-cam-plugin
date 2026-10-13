@@ -28,7 +28,7 @@ CAMERA_BACKEND_PICAMERA2 = "picamera2"  # used in app/camera/services/manager.py
 IMAGE_SINK_AUTO = "auto"
 IMAGE_SINK_BACKEND = "backend"
 IMAGE_SINK_S3 = "s3"
-DEFAULT_PAIRING_BACKEND_URL = "https://api.cml-relab.org"
+DEFAULT_PAIRING_BACKEND_URL = "https://api.r9lab.io"
 APP_ENV_DEVELOPMENT = "development"
 APP_ENV_PRODUCTION = "production"
 # used in core/bootstrap.py and pairing/services/service.py
@@ -166,7 +166,7 @@ class Settings(BaseSettings):
     allowed_cors_origins: list[HttpUrl] = [  # Allowed origins for CORS. Must include the main API host
         HttpUrl("http://127.0.0.1:8000"),
         HttpUrl("http://localhost:8000"),
-        HttpUrl("https://cml-relab.org"),
+        HttpUrl("https://r9lab.io"),
     ]
     authorized_api_keys: list[str] = []  # Bootstrap-only auth keys from env/.env
     camera_device_num: NonNegativeInt = 0  # Camera device number (usually 0 or 1)
@@ -227,7 +227,7 @@ class Settings(BaseSettings):
 
     # Observability / tracing
     otel_enabled: bool = False
-    otel_service_name: str = "relab-rpi-cam-plugin"
+    otel_service_name: str = "r9cam"
     otel_exporter_otlp_endpoint: str = ""
 
     # Local (direct Ethernet / USB-C) mode
@@ -248,7 +248,7 @@ class Settings(BaseSettings):
 
     # WebSocket relay bootstrap seed. Runtime-owned relay credentials may later
     # come from the persisted credentials file instead.
-    relay_backend_url: str = ""  # wss://your-backend/v1/plugins/rpi-cam/ws/connect
+    relay_backend_url: str = ""  # wss://your-backend/v1/plugins/r9cam/ws/connect
     relay_camera_id: str = ""
     relay_auth_scheme: str = "device_assertion"
     relay_key_id: str = ""

@@ -19,7 +19,7 @@ from tests.constants import (
 )
 from tests.fakes import fresh_p256_pem
 
-OTEL_SERVICE_NAME = "relab-rpi-cam-plugin"
+OTEL_SERVICE_NAME = "r9cam"
 APP_ENV_DEVELOPMENT = "development"
 APP_ENV_PRODUCTION = "production"
 LOCAL_SESSION_COOKIE_NAME = "relab_session"

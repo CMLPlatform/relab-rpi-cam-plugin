@@ -7,7 +7,7 @@ import re
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from relab_rpi_cam_models import RelayAuthScheme
+from r9cam_models import RelayAuthScheme
 
 _SAFE_RELAY_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+$")
 _MAX_RELAY_CAMERA_ID_LENGTH = 128

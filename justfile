@@ -10,7 +10,7 @@ dev:
     uv run fastapi dev
 
 test:
-    uv run pytest --cov=app --cov=relab_rpi_cam_models --cov-report=term-missing
+    uv run pytest --cov=app --cov=r9cam_models --cov-report=term-missing
 
 test-unit:
     uv run pytest tests/unit

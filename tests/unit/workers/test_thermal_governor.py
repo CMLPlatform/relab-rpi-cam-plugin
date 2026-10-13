@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from relab_rpi_cam_models.telemetry import TelemetrySnapshot, ThermalState
+from r9cam_models.telemetry import TelemetrySnapshot, ThermalState
 
 from app.workers import thermal_governor as thermal_governor_mod
 from app.workers.thermal_governor import ThermalGovernor

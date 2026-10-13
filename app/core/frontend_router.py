@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
-from relab_rpi_cam_models.stream import StreamMode
+from r9cam_models.stream import StreamMode
 
 from app.camera.dependencies import CameraManagerDependency
 from app.core.settings import settings

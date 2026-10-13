@@ -114,7 +114,7 @@ jobs:
         run: |
           uv build --out-dir dist --clear
           uv export --format cyclonedx1.5 --preview-features sbom-export --locked --no-dev \
-            --output-file dist/relab-rpi-cam-plugin.cdx.json
+            --output-file dist/r9cam.cdx.json
 
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -127,9 +127,9 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/*.whl
-          sbom-path: dist/relab-rpi-cam-plugin.cdx.json
+          sbom-path: dist/r9cam.cdx.json
 
       - name: Upload the release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$TAG" dist/*.whl dist/*.tar.gz dist/relab-rpi-cam-plugin.cdx.json --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$TAG" dist/*.whl dist/*.tar.gz dist/r9cam.cdx.json --repo "$GITHUB_REPOSITORY"

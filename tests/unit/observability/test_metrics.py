@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from relab_rpi_cam_models.telemetry import TelemetrySnapshot, ThermalState
+from r9cam_models.telemetry import TelemetrySnapshot, ThermalState
 
 from app.observability.router import render_snapshot
 from tests.constants import (

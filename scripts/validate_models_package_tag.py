@@ -5,8 +5,8 @@ import sys
 import tomllib
 from pathlib import Path
 
-DEFAULT_PREFIX = "relab-rpi-cam-models-v"
-DEFAULT_PYPROJECT = Path("relab_rpi_cam_models/pyproject.toml")
+DEFAULT_PREFIX = "r9cam-models-v"
+DEFAULT_PYPROJECT = Path("r9cam_models/pyproject.toml")
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,11 +39,11 @@ def main() -> int:
     tag_version = tag_name.removeprefix(args.prefix)
     if tag_version != package_version:
         sys.stderr.write(
-            f"Tag version {tag_version} does not match relab_rpi_cam_models version {package_version}\n",
+            f"Tag version {tag_version} does not match r9cam_models version {package_version}\n",
         )
         return 1
 
-    sys.stdout.write(f"Validated {tag_name} against relab_rpi_cam_models {package_version}\n")
+    sys.stdout.write(f"Validated {tag_name} against r9cam_models {package_version}\n")
     return 0
 
 

@@ -4,7 +4,7 @@ from typing import cast
 
 import pytest
 from pydantic import AnyUrl, SecretStr
-from relab_rpi_cam_models.stream import StreamMode
+from r9cam_models.stream import StreamMode
 
 from app.camera.exceptions import YoutubeConfigRequiredError
 from app.camera.schemas import YoutubeStreamConfig

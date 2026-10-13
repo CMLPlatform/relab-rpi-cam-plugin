@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from PIL import Image
 from pydantic import AnyUrl
-from relab_rpi_cam_models.camera import CameraMode
+from r9cam_models.camera import CameraMode
 
 from app.camera.schemas import (
     CameraControlInfo,
@@ -34,7 +34,7 @@ from tests.constants import YOUTUBE_TEST_BROADCAST_URL
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Coroutine, Mapping
 
-    from relab_rpi_cam_models.stream import StreamMode
+    from r9cam_models.stream import StreamMode
 
     from app.camera.services.backend import CameraBackend
 

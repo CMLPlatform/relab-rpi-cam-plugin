@@ -9,14 +9,14 @@
     "Topic :: Multimedia :: Video :: Capture",
     "Topic :: System :: Hardware",
   ]
-  description = "Shared Pydantic models for Relab Raspberry Pi Camera plugin models"
+  description = "Shared Pydantic models for R9lab Raspberry Pi Camera plugin models"
   license = "Apache-2.0"
   license-files = ["LICENSE"]
   maintainers = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
-  name = "relab-rpi-cam-models"
+  name = "r9cam-models"
   readme = "README.md"
   requires-python = ">=3.13"
-  version = "0.5.2" # NOTE: Published independently via the models tag workflow
+  version = "0.6.0" # NOTE: Published independently via the models tag workflow
 
   dependencies = ["pydantic>=2.9"]
 

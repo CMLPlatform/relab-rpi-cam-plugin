@@ -42,8 +42,8 @@ app = FastAPI(
     title="Raspberry Pi Camera API",
     description=(
         "This API allows you to remotely capture images and stream video from a Raspberry Pi camera. "
-        "It is used as a plugin for the Relab platform."
-        '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank">Relab GitHub</a>.'
+        "It is used as a plugin for the R9lab platform."
+        '<br>For more info, visit the <a href="https://github.com/CMLplatform/relab" target="_blank">R9lab GitHub</a>.'
         "<br><br><b>Licensing.</b> This API specification is licensed Apache-2.0 so that anyone may "
         "write clients or integrations against it without inheriting the plugin's copyleft. The "
         "plugin software itself remains AGPL-3.0-or-later."
@@ -53,7 +53,7 @@ app = FastAPI(
     # copyright anyway (Directive 2009/24/EC art. 1(2) excludes the ideas and principles underlying
     # interfaces). Full text ships at LICENSE-APACHE-2.0, because section 4(a) requires recipients to
     # get a copy — asserting the licence without shipping the terms leaves the grant incomplete.
-    # Mirrors the carve-out in the Relab platform repo so every published Relab schema answers alike.
+    # Mirrors the carve-out in the R9lab platform repo so every published R9lab schema answers alike.
     license_info={
         "name": "Apache-2.0",
         "identifier": "Apache-2.0",

@@ -15,7 +15,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from pydantic import AnyUrl
-from relab_rpi_cam_models.stream import StreamMode
+from r9cam_models.stream import StreamMode
 
 from app.camera.exceptions import YoutubeConfigRequiredError
 from app.camera.schemas import YoutubeStreamConfig

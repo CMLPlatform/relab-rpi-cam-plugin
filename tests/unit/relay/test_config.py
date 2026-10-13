@@ -188,7 +188,7 @@ class TestAuthorizedApiKeysMutation:
         assert runtime_state.authorized_api_keys is original_keys
 
 
-FOREIGN_RELAY_BACKEND_URL = "wss://attacker.example/v1/plugins/rpi-cam/ws/connect"
+FOREIGN_RELAY_BACKEND_URL = "wss://attacker.example/v1/plugins/r9cam/ws/connect"
 LOOPBACK_BACKEND_URL = "http://127.0.0.1:8000"
 
 
@@ -197,7 +197,7 @@ class TestValidateRelayUrlOrigin:
 
     def test_accepts_the_paired_host_on_another_port(self) -> None:
         """A different port on the paired host still reaches the same operator."""
-        value = "wss://example.com:8443/v1/plugins/rpi-cam/ws/connect"
+        value = "wss://example.com:8443/v1/plugins/r9cam/ws/connect"
         assert (
             validate_relay_url_origin(value, pairing_backend_url=EXAMPLE_BACKEND_URL, app_env=APP_ENV_PRODUCTION)
             == value
@@ -223,7 +223,7 @@ class TestValidateRelayUrlOrigin:
 
     def test_relaxes_the_pin_for_a_loopback_backend_in_development(self) -> None:
         """The container rewrite legitimately moves a loopback backend to another host."""
-        value = "ws://host.docker.internal:8000/v1/plugins/rpi-cam/ws/connect"
+        value = "ws://host.docker.internal:8000/v1/plugins/r9cam/ws/connect"
         assert (
             validate_relay_url_origin(value, pairing_backend_url=LOOPBACK_BACKEND_URL, app_env=APP_ENV_DEVELOPMENT)
             == value
