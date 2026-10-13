@@ -17,7 +17,7 @@ from fastapi import APIRouter, Request, Response
 from app.core.headers import NO_STORE_HEADERS
 from app.core.runtime import get_request_runtime
 from app.utils.network import find_lan_ips
-from relab_rpi_cam_models import LocalAccessInfo
+from r9cam_models import LocalAccessInfo
 
 logger = logging.getLogger(__name__)
 

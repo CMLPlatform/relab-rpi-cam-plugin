@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from relab_rpi_cam_models.camera import CameraMode
+from r9cam_models.camera import CameraMode
 
 from app.camera.exceptions import CameraInitializationError
 from app.camera.schemas import (
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     # libcamera's `controls` module isn't available to the typechecker
     # in all environments; treat it as Any for static checks.
     from PIL.Image import Image as PilImage
-    from relab_rpi_cam_models.stream import StreamMode
+    from r9cam_models.stream import StreamMode
 
     controls: Any
     from picamera2 import Picamera2

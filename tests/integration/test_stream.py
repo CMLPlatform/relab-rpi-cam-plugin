@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from httpx import AsyncClient
 from pydantic import AnyUrl, SecretStr
-from relab_rpi_cam_models.stream import StreamMode
+from r9cam_models.stream import StreamMode
 
 from app.camera.exceptions import ActiveStreamError, YoutubeConfigRequiredError
 from app.camera.schemas import YoutubeStreamConfig

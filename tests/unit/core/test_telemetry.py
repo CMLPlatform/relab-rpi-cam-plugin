@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from relab_rpi_cam_models.telemetry import ThermalState
+from r9cam_models.telemetry import ThermalState
 
 from app.observability import telemetry as telemetry_mod
 

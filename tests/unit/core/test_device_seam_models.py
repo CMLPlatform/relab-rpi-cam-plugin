@@ -7,7 +7,7 @@ import secrets
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from relab_rpi_cam_models import (
+from r9cam_models import (
     PAIRING_CODE_ALPHABET,
     PAIRING_CODE_LENGTH,
     PAIRING_CODE_PATTERN,
@@ -35,7 +35,7 @@ from relab_rpi_cam_models import (
 )
 
 CAMERA_ID = "cam-1"
-PAIRING_WS_URL = "wss://backend.example/v1/plugins/rpi-cam/ws/connect"
+PAIRING_WS_URL = "wss://backend.example/v1/plugins/r9cam/ws/connect"
 BACKEND_OWNED_RELAY_METHOD = "CONNECT"
 BACKEND_OWNED_RELAY_PATH = "relative-path-checked-by-runtime"
 RELAY_GET_METHOD = "GET"

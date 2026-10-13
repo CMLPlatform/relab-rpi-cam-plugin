@@ -8,8 +8,8 @@ exclude-newer-span = "P3D"
 
 [manifest]
 members = [
-    "relab-rpi-cam-models",
-    "relab-rpi-cam-plugin",
+    "r9cam",
+    "r9cam-models",
 ]
 
 [[package]]
@@ -1284,18 +1284,7 @@ wheels = [
 ]
 
 [[package]]
-name = "relab-rpi-cam-models"
-version = "0.5.2"
-source = { editable = "relab_rpi_cam_models" }
-dependencies = [
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.9" }]
-
-[[package]]
-name = "relab-rpi-cam-plugin"
+name = "r9cam"
 version = "0.6.2"
 source = { editable = "." }
 dependencies = [
@@ -1308,7 +1297,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
-    { name = "relab-rpi-cam-models" },
+    { name = "r9cam-models" },
     { name = "websockets" },
 ]
 
@@ -1344,7 +1333,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=5.9" },
     { name = "pydantic-settings", specifier = ">=2.8.0" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.12.1" },
-    { name = "relab-rpi-cam-models", editable = "relab_rpi_cam_models" },
+    { name = "r9cam-models", editable = "r9cam_models" },
     { name = "websockets", specifier = ">=16.0" },
 ]
 
@@ -1366,6 +1355,17 @@ test = [
     { name = "pytest-asyncio", specifier = ">=0.25" },
     { name = "pytest-cov", specifier = ">=6.0" },
 ]
+
+[[package]]
+name = "r9cam-models"
+version = "0.6.0"
+source = { editable = "r9cam_models" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.9" }]
 
 [[package]]
 name = "requests"

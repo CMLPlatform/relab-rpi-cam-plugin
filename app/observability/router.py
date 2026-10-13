@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
-from relab_rpi_cam_models.telemetry import TelemetrySnapshot, ThermalState
+from r9cam_models.telemetry import TelemetrySnapshot, ThermalState
 
 from app.observability.telemetry import collect_telemetry
 from app.utils.network import is_local_client
@@ -13,7 +13,7 @@ public_router = APIRouter()
 
 _PROM_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
-SERVICE_NAME = "relab-rpi-cam"
+SERVICE_NAME = "r9cam"
 
 
 class HealthStatus(BaseModel):

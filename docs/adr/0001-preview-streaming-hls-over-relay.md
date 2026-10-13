@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-07-19
-- Scope: plugin + Relab backend (`app/api/plugins/rpi_cam/`)
+- Scope: plugin + R9lab backend (`app/api/plugins/rpi_cam/`)
 
 ## Context
 
@@ -13,7 +13,7 @@ as LL-HLS. Two paths exist:
   `/preview/hls/...` straight from the Pi. Low latency, no backend involvement.
 - **Remote via relay**: the backend proxies each HLS request through the
   device's WebSocket command tunnel (`GET /preview/hls/` is allowlisted in
-  `relab_rpi_cam_models`). Every manifest and segment travels as a relay
+  `r9cam_models`). Every manifest and segment travels as a relay
   envelope; when the HTTP request lands on a different Uvicorn worker than the
   one holding the camera's socket, it additionally crosses the Redis
   cross-worker bridge base64-encoded.

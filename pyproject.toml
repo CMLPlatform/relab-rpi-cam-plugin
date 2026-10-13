@@ -18,10 +18,10 @@
     "Topic :: System :: Hardware",
   ]
   # Project metadata
-  description = "Raspberry Pi Camera plugin for CML Reverse Engineering Lab app"
+  description = "Raspberry Pi Camera plugin for R9lab platform"
   license     = "AGPL-3.0-or-later"
   maintainers = [{ name = "Simon van Lierde", email = "s.n.van.lierde@cml.leidenuniv.nl" }]
-  name        = "relab-rpi-cam-plugin"
+  name        = "r9cam"
 
   # Dependencies and version constraints
   dependencies = [
@@ -34,7 +34,7 @@
     "psutil>=5.9",
     "pydantic-settings>=2.8.0",
     "pyjwt[crypto]>=2.12.1",
-    "relab-rpi-cam-models>=0.5.0",                    # NOTE: Keep this aligned with the published contract package
+    "r9cam-models>=0.6.0,<0.7",                 # NOTE: Keep this aligned with the published contract package
     "websockets>=16.0",
   ]
 
@@ -78,7 +78,7 @@
 
 [tool.commitizen]
   # The models subpackage carries its own tags; they are not app releases.
-  ignored_tag_formats      = ["relab-rpi-cam-models-v$version"]
+  ignored_tag_formats      = ["r9cam-models-v$version", "r9cam-models-v$version"]
   major_version_zero       = true
   name                     = "cz_conventional_commits"
   # Runs after the version files are written and before cz commits, so the lockfile
@@ -86,7 +86,7 @@
   pre_bump_hooks           = ["uv lock && git add uv.lock"]
   tag_format               = "v$version"
   update_changelog_on_bump = true
-  version_files            = ["app/__version__.py", "openapi.rpi-cam.json:\"version\"", "CITATION.cff:^version", "codemeta.json:\"version\""]
+  version_files            = ["app/__version__.py", "openapi.r9cam.json:\"version\"", "CITATION.cff:^version", "codemeta.json:\"version\""]
   version_provider         = "pep621"
   version_scheme           = "semver2"
 
@@ -148,7 +148,7 @@
   exclude-newer = "3 days"
 
   [tool.uv.sources]
-    relab_rpi_cam_models = { workspace = true }
+    r9cam-models = { workspace = true }
 
   [tool.uv.workspace]
-    members = ["relab_rpi_cam_models"]
+    members = ["r9cam_models"]

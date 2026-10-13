@@ -1,7 +1,7 @@
 """Router for camera status endpoints."""
 
 from fastapi import APIRouter, HTTPException
-from relab_rpi_cam_models.camera import CameraStatusView
+from r9cam_models.camera import CameraStatusView
 
 from app.camera.dependencies import CameraManagerDependency
 from app.camera.schemas import (

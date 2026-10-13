@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import AnyUrl, SecretStr
-from relab_rpi_cam_models.camera import CameraMode
-from relab_rpi_cam_models.stream import StreamMode
+from r9cam_models.camera import CameraMode
+from r9cam_models.stream import StreamMode
 
 from app.camera.exceptions import CameraInitializationError
 from app.camera.schemas import FocusControlRequest, FocusMode, YoutubeStreamConfig

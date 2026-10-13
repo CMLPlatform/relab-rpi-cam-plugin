@@ -51,7 +51,7 @@ jobs:
         run: uv run prek run --all-files
 
       - name: Run tests
-        run: uv run pytest --cov=app --cov=relab_rpi_cam_models --cov-report=term-missing --cov-report=xml:coverage.xml
+        run: uv run pytest --cov=app --cov=r9cam_models --cov-report=term-missing --cov-report=xml:coverage.xml
 
       - name: Upload coverage to Codecov
         if: always()

@@ -94,7 +94,7 @@ Key directories:
 - `app/core/` - settings, runtime, lifespan, middleware, bootstrap, and templates config
 - `app/relay/` - outbound WebSocket relay service and state
 - `app/delivery/` - backend and S3 capture persistence
-- `relab_rpi_cam_models/` - shared backend-to-plugin DTO package
+- `r9cam_models/` - shared backend-to-plugin DTO package
 
 ## Common Changes
 
@@ -125,11 +125,11 @@ Long-lived services belong on `AppRuntime`. Avoid module-level singletons for ru
 
 ### Change Shared DTOs
 
-Cross-repo device payloads live in `relab_rpi_cam_models`.
+Cross-repo device payloads live in `r9cam_models`.
 
 1. Update the DTO package.
-1. Update `relab_rpi_cam_models/pyproject.toml`.
-1. Refresh the lock file with `uv lock --upgrade relab-rpi-cam-models`.
+1. Update `r9cam_models/pyproject.toml`.
+1. Refresh the lock file with `uv lock --upgrade r9cam-models`.
 1. Add focused contract tests.
 
 ## Debugging
@@ -165,7 +165,7 @@ Before submitting:
 
 ## Release Process
 
-Plugin app releases and `relab_rpi_cam_models` releases are versioned independently.
+Plugin app releases and `r9cam_models` releases are versioned independently.
 
 ### Plugin App
 
@@ -175,13 +175,13 @@ The plugin app release uses `commitizen` and GitHub Actions.
 1. Merge to `main` after checks pass.
 1. The release workflow updates `pyproject.toml`, `app/__version__.py`, `CHANGELOG.md`, the Git tag, and the GitHub release.
 
-### `relab_rpi_cam_models`
+### `r9cam_models`
 
 The contract package publishes independently to PyPI.
 
-1. Update `relab_rpi_cam_models/pyproject.toml`.
-1. Run `uv lock --upgrade relab-rpi-cam-models`.
+1. Update `r9cam_models/pyproject.toml`.
+1. Run `uv lock --upgrade r9cam-models`.
 1. Merge the package changes.
-1. Create and push `relab-rpi-cam-models-vX.Y.Z`.
+1. Create and push `r9cam-models-vX.Y.Z`.
 
 The publish workflow verifies the tag version, runs package-focused checks, builds distributions, and publishes via GitHub trusted publishing.

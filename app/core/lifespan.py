@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from relab_rpi_cam_models.camera import CameraMode
+from r9cam_models.camera import CameraMode
 
 from app.__version__ import version
 from app.backend.client import aclose_client as aclose_backend_client
@@ -44,7 +44,7 @@ def _log_startup_banner(runtime: AppRuntime) -> None:
     if mode is ConnectionMode.PAIRED:
         mode_line = f"PAIRED      camera_id={runtime.runtime_state.relay_camera_id}"
     elif mode is ConnectionMode.PAIRING:
-        mode_line = "PAIRING     waiting for code to be claimed in the Relab app"
+        mode_line = "PAIRING     waiting for code to be claimed in the R9lab app"
     else:
         mode_line = "IDLE        set PAIRING_BACKEND_URL in .env to enable pairing"
 
@@ -55,7 +55,7 @@ def _log_startup_banner(runtime: AppRuntime) -> None:
     sep = "═" * 54
     banner = (
         f"\n{sep}\n"
-        f"  Relab RPi Camera  v{version}\n"
+        f"  R9lab RPi Camera  v{version}\n"
         f"  Setup    : {setup_url}\n"
         f"  Mode     : {mode_line}\n"
         f"{pairing_hint_line}"

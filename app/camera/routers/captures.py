@@ -10,7 +10,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Body, HTTPException
-from relab_rpi_cam_models.images import ImageCaptureResponse
+from r9cam_models.images import ImageCaptureResponse
 
 from app.camera.dependencies import CameraManagerDependency
 from app.camera.exceptions import ActiveStreamError

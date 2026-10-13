@@ -558,7 +558,7 @@
         "description": "Liveness payload returned to unauthenticated local-network probes.",
         "properties": {
           "service": {
-            "default": "relab-rpi-cam",
+            "default": "r9cam",
             "title": "Service",
             "type": "string"
           },
@@ -979,7 +979,7 @@
     }
   },
   "info": {
-    "description": "This API allows you to remotely capture images and stream video from a Raspberry Pi camera. It is used as a plugin for the Relab platform.<br>For more info, visit the <a href=\"https://github.com/CMLplatform/relab\" target=\"_blank\">Relab GitHub</a>.<br><br><b>Licensing.</b> This API specification is licensed Apache-2.0 so that anyone may write clients or integrations against it without inheriting the plugin's copyleft. The plugin software itself remains AGPL-3.0-or-later.",
+    "description": "This API allows you to remotely capture images and stream video from a Raspberry Pi camera. It is used as a plugin for the R9lab platform.<br>For more info, visit the <a href=\"https://github.com/CMLplatform/relab\" target=\"_blank\">R9lab GitHub</a>.<br><br><b>Licensing.</b> This API specification is licensed Apache-2.0 so that anyone may write clients or integrations against it without inheriting the plugin's copyleft. The plugin software itself remains AGPL-3.0-or-later.",
     "license": {
       "identifier": "Apache-2.0",
       "name": "Apache-2.0"
@@ -1217,7 +1217,7 @@
     },
     "/pairing": {
       "delete": {
-        "description": "Clear relay credentials and restart the pairing flow.\n\nReturns 204 immediately so the response can propagate back through the\nrelay WebSocket before the relay task is cancelled. The actual reset runs\n100 ms later in a background task.\n\nCalled two ways:\n- By the Relab backend through the relay when a camera is deleted.\n- By the local browser UI \"Unpair\" button on the setup page.",
+        "description": "Clear relay credentials and restart the pairing flow.\n\nReturns 204 immediately so the response can propagate back through the\nrelay WebSocket before the relay task is cancelled. The actual reset runs\n100 ms later in a background task.\n\nCalled two ways:\n- By the R9lab backend through the relay when a camera is deleted.\n- By the local browser UI \"Unpair\" button on the setup page.",
         "operationId": "unpair_pairing_delete",
         "responses": {
           "204": {

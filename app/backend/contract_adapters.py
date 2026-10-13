@@ -5,13 +5,13 @@ from typing import Any
 
 from PIL.ExifTags import IFD, Base
 from PIL.Image import Exif, Image
-from relab_rpi_cam_models.images import (
+from r9cam_models.images import (
     CameraProperties,
     CaptureMetadata,
     ImageMetadata,
     ImageProperties,
 )
-from relab_rpi_cam_models.stream import StreamMetadata
+from r9cam_models.stream import StreamMetadata
 
 from app.__version__ import version
 
@@ -50,7 +50,7 @@ def image_metadata_to_exif(metadata: ImageMetadata) -> Exif:
     exif.update(
         {
             Base.Make.value: "Raspberry Pi",
-            Base.Software.value: f"relab-rpi-cam-plugin {version}",
+            Base.Software.value: f"r9cam {version}",
             Base.DateTime.value: metadata.image_properties.capture_time.strftime("%Y:%m:%d %H:%M:%S"),
             Base.ImageWidth.value: metadata.image_properties.width,
             Base.ImageLength.value: metadata.image_properties.height,

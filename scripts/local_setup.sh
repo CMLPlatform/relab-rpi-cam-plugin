@@ -16,7 +16,7 @@ while [ "$#" -gt 0 ]; do
 			shift
 			;;
 		-h|--help)
-			echo "Set up a local environment for the relab-rpi-cam-plugin repository using uv."
+			echo "Set up a local environment for the r9cam repository using uv."
 			echo "Usage: $0 [--dev]"
 			echo ""
 			echo "Arguments:"

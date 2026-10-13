@@ -1,6 +1,6 @@
-# relab-rpi-cam-models
+# r9cam-models
 
-Shared transport contracts for the [Relab Raspberry Pi Camera plugin](https://github.com/CMLPlatform/relab-rpi-cam-plugin) and the [Relab platform](https://github.com/CMLPlatform/relab), part of the [CML Relab project](https://cml-relab.org).
+Shared transport contracts for the [R9lab Raspberry Pi Camera plugin](https://github.com/CMLPlatform/relab-rpi-cam-plugin) and the [R9lab platform](https://github.com/CMLPlatform/relab), part of the [R9lab project](https://r9lab.io).
 
 ## Overview
 
@@ -22,22 +22,22 @@ override, not a second source of truth.
 Install from PyPI (or your internal index):
 
 ```sh
-pip install relab-rpi-cam-models
+pip install r9cam-models
 ```
 
 Import models in your code:
 
 ```python
-from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
-from relab_rpi_cam_models.device_seam import PairingPollResponse, RelayCommandEnvelope
-from relab_rpi_cam_models.images import ImageMetadata
-from relab_rpi_cam_models.stream import StreamView, StreamMode
+from r9cam_models.camera import CameraMode, CameraStatusView
+from r9cam_models.device_seam import PairingPollResponse, RelayCommandEnvelope
+from r9cam_models.images import ImageMetadata
+from r9cam_models.stream import StreamView, StreamMode
 ```
 
 From the repo root, update the workspace lock file after contract changes with:
 
 ```sh
-uv lock --upgrade relab-rpi-cam-models
+uv lock --upgrade r9cam-models
 ```
 
 ## Public API

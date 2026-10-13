@@ -11,7 +11,7 @@ from scripts import check_models_release, validate_models_package_tag
 if TYPE_CHECKING:
     import pytest
 
-VALIDATED_MESSAGE = "Validated relab-rpi-cam-models-v1.2.3 against relab_rpi_cam_models 1.2.3"
+VALIDATED_MESSAGE = "Validated r9cam-models-v1.2.3 against r9cam_models 1.2.3"
 UNEXPECTED_TAG_MESSAGE = "Unexpected tag name: bad-tag"
 
 
@@ -24,9 +24,9 @@ def test_validate_models_package_tag_accepts_matching_tag(
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text('[project]\nversion = "1.2.3"\n', encoding="utf-8")
     args = argparse.Namespace(
-        tag_name="relab-rpi-cam-models-v1.2.3",
+        tag_name="r9cam-models-v1.2.3",
         pyproject=pyproject,
-        prefix="relab-rpi-cam-models-v",
+        prefix="r9cam-models-v",
     )
     monkeypatch.setattr(validate_models_package_tag, "parse_args", lambda: args)
 
@@ -41,8 +41,8 @@ def test_validate_models_package_tag_rejects_wrong_prefix(
     """Unexpected tag prefixes should fail fast."""
     args = argparse.Namespace(
         tag_name="bad-tag",
-        pyproject=Path("relab_rpi_cam_models/pyproject.toml"),
-        prefix="relab-rpi-cam-models-v",
+        pyproject=Path("r9cam_models/pyproject.toml"),
+        prefix="r9cam-models-v",
     )
     monkeypatch.setattr(validate_models_package_tag, "parse_args", lambda: args)
 

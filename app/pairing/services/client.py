@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from relab_rpi_cam_models import DevicePublicKeyJWK, PairingPollResponse, PairingRegisterRequest
+from r9cam_models import DevicePublicKeyJWK, PairingPollResponse, PairingRegisterRequest
 
 if TYPE_CHECKING:
     import httpx

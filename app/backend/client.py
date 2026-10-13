@@ -23,7 +23,7 @@ from app.core.runtime_context import get_active_runtime_state
 from app.core.settings import settings, validate_endpoint_transport
 from app.observability.logging import build_log_extra
 from app.relay.device_jwt import build_device_assertion
-from relab_rpi_cam_models import DeviceImageUploadAck, DevicePreviewThumbnailAck
+from r9cam_models import DeviceImageUploadAck, DevicePreviewThumbnailAck
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

@@ -13,9 +13,9 @@ import pytest
 from fastapi import FastAPI, Request
 from PIL import Image
 from pydantic import AnyUrl, SecretStr
-from relab_rpi_cam_models.camera import CameraMode
-from relab_rpi_cam_models.images import ImageCaptureStatus
-from relab_rpi_cam_models.stream import StreamMode
+from r9cam_models.camera import CameraMode
+from r9cam_models.images import ImageCaptureStatus
+from r9cam_models.stream import StreamMode
 
 from app.camera import dependencies as camera_deps
 from app.camera.exceptions import ActiveStreamError, YoutubeConfigRequiredError
@@ -39,7 +39,7 @@ from tests.constants import EXAMPLE_IMAGE_URL, YOUTUBE_WATCH_URL_PREFIX
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from relab_rpi_cam_models.stream import StreamView
+    from r9cam_models.stream import StreamView
 
 YOUTUBE_PROVIDER = "youtube"
 MOCK_CAMERA = "mock-camera"

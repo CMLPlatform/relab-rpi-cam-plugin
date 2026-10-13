@@ -1,9 +1,9 @@
-name: Publish relab-rpi-cam-models
+name: Publish r9cam-models
 
 on:
   push:
     tags:
-      - "relab-rpi-cam-models-v*.*.*"
+      - "r9cam-models-v*.*.*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -46,15 +46,15 @@ jobs:
       id-token: write
     environment:
       name: pypi
-      url: https://pypi.org/p/relab-rpi-cam-models
+      url: https://pypi.org/p/r9cam-models
     steps:
       - name: Download package artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: relab-rpi-cam-models-dist
-          path: dist/relab-rpi-cam-models
+          name: r9cam-models-dist
+          path: dist/r9cam-models
 
       - name: Publish distribution
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
-          packages-dir: dist/relab-rpi-cam-models
+          packages-dir: dist/r9cam-models

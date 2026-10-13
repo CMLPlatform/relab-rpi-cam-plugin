@@ -10,8 +10,8 @@ from io import BytesIO
 from typing import TYPE_CHECKING
 
 from PIL import ImageOps
-from relab_rpi_cam_models.camera import CameraMode, CameraStatusView
-from relab_rpi_cam_models.images import ImageCaptureResponse, ImageCaptureStatus
+from r9cam_models.camera import CameraMode, CameraStatusView
+from r9cam_models.images import ImageCaptureResponse, ImageCaptureStatus
 
 from app.backend.contract_adapters import build_image_metadata, image_metadata_to_exif
 from app.camera.exceptions import ActiveStreamError
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
     from PIL.Image import Exif
     from PIL.Image import Image as PilImage
-    from relab_rpi_cam_models.stream import StreamMode, StreamView
+    from r9cam_models.stream import StreamMode, StreamView
 
 logger = logging.getLogger(__name__)
 _CAPTURE_ID_BYTES = 16

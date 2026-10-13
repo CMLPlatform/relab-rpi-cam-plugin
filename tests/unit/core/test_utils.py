@@ -11,7 +11,7 @@ import pytest
 from app.core.settings import settings
 from app.pairing.services.service import _generate_code_and_fingerprint
 from app.utils.files import cleanup_images, clear_directory
-from relab_rpi_cam_models import PAIRING_CODE_ALPHABET, PAIRING_CODE_LENGTH
+from r9cam_models import PAIRING_CODE_ALPHABET, PAIRING_CODE_LENGTH
 
 
 def _list_dir(path: Path) -> list[Path]:

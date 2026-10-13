@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient
 from PIL import Image
 from pydantic import AnyUrl
-from relab_rpi_cam_models.stream import StreamMode
+from r9cam_models.stream import StreamMode
 
 from app.camera.routers import hls as hls_mod
 from app.camera.services.manager import CameraManager

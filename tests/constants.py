@@ -21,8 +21,8 @@ CSP_NONCE_ATTR_RE = re.compile(r'<script\b[^>]*\bnonce="([^"]+)"')
 # Shared URL bases and prefixes
 BACKEND_EXAMPLE_BASE_URL = "https://backend.example"
 EXAMPLE_BACKEND_URL = "https://example.com"
-EXAMPLE_RELAY_BACKEND_URL = "wss://example.com/v1/plugins/rpi-cam/ws/connect"
-EXAMPLE_RELAY_BACKEND_URL_UNSECURE = "ws://example.com/v1/plugins/rpi-cam/ws/connect"
+EXAMPLE_RELAY_BACKEND_URL = "wss://example.com/v1/plugins/r9cam/ws/connect"
+EXAMPLE_RELAY_BACKEND_URL_UNSECURE = "ws://example.com/v1/plugins/r9cam/ws/connect"
 EXAMPLE_RELAY_HTTP_URL = "http://example.com"
 EXAMPLE_RELAY_HTTPS_URL = "https://example.com"
 EXAMPLE_RELAY_BACKEND_URL_WITH_CAMERA_ID = f"{EXAMPLE_RELAY_BACKEND_URL}?camera_id=cam-42"

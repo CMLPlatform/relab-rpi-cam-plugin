@@ -4,8 +4,8 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from relab_rpi_cam_models.camera import CameraMode
-from relab_rpi_cam_models.stream import StreamMode
+from r9cam_models.camera import CameraMode
+from r9cam_models.stream import StreamMode
 
 from app.camera.exceptions import YoutubeConfigRequiredError
 from app.camera.schemas import FocusControlRequest, FocusMode

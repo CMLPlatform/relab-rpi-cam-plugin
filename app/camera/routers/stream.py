@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Body, HTTPException
-from relab_rpi_cam_models.stream import StreamMode, StreamView
+from r9cam_models.stream import StreamMode, StreamView
 
 from app.camera.dependencies import CameraManagerDependency
 from app.camera.exceptions import ActiveStreamError, YoutubeConfigRequiredError
