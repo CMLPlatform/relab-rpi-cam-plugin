@@ -1,0 +1,31 @@
+# Schema guide: https://github.com/citation-file-format/citation-file-format/blob/main/schema-guide.md
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "relab-rpi-cam-plugin: Raspberry Pi camera plugin for the Relab platform"
+abstract: >-
+  Device-side software for automated image capture on Raspberry Pi, integrated with the
+  Reverse Engineering Lab (Relab) platform. A FastAPI service captures still images with
+  per-capture camera metadata, serves a live preview, pairs to Relab over an outbound
+  WebSocket relay with device-signed tokens, and uploads captures with a disk-backed retry
+  queue.
+authors:
+  - family-names: "van Lierde"
+    given-names: "Simon"
+    orcid: "https://orcid.org/0009-0006-6953-909X"
+    email: "s.n.van.lierde@cml.leidenuniv.nl"
+    affiliation: "Department of Industrial Ecology, Institute of Environmental Sciences (CML), Leiden University"
+version: 0.6.2
+date-released: 2026-09-07
+repository-code: "https://github.com/CMLPlatform/relab-rpi-cam-plugin"
+url: "https://cml-relab.org"
+# The plugin software is AGPL-3.0-or-later. The published API specification
+# (openapi.rpi-cam.json) and the relab-rpi-cam-models package are Apache-2.0; see README.md.
+license: "AGPL-3.0-or-later"
+keywords:
+  - "Raspberry Pi"
+  - "image capture"
+  - "computer vision"
+  - "research software"
+  - "circular economy"
+  - "industrial ecology"

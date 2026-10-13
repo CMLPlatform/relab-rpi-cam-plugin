@@ -63,6 +63,8 @@
 [tool.pytest.ini_options]
   addopts = ["--strict-markers"]
   asyncio_mode = "auto"
+  # Match the app's INFO root level, which is set at startup, not at import.
+  log_level = "INFO"
   markers = [
     "unit: pure function/service tests with no app boot unless unavoidable",
     "integration: ASGI app, route, or lifespan behavior tests",
@@ -84,7 +86,7 @@
   pre_bump_hooks           = ["uv lock && git add uv.lock"]
   tag_format               = "v$version"
   update_changelog_on_bump = true
-  version_files            = ["app/__version__.py", "openapi.rpi-cam.json:\"version\""]
+  version_files            = ["app/__version__.py", "openapi.rpi-cam.json:\"version\"", "CITATION.cff:^version", "codemeta.json:\"version\""]
   version_provider         = "pep621"
   version_scheme           = "semver2"
 

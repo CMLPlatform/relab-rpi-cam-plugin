@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+# Fails when main carries a relab-rpi-cam-models version that is not on PyPI and has
+# no release tag. Pull requests are left out on purpose: a version bump is tagged after
+# it merges, so a PR run would always fail. The weekly run keeps reporting drift that
+# nobody fixed after the push run went red.
+
+name: Models release drift
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'relab_rpi_cam_models/pyproject.toml'
+      - 'scripts/check_models_release.py'
+      - '.github/workflows/models-release-drift.yml'
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Models version vs PyPI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # the check looks for the release tag locally
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+
+      - name: Check the workspace version is published or tagged
+        run: python scripts/check_models_release.py

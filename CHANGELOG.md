@@ -58,6 +58,10 @@
 
 ## v0.3.0 (2026-04-21)
 
+The v0.1 to v0.3 history was squashed into one commit (c6e67bc) on 2026-04-15, so the v0.1.1
+and v0.2.0 tags point at commits that are not on main. The v0.3.0 tag was added afterwards, on
+3b32e04, the first commit on main at version 0.3.0.
+
 ### Feat
 
 - Add a new local setup and pairing flow, including secure pairing, local connection mode, automatic API key generation, mDNS discovery, pairing status feedback, and improved direct-connection guidance
