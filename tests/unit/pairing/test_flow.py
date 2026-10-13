@@ -149,14 +149,14 @@ class TestPairingHelpers:
     ) -> None:
         """The credentials file path should honor the explicit override env var."""
         override = tmp_path / "relay.json"
-        monkeypatch.setenv("RELAB_CREDENTIALS_FILE", str(override))
+        monkeypatch.setenv("R9CAM_CREDENTIALS_FILE", str(override))
 
         assert pairing_credentials._get_credentials_file() == override
 
     def test_get_credentials_file_falls_back_to_xdg_style_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Without an override, pairing should use the default config-home location."""
-        monkeypatch.delenv("RELAB_CREDENTIALS_FILE", raising=False)
-        assert str(pairing_credentials._get_credentials_file()).endswith(".config/relab/relay_credentials.json")
+        monkeypatch.delenv("R9CAM_CREDENTIALS_FILE", raising=False)
+        assert str(pairing_credentials._get_credentials_file()).endswith(".config/r9cam/relay_credentials.json")
 
     def test_pairing_service_reset_state(self) -> None:
         """Pairing service should reset its observable state to idle."""

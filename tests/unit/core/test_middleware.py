@@ -187,7 +187,7 @@ class TestRateLimiter:
         request = _request(
             "POST",
             "/captures",
-            headers={"X-API-Key": TEST_API_KEY, "Cookie": f"relab_session={TEST_COOKIE_VALUE}"},
+            headers={"X-API-Key": TEST_API_KEY, "Cookie": f"r9cam_session={TEST_COOKIE_VALUE}"},
         )
 
         await limiter.handle(request, lambda _request: _response())

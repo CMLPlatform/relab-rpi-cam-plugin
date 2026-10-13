@@ -216,7 +216,7 @@ class Settings(BaseSettings):
     # Auth
     auth_key_name: HttpFieldName = "X-API-Key"
     auth_cookie_secure: bool | None = None
-    session_cookie_name: HttpFieldName = "relab_session"
+    session_cookie_name: HttpFieldName = "r9cam_session"
 
     # Runtime mode. Production is the safe default; development permits
     # plaintext endpoints for local-network test services.

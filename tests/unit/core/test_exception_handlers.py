@@ -70,7 +70,7 @@ class TestExceptionHandlers:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Unexpected errors must not leak their message to the client either."""
-        exc = _raised(RuntimeError("connection string postgres://user:hunter2@db/relab"))
+        exc = _raised(RuntimeError("connection string postgres://user:hunter2@db/r9lab"))
 
         with caplog.at_level(logging.ERROR):
             response = await main_mod.unhandled_exception_handler(_request(), exc)

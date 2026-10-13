@@ -48,7 +48,7 @@ Startup is coordinated through `app/core/lifespan.py`, `app/core/bootstrap.py`, 
 
 1. Load env-backed `Settings`.
 1. Build `AppRuntime` with a `RuntimeState` seeded from settings.
-1. Apply persisted relay credentials from `~/.config/relab/relay_credentials.json` if static relay credentials are absent.
+1. Apply persisted relay credentials from `~/.config/r9cam/relay_credentials.json` if static relay credentials are absent.
 1. Ensure local and relay-local API keys exist where needed.
 1. Register `AppRuntime` as the active runtime.
 1. Start managed background workers, pairing, and relay tasks according to config.
@@ -85,7 +85,7 @@ Any path used at request time is either encoded or checked against an allowlist 
 
 Relay device assertions are short-lived ES256 JWTs signed with the Pi's P-256 key. We validate that key when settings load, credentials are saved, and runtime state is applied, so bad key types fail early.
 
-Relay private keys, relay key IDs, camera IDs, and local API keys live in `~/.config/relab/relay_credentials.json`. The file is written atomically with `0600` permissions. Pairing creates a fresh key pair; unpairing deletes the file.
+Relay private keys, relay key IDs, camera IDs, and local API keys live in `~/.config/r9cam/relay_credentials.json`. The file is written atomically with `0600` permissions. Pairing creates a fresh key pair; unpairing deletes the file.
 
 Session tokens, API keys, pairing fingerprints, JWT IDs, and capture IDs come from Python's `secrets` CSPRNG. API-key comparisons use `hmac.compare_digest`.
 
