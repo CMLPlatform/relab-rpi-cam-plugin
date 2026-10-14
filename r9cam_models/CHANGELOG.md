@@ -44,6 +44,6 @@ backend and the plugin together: both sides of the device seam now reject payloa
 - The libcamera links in the `ImageProperties` and `CameraProperties` docstrings point to
   the control and property definitions again.
 
-[0.5.2]: https://github.com/CMLPlatform/relab-rpi-cam-plugin/compare/relab-rpi-cam-models-v0.5.0...relab-rpi-cam-models-v0.5.2
-[0.6.0]: https://github.com/CMLPlatform/relab-rpi-cam-plugin/compare/relab-rpi-cam-models-v0.5.2...r9cam-models-v0.6.0
-[unreleased]: https://github.com/CMLPlatform/relab-rpi-cam-plugin/compare/r9cam-models-v0.6.0...HEAD
+[0.5.2]: https://github.com/CMLPlatform/r9cam/compare/relab-rpi-cam-models-v0.5.0...relab-rpi-cam-models-v0.5.2
+[0.6.0]: https://github.com/CMLPlatform/r9cam/compare/relab-rpi-cam-models-v0.5.2...r9cam-models-v0.6.0
+[unreleased]: https://github.com/CMLPlatform/r9cam/compare/r9cam-models-v0.6.0...HEAD
